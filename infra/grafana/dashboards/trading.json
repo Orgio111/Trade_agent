@@ -1,0 +1,103 @@
+{
+  "title": "Trade Agent — Real-Time Dashboard",
+  "uid": "trade-agent-v1",
+  "timezone": "browser",
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Portfolio Equity (USD)",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "targets": [{"expr": "portfolio_equity_usd", "legendFormat": "Equity"}],
+      "fieldConfig": {"defaults": {"unit": "currencyUSD", "color": {"mode": "thresholds"},
+        "thresholds": {"steps": [
+          {"color": "red", "value": 0},
+          {"color": "yellow", "value": 90000},
+          {"color": "green", "value": 100000}
+        ]}}}
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Daily PnL",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "targets": [{"expr": "sum(portfolio_pnl_usd)", "legendFormat": "Daily PnL"}],
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}}
+    },
+    {
+      "id": 3,
+      "type": "gauge",
+      "title": "Current Drawdown %",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "targets": [{"expr": "portfolio_drawdown_pct * 100", "legendFormat": "Drawdown"}],
+      "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 10,
+        "thresholds": {"steps": [
+          {"color": "green", "value": 0},
+          {"color": "yellow", "value": 3},
+          {"color": "red", "value": 5}
+        ]}}}
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Kill Switch",
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+      "targets": [{"expr": "kill_switch_active", "legendFormat": "Kill Switch"}],
+      "fieldConfig": {"defaults": {"mappings": [
+        {"type": "value", "options": {"0": {"text": "ACTIVE", "color": "green"}, "1": {"text": "TRIPPED", "color": "red"}}}
+      ]}}
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Agent Latency (p99)",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "targets": [{"expr": "histogram_quantile(0.99, rate(agent_latency_seconds_bucket[1m]))", "legendFormat": "{{agent}}"}],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "VaR 99% by Symbol",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "targets": [{"expr": "risk_var{confidence=\"99\"}", "legendFormat": "{{symbol}}"}],
+      "fieldConfig": {"defaults": {"unit": "percentunit"}}
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Orders per Minute",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+      "targets": [{"expr": "rate(orders_total[1m])", "legendFormat": "{{symbol}} {{side}}"}]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Execution Slippage (p95, bps)",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+      "targets": [{"expr": "histogram_quantile(0.95, rate(execution_slippage_bps_bucket[5m]))", "legendFormat": "{{symbol}}"}]
+    },
+    {
+      "id": 9,
+      "type": "bargauge",
+      "title": "PSI Drift Scores",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+      "targets": [{"expr": "mlops_psi_score", "legendFormat": "{{model}}"}],
+      "fieldConfig": {"defaults": {"unit": "short", "min": 0, "max": 0.5,
+        "thresholds": {"steps": [
+          {"color": "green", "value": 0},
+          {"color": "yellow", "value": 0.1},
+          {"color": "red", "value": 0.2}
+        ]}}}
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Council Consensus Score",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 20},
+      "targets": [{"expr": "histogram_quantile(0.5, rate(council_consensus_score_bucket[5m]))", "legendFormat": "{{symbol}} {{side}}"}]
+    }
+  ]
+}

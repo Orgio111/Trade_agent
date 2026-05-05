@@ -1,0 +1,46 @@
+groups:
+  - name: trading_alerts
+    rules:
+      - alert: KillSwitchActive
+        expr: kill_switch_active == 1
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Trading kill switch activated"
+          description: "Daily drawdown exceeded threshold — all trading halted."
+
+      - alert: HighDrawdown
+        expr: portfolio_drawdown_pct > 0.03
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Portfolio drawdown > 3%"
+          description: "Current drawdown: {{ $value | humanizePercentage }}"
+
+      - alert: ModelDriftDetected
+        expr: mlops_psi_score > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Model drift detected (PSI > 0.2)"
+          description: "Model {{ $labels.model }} PSI={{ $value }}"
+
+      - alert: AgentLatencyHigh
+        expr: histogram_quantile(0.99, agent_latency_seconds_bucket) > 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent p99 latency > 5s"
+          description: "Agent {{ $labels.agent }} p99={{ $value }}s"
+
+      - alert: HighSlippage
+        expr: histogram_quantile(0.95, execution_slippage_bps_bucket) > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Execution slippage p95 > 20 bps"
