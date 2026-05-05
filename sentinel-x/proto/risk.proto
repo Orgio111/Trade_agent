@@ -1,0 +1,58 @@
+syntax = "proto3";
+package sentinelx.risk;
+option go_package = "github.com/sentinelx/go/pkg/proto/risk";
+
+// ── Risk validation request from Go OMS → Rust Risk Engine ──────────────────
+message RiskRequest {
+  string  session_id      = 1;
+  string  symbol          = 2;
+  string  side            = 3;   // "BUY" | "SELL"
+  double  proposed_qty    = 4;
+  double  current_price   = 5;
+  double  portfolio_equity = 6;
+  double  atr_14          = 7;
+  double  consensus_score = 8;
+  repeated PositionEntry open_positions = 9;
+  repeated double        return_series  = 10;  // last 252 daily returns
+}
+
+message PositionEntry {
+  string symbol     = 1;
+  double qty        = 2;
+  double notional   = 3;
+  double correlation_to_base = 4;
+}
+
+// ── Risk validation response ──────────────────────────────────────────────────
+message RiskResponse {
+  bool   approved            = 1;
+  string rejection_reason    = 2;
+  double var_95              = 3;
+  double var_99              = 4;
+  double cvar_99             = 5;
+  double monte_carlo_var_99  = 6;
+  double kelly_raw           = 7;
+  double kelly_fractional    = 8;
+  double position_size_usd   = 9;
+  double position_size_units = 10;
+  double stop_loss_price     = 11;
+  double take_profit_price   = 12;
+  double portfolio_heat      = 13;  // correlation-weighted exposure
+  string sbe_payload         = 14;  // SBE-encoded binary snapshot (base64)
+}
+
+// ── Kill-switch broadcast ─────────────────────────────────────────────────────
+message KillSwitchEvent {
+  bool   active       = 1;
+  string reason       = 2;
+  double drawdown_pct = 3;
+  int64  timestamp_ns = 4;
+}
+
+service RiskEngine {
+  rpc Validate(RiskRequest)          returns (RiskResponse);
+  rpc GetPortfolioHeat(stream RiskRequest) returns (stream RiskResponse);
+  rpc SubscribeKillSwitch(KillSwitchRequest) returns (stream KillSwitchEvent);
+}
+
+message KillSwitchRequest { string subscriber_id = 1; }
