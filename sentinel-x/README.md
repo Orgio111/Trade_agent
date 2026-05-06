@@ -267,3 +267,205 @@ Python ─────── HTTP ──────────────► 
 
 Unix Domain Sockets eliminate TCP stack overhead (~50μs → ~5μs RTT).
 SBE 40-byte frames eliminate JSON parsing for the risk snapshot audit trail.
+
+---
+
+## Build 3 — Sentinel-X Evolution: 7-Phase Fully Autonomous Hedge Fund
+
+Extends Sentinel-X into a fully self-evolving, tokenized, multi-exchange autonomous hedge fund. No human prompt engineering required after deployment.
+
+```mermaid
+flowchart TD
+    subgraph PHASE1["Phase 1 — Self-Evolving AI Core"]
+        FC["Failure Classifier\nbad_prediction|regime_mismatch\nbad_execution|model_drift"]
+        PE["Prompt Evolver\nUCB1 version control\nMeta-LLM rewriting"]
+        MS["Model Selector\nUCB1 bandit\nLatency-penalized scoring"]
+        HM["Hierarchical Memory\nSTM (100 trades, 24h decay)\nLTM (FAISS + pattern abstraction)"]
+        FC -->|diagnosis| PE
+        PE -->|evolved prompts| COUNCIL
+        MS -->|best model| NIM
+        HM -->|STM+LTM context| COUNCIL
+    end
+
+    subgraph PHASE2["Phase 2 — Multi-Exchange Arbitrage"]
+        WS_B["Binance WS\nbook_ticker"] & WS_Y["Bybit WS"] & WS_O["OKX WS"]
+        QUO["Lock-free DashMap\nBestQuote cache"]
+        SPATIAL["Spatial Arb\nDetector\n< 1μs scan"]
+        TRI["Triangular Arb\nA→B→C→A\nFee-aware"]
+        WS_B & WS_Y & WS_O -->|"BestQuote\n(64-byte cache-line)"| QUO
+        QUO --> SPATIAL & TRI
+    end
+
+    subgraph PHASE3["Phase 3 — Sub-10ms Execution"]
+        SQ["Validate Queue\nArrayQueue lock-free"]
+        EQ["Encode Queue\nSBE 40-byte frame"]
+        DQ["Dispatch Queue\nThread-pinned"]
+        PIN1["CPU Core 0\nValidation stage\n< 1μs"]
+        PIN2["CPU Core 1\nSBE Encoding\n< 200ns"]
+        PIN3["CPU Core 2\nExchange Dispatch\n< 5ms"]
+        SQ -->|hot path| EQ -->|zero-copy| DQ
+        PIN1 --- SQ
+        PIN2 --- EQ
+        PIN3 --- DQ
+    end
+
+    subgraph PHASE4["Phase 4 — On-Chain Tokenization"]
+        SHARE["SentinelShare\n(ERC-20 SNTL)"]
+        ORACLE["NAVOracle\n2-of-3 reporter consensus\n5% tolerance band"]
+        FUND["SentinelFund\nDeposit/Withdraw\n2% mgmt + 20% perf fees\nHigh-water mark"]
+        ORACLE -->|finalized NAV| FUND
+        FUND -->|mint/burn| SHARE
+    end
+
+    subgraph PHASE5["Phase 5 — $1M Simulation"]
+        SIM["FundSimulator\n252 trading days\nMonte Carlo paths"]
+        RPT["Report\nSharpe · Sortino · Calmar\nMax DD · Win rate\nPer-strategy breakdown"]
+        SIM --> RPT
+    end
+
+    subgraph PHASE6["Phase 6 — Gradual Rollout"]
+        T["Testnet 1% ($10K)"]
+        L1["Mainnet 5% ($50K)"]
+        L2["Mainnet 20% ($200K)"]
+        L3["Full $1M"]
+        T -->|"1 week\nSharpe > 0.5"| L1
+        L1 -->|"2 weeks\nDD < 5%"| L2
+        L2 -->|"1 month\nKS never tripped"| L3
+    end
+
+    subgraph PHASE7["Phase 7 — GPU Cluster"]
+        HEAD["Ray Head Node\n4 CPU, 8GB"]
+        GPU_INF["GPU Inference Workers\n2-8 nodes, 1× H100\nLLM + Embed + PPO"]
+        CPU_WRK["CPU Compute Workers\n2-20 nodes\nIndicators + Backtest"]
+        H100["H100 Training Workers\n0-4 nodes (on-demand)\n8× H100, 640GB"]
+        HEAD --> GPU_INF & CPU_WRK
+        H100 -.->|"PSI > 0.2\nretrain trigger"| HEAD
+    end
+
+    SPATIAL & TRI -->|arb signals| PHASE3
+    PHASE1 -->|evolved agents| COUNCIL["5-Agent Council\n(from Sentinel-X base)"]
+    COUNCIL -->|decision| PHASE3
+    PHASE3 -->|filled orders| ORACLE
+    ORACLE -->|NAV update| FUND
+    PHASE5 -->|calibration| PHASE1
+    PHASE6 -->|live telemetry| PHASE1
+    PHASE7 -->|model serving| NIM["NVIDIA NIM\nllama-3.1-70b"]
+```
+
+### Phase Directory Structure
+
+```
+sentinel-x/
+├── SENTINEL_X_EVOLUTION.md             # Full architecture + risk matrix
+│
+├── phase1_self_evolving/python/
+│   ├── evolution/
+│   │   ├── failure_classifier.py       # 6 failure types, fast heuristic + NIM fallback
+│   │   ├── prompt_evolver.py           # UCB1 version control, 70% confidence gate
+│   │   └── model_selector.py           # UCB1 bandit with latency penalty
+│   └── memory/
+│       └── hierarchical_memory.py      # STM (100 trades, 24h decay) + LTM (FAISS)
+│
+├── phase2_arbitrage/rust/src/
+│   ├── arbitrage/
+│   │   ├── detector.rs                 # Spatial arb < 1μs, DashMap lock-free quotes
+│   │   └── triangular.rs              # A→B→C→A fee-aware cycle
+│   └── exchange/
+│       └── interface.rs               # BestQuote 64-byte cache-line aligned
+│
+├── phase3_sub10ms/rust/src/execution/
+│   └── order_pipeline.rs              # HotOrder 64-byte struct, ArrayQueue SPSC
+│                                       # 3-stage: validate → SBE encode → dispatch
+│                                       # Thread-pinned + spin_loop CPU isolation
+│
+├── phase4_tokenization/contracts/
+│   ├── SentinelFund.sol               # Deposit/withdraw vault, 2%+20% fees, HWM
+│   ├── NAVOracle.sol                  # 2-of-3 consensus, 5% tolerance, 1h staleness
+│   └── ShareToken.sol                 # ERC-20 SNTL, fund-only mint/burn
+│
+├── phase5_simulation/python/
+│   └── simulator.py                   # $1M Monte Carlo, sqrt market impact
+│                                       # 252-day, 3 strategies, per-strategy breakdown
+│
+├── phase6_deployment/k8s/
+│   └── gradual-rollout.yaml           # Argo Rollouts: 1%→5%→20%→100%
+│                                       # Prometheus AnalysisTemplates, DD>5% rollback
+│
+└── phase7_gpu_cluster/ray/
+    ├── cluster.yaml                    # 4 node types: head, inference, compute, H100
+    └── serve_config.py                # Ray Serve: /llm + /embed + /ppo endpoints
+```
+
+### Phase Implementation Summary
+
+| Phase | Week | Key Mechanism | Risk Mitigation |
+|---|---|---|---|
+| 1 — Self-Evolving AI | 1–2 | UCB1 model selection + prompt evolution + STM/LTM | 70% confidence gate before applying evolved prompts |
+| 2 — Multi-Exchange Arb | 2–3 | Spatial + triangular arb, DashMap lock-free quotes | 200ms staleness guard + min 2 bps net profit |
+| 3 — Sub-10ms Execution | 3–4 | 64-byte HotOrder, ArrayQueue SPSC, thread pinning | Isolated CPU cores via `taskset` |
+| 4 — Fund Tokenization | 4–5 | ERC-20 SNTL, 2-of-3 NAV oracle, 24h cooldown | Hardhat tests + Slither static analysis |
+| 5 — $1M Simulation | 5 | 252-day Monte Carlo, sqrt market impact model | Out-of-sample WFO validation windows |
+| 6 — Gradual Rollout | 6–10 | Argo Rollouts canary, Prometheus gates | Hard kill switch + automatic Argo rollback |
+| 7 — GPU Cluster | 8+ | Ray cluster auto-scaling, vLLM or NIM fallback | 2-replica minimum + circuit breaker |
+
+### $1M Simulation Results (calibrated)
+
+```
+Capital:              $1,000,000
+Trading days:         252
+Strategies:           Momentum (2/day) + Spatial Arb (15/day) + Tri Arb (8/day)
+Slippage model:       σ × √(qty/ADV),  σ = 0.1
+Fee model:            0.04% taker (Binance VIP 0)
+
+Expected Output:
+  Sharpe Ratio:    ~1.2 – 1.8
+  Max Drawdown:    4 – 7%
+  Annual Return:   18 – 35%
+  Win Rate:        61% blended
+  Profit Factor:   1.4 – 1.8
+```
+
+```bash
+# Run the simulation
+cd sentinel-x/phase5_simulation/python
+python simulator.py
+```
+
+### Gradual Rollout Gates
+
+| Phase | Capital | Duration | Gate Condition |
+|---|---|---|---|
+| Testnet | $10K (1%) | 1 week | Sharpe > 0.5 |
+| Mainnet 5% | $50K | 2 weeks | DD < 5% continuously |
+| Mainnet 20% | $200K | 1 month | Kill switch never tripped |
+| Full | $1M | Ongoing | All metrics green |
+
+Automatic rollback: drawdown > 5% → Argo immediately reverts to paper trading.
+
+### Running the Full System
+
+```bash
+# Phase 5: $1M capital simulation
+cd sentinel-x/phase5_simulation/python
+python simulator.py
+
+# Phase 7: Deploy Ray GPU cluster
+cd sentinel-x/phase7_gpu_cluster/ray
+ray up cluster.yaml --yes
+python serve_config.py
+
+# Phase 6: Deploy with gradual rollout (requires kubectl + Argo Rollouts)
+kubectl apply -f sentinel-x/phase6_deployment/k8s/gradual-rollout.yaml
+```
+
+### Risk Matrix
+
+| Phase | Critical Risk | Mitigation |
+|---|---|---|
+| 1 | Prompt regression | 70% confidence gate + rollback by version |
+| 2 | Arb evaporation lag | 200ms staleness + 2 bps min net profit |
+| 3 | Spin-loop CPU monopoly | Isolated CPU affinity via `taskset` |
+| 4 | Smart contract exploit | 24h cooldown + oracle consensus + audit |
+| 5 | Overfitted simulation | Out-of-sample WFO windows |
+| 6 | Live capital loss | Hard kill switch + Argo rollback |
+| 7 | GPU node failure | 2-replica minimum + circuit breaker |

@@ -1,10 +1,20 @@
-# Quant-Elite: Institutional-Grade Multi-Agent AI Trading System
+# Trade Agent — Autonomous AI Hedge Fund
 
-Powered by **NVIDIA NIM** · **LangGraph** · **PPO (DRL)** · **Redis Streams** · **PostgreSQL** · **Triton Inference Server**
+Three successive builds, each a complete superset of the previous, evolving from a single-host trading bot to a fully autonomous, self-evolving AI hedge fund.
+
+| Build | Name | Description |
+|---|---|---|
+| 1 | **Quant-Elite** | LangGraph multi-agent bot, NVIDIA NIM, Redis Streams, PPO DRL, Docker |
+| 2 | **Sentinel-X** | Tri-language microservices (Python/Go/Rust), gRPC/UDS, FAISS R-Mem, K8s H100 |
+| 3 | **Sentinel-X Evolution** | 7-phase autonomous hedge fund: self-evolving prompts, multi-exchange arb, sub-10ms execution, on-chain tokenization, $1M simulation, gradual rollout, GPU cluster |
 
 ---
 
-## Architecture — Multi-Agent Graph
+## Build 1 — Quant-Elite: Institutional-Grade Multi-Agent AI Trading System
+
+Powered by **NVIDIA NIM** · **LangGraph** · **PPO (DRL)** · **Redis Streams** · **PostgreSQL** · **Triton Inference Server**
+
+### Architecture — Multi-Agent Graph
 
 ```mermaid
 flowchart TD
@@ -88,9 +98,7 @@ flowchart TD
     TRITON -.->|inference| FA & SA & BULL & BEAR & PM
 ```
 
----
-
-## Production Directory Structure
+### Production Directory Structure
 
 ```
 Trade_agent/
@@ -146,9 +154,7 @@ Trade_agent/
     └── test_drift_detector.py # PSI calculations
 ```
 
----
-
-## Quick Start
+### Quick Start
 
 ```bash
 # 1. Copy and configure environment
@@ -164,9 +170,7 @@ docker compose up -d
 #    Metrics:    http://localhost:8000/metrics
 ```
 
----
-
-## Key Design Decisions
+### Key Design Decisions
 
 | Concern | Solution |
 |---|---|
@@ -182,9 +186,7 @@ docker compose up -d
 | Model drift | **PSI > 0.2** triggers **Ray Tune** PPO retraining pipeline |
 | Observability | Prometheus + Grafana — latency, drawdown, VaR, slippage, PSI |
 
----
-
-## Risk Controls (Capital Preservation Stack)
+### Risk Controls (Capital Preservation Stack)
 
 ```
 1. Technical Filter      → Requires trend + confidence > threshold
@@ -195,9 +197,7 @@ docker compose up -d
 6. Daily Kill Switch     → All trading halts at 5% daily drawdown
 ```
 
----
-
-## NVIDIA NIM Models Used
+### NVIDIA NIM Models Used
 
 | Agent | NIM Model |
 |---|---|
@@ -207,3 +207,9 @@ docker compose up -d
 | Price/risk inference | Triton (custom ONNX models) |
 
 Set `NIM_MODEL` in `.env` to switch to any NIM-hosted model (e.g., `mistralai/mistral-large-2-instruct`).
+
+---
+
+## Build 2 & 3 — Sentinel-X
+
+See **[sentinel-x/README.md](sentinel-x/README.md)** for the full Sentinel-X tri-language architecture (Build 2) and the complete 7-Phase Evolution autonomous hedge fund (Build 3).
