@@ -1,0 +1,51 @@
+[package]
+name        = "sentinel-risk"
+version     = "1.0.0"
+edition     = "2021"
+description = "Sentinel-X Rust Risk Engine — VaR, Monte Carlo, SBE, Kelly"
+
+[[bin]]
+name = "sentinel-risk"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio          = { version = "1.38", features = ["full"] }
+
+# gRPC / protobuf
+tonic          = { version = "0.11", features = ["tls", "transport"] }
+prost          = "0.12"
+prost-types    = "0.12"
+
+# Numerical
+statrs         = "0.17"   # Normal distribution quantiles
+rand           = "0.8"
+rand_distr     = "0.4"
+
+# Serialization
+serde          = { version = "1", features = ["derive"] }
+serde_json     = "1"
+bytes          = "1"
+base64         = "0.22"
+
+# Observability
+prometheus     = { version = "0.13", features = ["process"] }
+tracing        = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+anyhow         = "1"
+thiserror      = "1"
+
+# Async
+futures        = "0.3"
+tokio-stream   = "0.1"
+
+[build-dependencies]
+tonic-build = "0.11"
+
+[profile.release]
+opt-level     = 3
+lto           = "fat"
+codegen-units = 1
+panic         = "abort"

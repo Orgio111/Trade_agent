@@ -1,0 +1,129 @@
+---
+# ── Phase 1: Testnet only, 1% capital ────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sentinel-rollout-config
+  namespace: sentinel-x
+data:
+  ROLLOUT_PHASE:        "1"
+  CAPITAL_ALLOCATION:   "0.01"    # 1% = $10,000
+  PAPER_TRADING:        "false"
+  USE_TESTNET:          "true"
+  MAX_ORDER_USD:        "1000"
+  DAILY_TRADE_LIMIT:    "10"
+  ALLOWED_SYMBOLS:      "BTC/USDT"
+
+---
+# ── Gradual rollout via Argo Rollouts ─────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: sentinel-live
+  namespace: sentinel-x
+spec:
+  replicas: 1
+  strategy:
+    canary:
+      steps:
+        # Phase 1: Testnet, 1 week
+        - setCanaryScale:
+            weight: 10
+        - pause:
+            duration: 168h    # 1 week — monitor metrics
+        # Phase 2: Mainnet 5% capital, 2 weeks
+        - setCanaryScale:
+            weight: 30
+        - analysis:
+            templates:
+              - templateName: sentinel-health-check
+        - pause:
+            duration: 336h
+        # Phase 3: 20% capital, 1 month
+        - setCanaryScale:
+            weight: 60
+        - analysis:
+            templates:
+              - templateName: sentinel-drawdown-check
+        - pause:
+            duration: 720h
+        # Phase 4: Full deployment
+        - setWeight: 100
+  selector:
+    matchLabels:
+      app: sentinel-live
+  template:
+    metadata:
+      labels:
+        app: sentinel-live
+    spec:
+      containers:
+        - name: sentinel-python
+          image: sentinel-x/python:latest
+          envFrom:
+            - configMapRef:
+                name: sentinel-rollout-config
+          env:
+            - name: NIM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: sentinel-secrets
+                  key: nim-api-key
+
+---
+# ── Health analysis: Sharpe > 0.5, DD < 5% ────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: sentinel-health-check
+  namespace: sentinel-x
+spec:
+  metrics:
+    - name: sharpe-ratio
+      interval: 1h
+      successCondition: result >= 0.5
+      failureLimit: 3
+      provider:
+        prometheus:
+          address: http://prometheus:9090
+          query: |
+            sentinel_sharpe_ratio
+
+    - name: daily-pnl
+      interval: 1h
+      successCondition: result >= -500
+      failureLimit: 5
+      provider:
+        prometheus:
+          address: http://prometheus:9090
+          query: |
+            sum(portfolio_pnl_usd)
+
+---
+# ── Drawdown circuit breaker ──────────────────────────────────────────────────
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: sentinel-drawdown-check
+  namespace: sentinel-x
+spec:
+  metrics:
+    - name: max-drawdown
+      interval: 30m
+      successCondition: result < 5
+      failureLimit: 1    # immediate rollback if DD > 5%
+      provider:
+        prometheus:
+          address: http://prometheus:9090
+          query: |
+            portfolio_drawdown_pct * 100
+
+    - name: kill-switch
+      interval: 1m
+      successCondition: result == 0
+      failureLimit: 1
+      provider:
+        prometheus:
+          address: http://prometheus:9090
+          query: |
+            kill_switch_active

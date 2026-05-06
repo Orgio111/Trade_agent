@@ -1,0 +1,134 @@
+# ── Ray Cluster for Multi-Node GPU Inference ──────────────────────────────────
+cluster_name: sentinel-x-gpu
+
+# ── Provider (Kubernetes) ────────────────────────────────────────────────────
+provider:
+  type: kubernetes
+  namespace: sentinel-x
+  use_internal_ips: true
+
+# ── Head node (coordinator, no GPU) ──────────────────────────────────────────
+head_node_type: head
+head_start_ray_commands:
+  - ray start --head
+      --port=6379
+      --object-manager-port=8076
+      --autoscaling-config=~/ray_bootstrap_config.yaml
+      --dashboard-host=0.0.0.0
+
+available_node_types:
+
+  head:
+    min_workers: 0
+    max_workers: 0
+    resources: {}
+    node_config:
+      apiVersion: v1
+      kind: Pod
+      spec:
+        containers:
+          - name: ray-head
+            image: sentinel-x/python:latest
+            resources:
+              requests:
+                cpu: "4"
+                memory: "8Gi"
+              limits:
+                cpu: "8"
+                memory: "16Gi"
+
+  # ── GPU worker: LLM inference (NIM proxy / local Triton) ──────────────────
+  gpu-inference-worker:
+    min_workers: 2
+    max_workers: 8
+    resources:
+      GPU: 1
+      InferenceGPU: 1
+    node_config:
+      apiVersion: v1
+      kind: Pod
+      spec:
+        nodeSelector:
+          nvidia.com/gpu: "true"
+        tolerations:
+          - key: nvidia.com/gpu
+            operator: Exists
+            effect: NoSchedule
+        containers:
+          - name: ray-inference-worker
+            image: sentinel-x/python:latest
+            resources:
+              requests:
+                cpu: "8"
+                memory: "32Gi"
+                nvidia.com/gpu: "1"
+              limits:
+                cpu: "16"
+                memory: "64Gi"
+                nvidia.com/gpu: "1"
+            env:
+              - name: CUDA_VISIBLE_DEVICES
+                value: "0"
+              - name: RAY_WORKER_TYPE
+                value: "inference"
+
+  # ── CPU worker: indicators, feature engineering, backtesting ──────────────
+  cpu-compute-worker:
+    min_workers: 2
+    max_workers: 20
+    resources:
+      CPU_COMPUTE: 1
+    node_config:
+      apiVersion: v1
+      kind: Pod
+      spec:
+        containers:
+          - name: ray-cpu-worker
+            image: sentinel-x/python:latest
+            resources:
+              requests:
+                cpu: "4"
+                memory: "8Gi"
+              limits:
+                cpu: "8"
+                memory: "16Gi"
+            env:
+              - name: RAY_WORKER_TYPE
+                value: "compute"
+
+  # ── H100 worker: PPO training + model fine-tuning ─────────────────────────
+  h100-training-worker:
+    min_workers: 0     # spun up only during retraining
+    max_workers: 4
+    resources:
+      GPU: 1
+      H100: 1
+    node_config:
+      apiVersion: v1
+      kind: Pod
+      spec:
+        nodeSelector:
+          node.kubernetes.io/instance-type: "p5.48xlarge"  # 8× H100
+        tolerations:
+          - key: nvidia.com/gpu
+            operator: Exists
+            effect: NoSchedule
+        containers:
+          - name: ray-h100-worker
+            image: sentinel-x/python:latest
+            resources:
+              requests:
+                nvidia.com/gpu: "8"
+                memory: "640Gi"
+              limits:
+                nvidia.com/gpu: "8"
+                memory: "640Gi"
+            env:
+              - name: RAY_WORKER_TYPE
+                value: "training"
+              - name: NCCL_SOCKET_IFNAME
+                value: "eth0"
+
+# ── Autoscaling policy ────────────────────────────────────────────────────────
+upscaling_speed: 2.0
+idle_timeout_minutes: 5

@@ -1,0 +1,34 @@
+syntax = "proto3";
+package sentinelx.agents;
+option go_package = "github.com/sentinelx/go/pkg/proto/agents";
+
+message SignalRequest {
+  string symbol        = 1;
+  string session_id    = 2;
+  repeated double closes  = 3;
+  repeated double highs   = 4;
+  repeated double lows    = 5;
+  repeated double volumes = 6;
+}
+
+message CouncilDecision {
+  string  session_id       = 1;
+  string  symbol           = 2;
+  string  final_side       = 3;  // BUY | SELL | HOLD
+  double  bull_score       = 4;
+  double  bear_score       = 5;
+  double  consensus_score  = 6;
+  double  confidence_pct   = 7;  // must be >= 75 to trade
+  string  rationale        = 8;
+  string  reasoning_chain  = 9;  // full debate log JSON
+  bool    blocked          = 10; // true if confidence < 75%
+  double  atr_14           = 11;
+}
+
+service AgentCouncil {
+  rpc Deliberate(SignalRequest)    returns (CouncilDecision);
+  rpc HealthCheck(HealthRequest)   returns (HealthResponse);
+}
+
+message HealthRequest { string service = 1; }
+message HealthResponse { bool healthy = 1; string version = 2; }
