@@ -38,7 +38,7 @@ def _build_obs(
     recent_prices: np.ndarray,
 ) -> np.ndarray:
     """Construct normalized observation vector for the PPO agent."""
-    price_returns = np.diff(recent_prices[-30:]) / (recent_prices[-31:-1] + 1e-10) if len(recent_prices) >= 31 else np.zeros(29)
+    price_returns = np.diff(recent_prices[-30:]) / (recent_prices[-30:-1] + 1e-10) if len(recent_prices) >= 31 else np.zeros(29)
     features = [
         decision.consensus_score,
         decision.bull_score,

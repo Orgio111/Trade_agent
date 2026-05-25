@@ -22,6 +22,7 @@ from agents.memory_agent import MemoryAgent
 from agents.risk_engine import RiskEngine
 from agents.sentiment import SentimentAgent
 from agents.technical import TechnicalAgent
+from core.sentinelx_gateway import submit_trade as gateway_submit_trade
 from core.config import get_settings
 from core.kill_switch import KillSwitch
 from core.models import (
@@ -159,6 +160,40 @@ async def node_execute(state: TradingState) -> dict:
     if not decision or not risk:
         return {"logs": ["Execution: missing decision or risk"]}
 
+    # ── Try Go Gateway first ────────────────────────────────────────────────
+    if get_settings().sentinelx_gateway_url:
+        gateway_result = await gateway_submit_trade(
+            session_id=decision.session_id,
+            symbol=decision.symbol,
+            side=decision.final_side.value,
+            current_price=state["current_price"],
+            consensus_score=decision.consensus_score,
+            atr_14=decision.technical.atr_14 if decision.technical else None,
+            return_series=state["closes"][-100:] if len(state["closes"]) > 0 else None,
+            rationale=decision.rationale,
+        )
+        if gateway_result.approved:
+            from core.models import Order, OrderStatus
+            order = Order(
+                symbol=decision.symbol,
+                side=decision.final_side,
+                quantity=risk.position_size_units,
+                price=risk.stop_loss_price,
+                order_id=gateway_result.order_id or "",
+                status=OrderStatus.FILLED,
+                avg_fill_price=risk.stop_loss_price,
+                session_id=decision.session_id,
+            )
+            return {
+                "order": order,
+                "logs": [f"Gateway execution: {order.status.value} id={order.order_id}"],
+            }
+        else:
+            log_msg = f"Gateway rejected trade: {gateway_result.reason}"
+            logger.warning("Gateway execution rejected for %s: %s", decision.symbol, gateway_result.reason)
+            # Fall through to local execution
+
+    # ── Local execution engine ───────────────────────────────────────────────
     agent = ExecutionAgent()
     order = await agent.execute(decision, risk, np.array(state["closes"]))
     return {"order": order, "logs": [f"Execution: {order.status.value} @ {order.avg_fill_price:.4f}"]}

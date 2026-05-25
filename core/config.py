@@ -47,7 +47,7 @@ class Settings(BaseSettings):
 
     # ── PostgreSQL ────────────────────────────────────────────────────────────
     pg_dsn: str = Field(
-        "postgresql+asyncpg://trader:secret@postgres:5432/tradingdb",
+        "postgresql+asyncpg://trader:changeme@postgres:5432/tradingdb",
         alias="PG_DSN",
     )
 
@@ -82,6 +82,21 @@ class Settings(BaseSettings):
 
     # ── Triton Inference Server ───────────────────────────────────────────────
     triton_url: str = Field("triton:8001", alias="TRITON_URL")
+
+    # ── Sentinel-X integration ─────────────────────────────────────────────────
+    sentinelx_risk_addr: str = Field(
+        "", alias="SENTINELX_RISK_ADDR"
+    )
+    """gRPC address of the Rust Risk Engine, e.g. "sentinel-rust:50051".
+    Leave empty to use the pure-Python risk engine."""
+
+    sentinelx_gateway_url: str = Field(
+        "", alias="SENTINELX_GATEWAY_URL"
+    )
+    """HTTP base URL of the Go Gateway, e.g. "http://sentinel-go:8080".
+    Leave empty to use the local execution engine."""
+
+    sentinelx_timeout_s: float = Field(8.0, alias="SENTINELX_TIMEOUT_S")
 
     # ── Council consensus ─────────────────────────────────────────────────────
     min_consensus_score: float = Field(0.65, alias="MIN_CONSENSUS_SCORE")

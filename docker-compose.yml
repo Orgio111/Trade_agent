@@ -1,5 +1,3 @@
-version: "3.9"
-
 # ─── Networks ─────────────────────────────────────────────────────────────────
 networks:
   trading_net:
@@ -12,6 +10,7 @@ volumes:
   prometheus_data:
   grafana_data:
   model_data:
+  uds_vol:          # Shared Unix Domain Sockets (Rust <-> Go)
 
 # ─── Services ────────────────────────────────────────────────────────────────
 services:
@@ -24,6 +23,7 @@ services:
     container_name: trade_agent_bot
     restart: unless-stopped
     networks: [trading_net]
+    profiles: [gpu]
     depends_on:
       redis:
         condition: service_healthy
@@ -57,7 +57,7 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "6379:6379"
+      - "6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -78,12 +78,62 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./db/migrations/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - "5432:5432"
+      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U trader -d tradingdb"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # ── Sentinel-X: Rust Risk Engine ────────────────────────────────────────────
+  sentinel-rust:
+    build:
+      context: ./sentinel-x
+      dockerfile: infra/docker/Dockerfile.rust
+    container_name: sentinel_risk
+    restart: unless-stopped
+    networks: [trading_net]
+    environment:
+      - RISK_UDS_PATH=/tmp/sentinel-risk.sock
+      - RISK_TCP_ADDR=0.0.0.0:50051
+      - INITIAL_EQUITY=100000
+      - KILL_SWITCH_THRESHOLD=0.05
+      - RUST_LOG=info
+    volumes:
+      - uds_vol:/tmp
+    ports:
+      - "50051:50051"   # gRPC (Python bridge)
+      - "9091:9091"     # Prometheus metrics
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 2G
+
+  # ── Sentinel-X: Go API Gateway + OMS ────────────────────────────────────────
+  sentinel-go:
+    build:
+      context: ./sentinel-x
+      dockerfile: infra/docker/Dockerfile.go
+    container_name: sentinel_gateway
+    restart: unless-stopped
+    networks: [trading_net]
+    depends_on:
+      sentinel-rust:
+        condition: service_started
+    environment:
+      - GATEWAY_ADDR=:8080
+      - RISK_UDS_PATH=/tmp/sentinel-risk.sock
+      - AGENT_UDS_PATH=/tmp/sentinel-agent.sock
+    volumes:
+      - uds_vol:/tmp
+    ports:
+      - "8080:8080"   # HTTP trade API
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
 
   # ── NVIDIA Triton Inference Server ────────────────────────────────────────────
   triton:
@@ -91,6 +141,7 @@ services:
     container_name: trade_triton
     restart: unless-stopped
     networks: [trading_net]
+    profiles: [gpu]
     command: tritonserver --model-repository=/models --http-port=8080 --grpc-port=8001 --metrics-port=8002
     volumes:
       - model_data:/models
@@ -127,7 +178,7 @@ services:
       - --storage.tsdb.retention.time=30d
       - --web.enable-lifecycle
     ports:
-      - "9090:9090"
+      - "19090:9090"
 
   # ── Grafana ───────────────────────────────────────────────────────────────────
   grafana:
@@ -144,7 +195,7 @@ services:
       - grafana_data:/var/lib/grafana
       - ./infra/grafana/dashboards:/var/lib/grafana/dashboards
     ports:
-      - "3000:3000"
+      - "13000:3000"
 
   # ── Redis Exporter (for Prometheus) ───────────────────────────────────────────
   redis-exporter:
@@ -154,7 +205,7 @@ services:
     environment:
       - REDIS_ADDR=redis://redis:6379
     ports:
-      - "9121:9121"
+      - "19121:9121"
 
   # ── Postgres Exporter ──────────────────────────────────────────────────────────
   postgres-exporter:
@@ -164,7 +215,7 @@ services:
     environment:
       - DATA_SOURCE_NAME=postgresql://trader:secret@postgres:5432/tradingdb?sslmode=disable
     ports:
-      - "9187:9187"
+      - "19187:9187"
 
   # ── Node Exporter ─────────────────────────────────────────────────────────────
   node-exporter:
@@ -181,4 +232,4 @@ services:
       - --path.sysfs=/host/sys
       - --collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)
     ports:
-      - "9100:9100"
+      - "19100:9100"

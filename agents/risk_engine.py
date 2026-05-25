@@ -1,6 +1,8 @@
 """
 Risk Engine: Value at Risk (Historical Simulation), CVaR, Fractional Kelly
 Criterion, ATR-based stop-loss, and position sizing.
+
+Optionally delegates to the Rust Risk Engine (sentinel-x) when configured.
 """
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ from core.config import get_settings
 from core.messaging import MsgType, get_bus
 from core.models import CouncilDecision, RiskReport, Side
 from core.observability import AGENT_LATENCY, VAR_GAUGE
+from core.sentinelx_bridge import validate_trade as rust_validate
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +65,12 @@ def fractional_kelly(
 
 
 class RiskEngine:
-    """Gatekeeper: approves/rejects trades and sizes positions."""
+    """Gatekeeper: approves/rejects trades and sizes positions.
+
+    When ``sentinelx_risk_addr`` is configured, delegates VaR / Kelly / stop
+    calculations to the Rust Risk Engine (sentinel-x).  Falls back to the
+    pure-Python implementation on gRPC failure so the system is never blocked.
+    """
 
     async def evaluate(
         self,
@@ -76,47 +84,67 @@ class RiskEngine:
     ) -> RiskReport:
         cfg = get_settings()
 
+        # ── Try Rust engine first ────────────────────────────────────────────
+        atr = decision.technical.atr_14 if decision.technical else current_price * 0.02
+        rust_result = await rust_validate(
+            decision, historical_returns, current_price, portfolio_equity, atr,
+        )
+
         with AGENT_LATENCY.labels(agent="risk").time():
-            var_95, _ = historical_var(historical_returns, 0.95)
-            var_99, cvar_99 = historical_var(historical_returns, cfg.var_confidence)
-            parametric_99 = parametric_var(historical_returns, cfg.var_confidence)
-
-            # Blend historical and parametric VaR (conservative: take max)
-            var_99 = max(var_99, parametric_99)
-
-            kelly_raw = fractional_kelly(win_rate, avg_win_pct, avg_loss_pct, 1.0)
-            kelly_frac = fractional_kelly(
-                win_rate, avg_win_pct, avg_loss_pct, cfg.kelly_fraction
-            )
-
-            # Position size: min of Kelly and hard cap
-            size_pct = min(kelly_frac, cfg.max_position_pct)
-            position_size_usd = portfolio_equity * size_pct
-            position_size_units = position_size_usd / current_price if current_price > 0 else 0
-
-            # ATR-based stop / take-profit
-            atr = decision.technical.atr_14 if decision.technical else current_price * 0.02
-            stop_multiplier = cfg.atr_stop_multiplier
-            if decision.final_side == Side.BUY:
-                stop_loss_price = current_price - stop_multiplier * atr
-                take_profit_price = current_price + stop_multiplier * 1.5 * atr
+            if rust_result is not None:
+                # Rust engine succeeded — use its results
+                approved = rust_result.approved
+                rejection_reason = rust_result.rejection_reason
+                var_95 = rust_result.var_95
+                var_99 = rust_result.var_99
+                cvar_99 = rust_result.cvar_99
+                kelly_raw = rust_result.kelly_raw
+                kelly_frac = rust_result.kelly_fractional
+                position_size_usd = rust_result.position_size_usd
+                position_size_units = rust_result.position_size_units
+                stop_loss_price = rust_result.stop_loss_price
+                take_profit_price = rust_result.take_profit_price
             else:
-                stop_loss_price = current_price + stop_multiplier * atr
-                take_profit_price = current_price - stop_multiplier * 1.5 * atr
+                # ── Pure-Python fallback ────────────────────────────────────────
+                var_95, _ = historical_var(historical_returns, 0.95)
+                var_99, cvar_99 = historical_var(historical_returns, cfg.var_confidence)
+                parametric_99 = parametric_var(historical_returns, cfg.var_confidence)
 
-            # Approval logic
-            rejection_reason: str | None = None
-            if decision.consensus_score < cfg.min_consensus_score:
-                rejection_reason = (
-                    f"Low consensus score {decision.consensus_score:.2f} "
-                    f"< threshold {cfg.min_consensus_score:.2f}"
+                # Blend historical and parametric VaR (conservative: take max)
+                var_99 = max(var_99, parametric_99)
+
+                kelly_raw = fractional_kelly(win_rate, avg_win_pct, avg_loss_pct, 1.0)
+                kelly_frac = fractional_kelly(
+                    win_rate, avg_win_pct, avg_loss_pct, cfg.kelly_fraction
                 )
-            elif var_99 > 0.15:
-                rejection_reason = f"VaR99 too high: {var_99:.1%}"
-            elif position_size_usd < 1.0:
-                rejection_reason = "Kelly sizing too small — insufficient edge"
 
-            approved = rejection_reason is None
+                # Position size: min of Kelly and hard cap
+                size_pct = min(kelly_frac, cfg.max_position_pct)
+                position_size_usd = portfolio_equity * size_pct
+                position_size_units = position_size_usd / current_price if current_price > 0 else 0
+
+                # ATR-based stop / take-profit
+                stop_multiplier = cfg.atr_stop_multiplier
+                if decision.final_side == Side.BUY:
+                    stop_loss_price = current_price - stop_multiplier * atr
+                    take_profit_price = current_price + stop_multiplier * 1.5 * atr
+                else:
+                    stop_loss_price = current_price + stop_multiplier * atr
+                    take_profit_price = current_price - stop_multiplier * 1.5 * atr
+
+                # Approval logic
+                rejection_reason: str | None = None
+                if decision.consensus_score < cfg.min_consensus_score:
+                    rejection_reason = (
+                        f"Low consensus score {decision.consensus_score:.2f} "
+                        f"< threshold {cfg.min_consensus_score:.2f}"
+                    )
+                elif var_99 > 0.15:
+                    rejection_reason = f"VaR99 too high: {var_99:.1%}"
+                elif position_size_usd < 1.0:
+                    rejection_reason = "Kelly sizing too small — insufficient edge"
+
+                approved = rejection_reason is None
 
         report = RiskReport(
             symbol=decision.symbol,
