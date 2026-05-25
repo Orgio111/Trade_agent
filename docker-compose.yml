@@ -93,6 +93,7 @@ services:
     container_name: sentinel_risk
     restart: unless-stopped
     networks: [trading_net]
+    profiles: [sentinelx]
     environment:
       - RISK_UDS_PATH=/tmp/sentinel-risk.sock
       - RISK_TCP_ADDR=0.0.0.0:50051
@@ -118,6 +119,7 @@ services:
     container_name: sentinel_gateway
     restart: unless-stopped
     networks: [trading_net]
+    profiles: [sentinelx]
     depends_on:
       sentinel-rust:
         condition: service_started
@@ -216,6 +218,25 @@ services:
       - DATA_SOURCE_NAME=postgresql://trader:secret@postgres:5432/tradingdb?sslmode=disable
     ports:
       - "19187:9187"
+
+  # ── Web Dashboard ────────────────────────────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trade_dashboard
+    restart: unless-stopped
+    networks: [trading_net]
+    depends_on:
+      - prometheus
+    env_file: .env
+    environment:
+      - PROMETHEUS_PORT=8000
+      - DASHBOARD_PORT=3000
+    ports:
+      - "3000:3000"   # Dashboard web UI
+    command: ["python", "-m", "uvicorn", "web.server:app", "--host", "0.0.0.0", "--port", "3000"]
+    profiles: [web]
 
   # ── Node Exporter ─────────────────────────────────────────────────────────────
   node-exporter:

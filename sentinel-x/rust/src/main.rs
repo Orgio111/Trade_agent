@@ -52,14 +52,18 @@ async fn main() -> Result<()> {
 }
 
 /// Spawn a minimal HTTP server for Prometheus metrics scraping.
+/// Binds to the port specified by RISK_METRICS_ADDR (default :9180).
 fn start_metrics_server() {
-    tokio::spawn(async {
+    let metrics_addr = std::env::var("RISK_METRICS_ADDR")
+        .unwrap_or_else(|_| "0.0.0.0:9180".into());
+    let metrics_addr_clone = metrics_addr.clone();
+    tokio::spawn(async move {
         let registry = prometheus::default_registry();
         let encoder = TextEncoder::new();
-        let metrics_listener = tokio::net::TcpListener::bind("0.0.0.0:9091")
+        let metrics_listener = tokio::net::TcpListener::bind(&metrics_addr_clone)
             .await
-            .unwrap();
-        info!("Risk engine metrics on :9091/metrics");
+            .expect(&format!("Failed to bind metrics on {}", metrics_addr_clone));
+        info!("Risk engine metrics on {}/metrics", metrics_addr_clone);
         loop {
             if let Ok((mut stream, _)) = metrics_listener.accept().await {
                 let mut buffer = vec![];

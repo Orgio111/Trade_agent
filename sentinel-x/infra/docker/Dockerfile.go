@@ -1,22 +1,23 @@
-FROM golang:1.22-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 # ── Build deps ────────────────────────────────────────────────────────────────
 RUN apk add --no-cache git protoc protobuf-dev
 
 WORKDIR /build
 
-# ── Proto stubs ───────────────────────────────────────────────────────────────
+# ── Proto stubs + compile (single layer to handle missing go.sum) ────────────
 COPY proto/ /proto/
 COPY go/ .
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && \
-    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest && \
-    protoc -I/proto \
-        --go_out=pkg/proto \
-        --go-grpc_out=pkg/proto \
-        /proto/risk.proto /proto/orders.proto /proto/agents.proto
-
-# ── Compile ───────────────────────────────────────────────────────────────────
-RUN go mod download && \
+RUN mkdir -p pkg/proto && \
+    go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.35 && \
+    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5 && \
+    PATH="$PATH:$(go env GOPATH)/bin" protoc -I/proto \
+        --go_opt=module=github.com/sentinelx/go \
+        --go-grpc_opt=module=github.com/sentinelx/go \
+        --go_out=. \
+        --go-grpc_out=. \
+        /proto/risk.proto /proto/orders.proto /proto/agents.proto && \
+    go mod tidy && \
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -ldflags="-s -w" -o /sentinel-gateway ./cmd/sentinel/...
 

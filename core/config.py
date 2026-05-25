@@ -31,8 +31,8 @@ class Settings(BaseSettings):
     exchange: Literal["binance", "coinbase", "kraken"] = Field(
         "binance", alias="EXCHANGE"
     )
-    symbols: list[str] = Field(
-        default=["BTC/USDT", "ETH/USDT"], alias="SYMBOLS"
+    symbols_raw: str = Field(
+        default='BTC/USDT,ETH/USDT', alias="SYMBOLS"
     )
     ws_reconnect_delay: float = Field(2.0, alias="WS_RECONNECT_DELAY")
 
@@ -102,12 +102,19 @@ class Settings(BaseSettings):
     min_consensus_score: float = Field(0.65, alias="MIN_CONSENSUS_SCORE")
     council_timeout_s: float = Field(30.0, alias="COUNCIL_TIMEOUT_S")
 
-    @field_validator("symbols", mode="before")
-    @classmethod
-    def parse_symbols(cls, v: str | list) -> list[str]:
-        if isinstance(v, str):
-            return [s.strip() for s in v.split(",")]
-        return v
+    @property
+    def symbols(self) -> list[str]:
+        """Parse symbols_raw into a list, supporting both JSON and comma-separated formats."""
+        raw = self.symbols_raw.strip()
+        if not raw:
+            return []
+        if raw.startswith("[") and raw.endswith("]"):
+            import json
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                pass
+        return [s.strip().strip('"').strip("'") for s in raw.split(",") if s.strip()]
 
 
 @lru_cache(maxsize=1)

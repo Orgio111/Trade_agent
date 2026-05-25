@@ -1,5 +1,6 @@
 """
-Entry point — boots uvloop, starts the market data feed and supervisor loop.
+Entry point — boots uvloop, starts the market data feed, supervisor loop,
+and the web monitoring dashboard.
 """
 from __future__ import annotations
 
@@ -7,8 +8,14 @@ import asyncio
 import logging
 import signal
 import sys
+import threading
 
-import uvloop
+try:
+    import uvloop  # type: ignore[import]
+    _HAVE_UVLOOP = True
+except ImportError:
+    _HAVE_UVLOOP = False
+
 from prometheus_client import start_http_server
 
 from agents.supervisor import PortfolioSupervisor
@@ -47,12 +54,39 @@ async def _run_supervisor_loop(
         await asyncio.sleep(60)  # 1-minute cadence
 
 
+# ── Web dashboard server thread ──────────────────────────────────────────────
+_dashboard_thread: threading.Thread | None = None
+
+
+def _start_dashboard() -> None:
+    """Start the FastAPI dashboard server in a daemon thread."""
+    try:
+        import uvicorn  # type: ignore[import]
+        logger.info("Starting web dashboard on http://0.0.0.0:3000")
+        uvicorn.run(
+            "web.server:app",
+            host="0.0.0.0",
+            port=3000,
+            log_level="info",
+            reload=False,
+        )
+    except ImportError:
+        logger.warning("uvicorn not installed — dashboard disabled. pip install uvicorn fastapi")
+    except Exception as exc:
+        logger.error("Dashboard server error: %s", exc)
+
+
 async def main() -> None:
     cfg = get_settings()
 
     # Start Prometheus metrics server
     start_http_server(cfg.prometheus_port)
     logger.info("Prometheus metrics on :%d/metrics", cfg.prometheus_port)
+
+    # Start web dashboard in a daemon thread
+    global _dashboard_thread
+    _dashboard_thread = threading.Thread(target=_start_dashboard, daemon=True)
+    _dashboard_thread.start()
 
     feed = MarketDataFeed()
     supervisor = PortfolioSupervisor(initial_equity=cfg.initial_capital)
@@ -81,5 +115,8 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    uvloop.install()
+    if _HAVE_UVLOOP:
+        uvloop.install()  # type: ignore[union-attr]
+    else:
+        logger.info("uvloop not available — using asyncio default event loop")
     asyncio.run(main())

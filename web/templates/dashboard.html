@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Trade Agent Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <!-- Background effects -->
+  <div class="bg-grid"></div>
+  <div class="bg-glow"></div>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <rect x="2" y="2" width="24" height="24" rx="6" stroke="currentColor" stroke-width="2"/>
+          <path d="M8 18L12 10L16 14L20 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h1>Trade Agent</h1>
+      </div>
+      <span class="badge badge-live">● Live</span>
+    </div>
+    <div class="header-right">
+      <div class="time-display" id="timeDisplay">--:--:--</div>
+      <div class="header-metrics">
+        <div class="stat-mini">
+          <span class="stat-mini-label">Exchange</span>
+          <span class="stat-mini-value" id="exchangeName">--</span>
+        </div>
+        <div class="stat-mini">
+          <span class="stat-mini-label">Paper Mode</span>
+          <span class="stat-mini-value badge badge-warn" id="paperMode">--</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main dashboard grid -->
+  <main class="dashboard">
+    <!-- Row 1: Portfolio overview -->
+    <section class="card portfolio-summary" id="portfolioCard">
+      <h2 class="card-title">Portfolio</h2>
+      <div class="portfolio-grid">
+        <div class="metric">
+          <span class="metric-label">Equity</span>
+          <span class="metric-value" id="equity">$0.00</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Cash</span>
+          <span class="metric-value" id="cash">$0.00</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Daily PnL</span>
+          <span class="metric-value" id="pnl">$0.00</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Drawdown</span>
+          <span class="metric-value" id="drawdown">0.00%</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Peak Equity</span>
+          <span class="metric-value" id="peakEquity">$0.00</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Kill Switch</span>
+          <span class="metric-value" id="killSwitch">● Off</span>
+        </div>
+      </div>
+      <!-- Mini sparkline -->
+      <div class="sparkline-container">
+        <canvas id="equityChart" height="80"></canvas>
+      </div>
+    </section>
+
+    <!-- Row 1: Market prices -->
+    <section class="card market-prices" id="marketCard">
+      <h2 class="card-title">Market Prices</h2>
+      <div class="prices-list" id="pricesList">
+        <div class="price-item placeholder">Loading symbols...</div>
+      </div>
+    </section>
+
+    <!-- Row 2: Agent status -->
+    <section class="card agent-status">
+      <h2 class="card-title">Agent Signals</h2>
+      <div class="agent-grid" id="agentGrid">
+        <div class="agent-card loading">Loading...</div>
+      </div>
+    </section>
+
+    <!-- Row 2: Risk metrics -->
+    <section class="card risk-metrics">
+      <h2 class="card-title">Risk Metrics</h2>
+      <div class="risk-grid" id="riskGrid">
+        <div class="risk-placeholder">No risk data yet</div>
+      </div>
+      <div class="risk-bars" id="riskBars"></div>
+    </section>
+
+    <!-- Row 3: Trade log -->
+    <section class="card trade-log">
+      <h2 class="card-title">
+        Trade Log
+        <span class="badge badge-count" id="orderCount">0</span>
+      </h2>
+      <div class="trade-table-wrapper">
+        <table class="trade-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Symbol</th>
+              <th>Side</th>
+              <th>Qty</th>
+              <th>Price</th>
+              <th>Type</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="tradeLogBody">
+            <tr><td colspan="7" class="empty-row">No trades yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Row 3: Config -->
+    <section class="card config-panel">
+      <h2 class="card-title">Configuration</h2>
+      <div class="config-grid" id="configGrid">
+        <div class="config-loading">Loading config...</div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <span>Trade Agent v0.1.0</span>
+    <span id="connectionStatus">● Connected</span>
+    <span id="lastUpdated">--</span>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
