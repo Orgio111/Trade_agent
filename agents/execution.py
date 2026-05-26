@@ -69,13 +69,20 @@ class ExecutionAgent:
     1. Ray Serve remote client (if ``RAY_SERVE_URL`` is configured)
     2. Local SB3 PPO model file
     3. Heuristic TWAP/Market fallback
+
+    When *paper_account* is supplied and ``PAPER_TRADING=True``, orders are
+    routed through :class:`PaperExecutionEngine` which simulates fills and
+    updates the account's P&L, positions, and equity curve.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, paper_account: Any = None) -> None:
         self._ppo: PPOPolicy | None = None
         self._serve_client: RayServePPOClient | None = None
+        self._paper_engine: Any = None
+        self._paper_account: Any = paper_account
         self._load_ppo()
         self._init_serve_client()
+        self._init_paper_engine()
 
     def _load_ppo(self) -> None:
         cfg = get_settings()
@@ -86,6 +93,14 @@ class ExecutionAgent:
                 logger.info("PPO execution model loaded from %s", cfg.ppo_model_path)
             except Exception as exc:
                 logger.warning("Failed to load PPO model: %s — using TWAP fallback", exc)
+
+    def _init_serve_client(self) -> None:
+        """Initialise Ray Serve client if ``RAY_SERVE_URL`` is configured.
+
+        The background auto-reload loop is started lazily on the first
+        ``predict`` call to avoid ``asyncio.ensure_future`` in a synchronous
+        constructor (which would fail if no event loop is running).
+        """
 
     def _init_serve_client(self) -> None:
         """Initialise Ray Serve client if ``RAY_SERVE_URL`` is configured.
@@ -105,7 +120,7 @@ class ExecutionAgent:
                 auto_reload_interval_s=cfg.ray_serve_auto_reload_s,
                 fallback_model_path=cfg.ppo_model_path,
             )
-            # Auto-reload loop is started lazily in _predict_via_serve()
+            # Auto-reload loop is started lazily on first predict
             self._serve_client_started = False
             logger.info(
                 "Ray Serve PPO client initialised — url=%s  reload=%ds",
@@ -113,6 +128,30 @@ class ExecutionAgent:
             )
         except Exception as exc:
             logger.warning("Failed to init Ray Serve client: %s", exc)
+
+    def _init_paper_engine(self) -> None:
+        """Create PaperExecutionEngine if paper_account is provided."""
+        cfg = get_settings()
+        if not cfg.paper_trading or self._paper_account is None:
+            return
+        try:
+            from agents.paper_execution import PaperExecutionEngine
+            self._paper_engine = PaperExecutionEngine(
+                self._paper_account,
+                fill_model="twap",
+                slippage_model="fixed",
+                slippage_bps=cfg.max_slippage_bps,
+                latency_ms=50.0,
+                default_slices=3,
+                slice_delay_s=0.05,
+            )
+            logger.info(
+                "Paper execution engine initialised — fill=%s slippage=%s",
+                self._paper_engine.fill_model,
+                self._paper_engine.slippage_model,
+            )
+        except Exception as exc:
+            logger.warning("Failed to init paper engine: %s", exc)
 
     async def execute(
         self,
@@ -205,18 +244,26 @@ class ExecutionAgent:
         return OrderType.MARKET, 1
 
     async def _paper_fill(self, order: Order, prices: np.ndarray, slices: int) -> Order:
+        """Fill an order using the PaperExecutionEngine.
+
+        Falls back to the simpler noise-based simulation if the engine is not
+        initialised (e.g. no PaperAccount was provided).
+        """
+        if self._paper_engine is not None:
+            return await self._paper_engine.execute(order, prices, slices)
+
+        # Legacy fallback: simple noise-based fill
         cfg = get_settings()
         mid_price = float(prices[-1]) if len(prices) > 0 else 1.0
 
-        # Simulate TWAP slicing
         fill_prices = []
         for i in range(slices):
-            noise = mid_price * np.random.normal(0, 0.0002)
+            noise = mid_price * float(np.random.normal(0, 0.0002))
             spread = mid_price * (cfg.max_slippage_bps / 10000) * 0.5
             fill = mid_price + noise + (spread if order.side == Side.BUY else -spread)
             fill_prices.append(max(fill, 0.01))
             if slices > 1:
-                await asyncio.sleep(0.05)  # simulate time between slices
+                await asyncio.sleep(0.05)
 
         avg_fill = float(np.mean(fill_prices))
         slippage_bps = abs(avg_fill - mid_price) / mid_price * 10_000

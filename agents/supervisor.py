@@ -21,28 +21,14 @@ from agents.execution import ExecutionAgent
 from agents.features import FeatureExtractor, get_feature_extractor
 from agents.fundamental import FundamentalAgent
 from agents.memory_agent import MemoryAgent
+from agents.paper_account import PaperAccount
+from agents.quant_sentinel import QuantSentinelAgent
 from agents.risk_engine import RiskEngine
 from agents.sentiment import SentimentAgent
 from agents.technical import TechnicalAgent
 
-
-from core.sentinelx_gateway import submit_trade as gateway_submit_trade
-
-
-# ── Trade lifecycle: open position tracking ───────────────────────────────────
-@dataclass
-class OpenPosition:
-    """Track an open position for close-detection in run_cycle()."""
-    order_id: str
-    session_id: str
-    side: Side
-    entry_price: float
-    quantity: float
-    opened_at: datetime = field(default_factory=datetime.utcnow)
 from core.config import get_settings
 from core.kill_switch import KillSwitch
-from memory.pipeline import SemanticMemoryPipeline, get_memory_pipeline
-from memory.models import RetrievalPurpose
 from core.models import (
     CouncilDecision,
     FeatureSignal,
@@ -58,12 +44,37 @@ from core.observability import (
     PNL_GAUGE,
     DRAWDOWN_GAUGE,
 )
+from core.scheduler import TaskType, get_circuit_breaker_state, route
+from core.sentinelx_bridge import (
+    get_kill_switch_status as rust_kill_switch_status,
+    get_portfolio_heat as rust_portfolio_heat,
+    subscribe_kill_switch as rust_subscribe_kill_switch,
+)
+from core.sentinelx_gateway import submit_trade as gateway_submit_trade
+from memory.pipeline import SemanticMemoryPipeline, get_memory_pipeline
+from memory.models import RetrievalPurpose
+
+
+# ── Trade lifecycle: open position tracking ───────────────────────────────────
+@dataclass
+class OpenPosition:
+    """Track an open position for close-detection in run_cycle()."""
+    order_id: str
+    session_id: str
+    side: Side
+    entry_price: float
+    quantity: float
+    opened_at: datetime = field(default_factory=datetime.utcnow)
 
 logger = logging.getLogger(__name__)
 
 # ── Global MLOps references (set by supervisor on init) ──────────────────────
 _mlops_pipeline: Any | None = None
 _mlops_scheduler: Any | None = None
+
+# ── Rust kill switch subscription task ────────────────────────────────────────
+_rust_ks_task: asyncio.Task | None = None
+_rust_ks_active: bool = False
 
 
 # ── LangGraph state schema ─────────────────────────────────────────────────────
@@ -145,8 +156,15 @@ async def node_council(state: TradingState) -> dict:
     agent = CouncilAgent()
     # Retrieve memory context for this market state
     memory_ctx = await _get_memory_context(state)
+    # Pass OHLC data so council can run QuantSentinel analysis
+    closes_arr = np.array(state["closes"]) if state.get("closes") else None
+    highs_arr = np.array(state["highs"]) if state.get("highs") else None
+    lows_arr = np.array(state["lows"]) if state.get("lows") else None
     decision = await agent.deliberate(
         state["symbol"],
+        closes=closes_arr,
+        highs=highs_arr,
+        lows=lows_arr,
         technical=state.get("technical_signal"),
         features=state.get("feature_signal"),
         memory_context=memory_ctx,
@@ -225,7 +243,7 @@ async def node_supervisor_decision(state: TradingState) -> dict:
         [{"role": "user", "content": prompt}], temperature=0.2, max_tokens=200
     )
     decision.rationale = rationale
-    return {"council_decision": decision, "logs": [f"Supervisor rationale: {rationale[:80]}..."]}
+    return {"council_decision": decision, "logs": [f"Supervisor rationale: {rationale[:80]}..."],}    
 
 
 async def node_execute(state: TradingState) -> dict:
@@ -270,7 +288,7 @@ async def node_execute(state: TradingState) -> dict:
             # Fall through to local execution
 
     # ── Local execution engine ───────────────────────────────────────────────
-    agent = ExecutionAgent()
+    agent = _execution_agent or ExecutionAgent()
     order = await agent.execute(decision, risk, np.array(state["closes"]))
 
     # ── Store trade state in TurboVec memory ───────────────────────────────────
@@ -287,6 +305,10 @@ async def node_execute(state: TradingState) -> dict:
             logger.debug("Failed to store market state memory: %s", exc)
 
     return {"order": order, "logs": [f"Execution: {order.status.value} @ {order.avg_fill_price:.4f}"]}
+
+
+# ── Global execution agent reference (set on init) ─────────────────────────
+_execution_agent: ExecutionAgent | None = None
 
 
 def should_abort(state: TradingState) -> str:
@@ -334,9 +356,19 @@ def build_trading_graph() -> Any:
 
 # ── Supervisor orchestrator class ──────────────────────────────────────────────
 class PortfolioSupervisor:
-    """Top-level orchestrator. Feeds market data into the LangGraph pipeline."""
+    """Top-level orchestrator. Feeds market data into the LangGraph pipeline.
 
-    def __init__(self, initial_equity: float) -> None:
+    Parameters
+    ----------
+    initial_equity:
+        Starting capital for the live portfolio.
+    paper_account:
+        Optional :class:`PaperAccount` for paper trading. When provided, it is
+        passed to the :class:`ExecutionAgent` and its snapshot is pushed to the
+        dashboard for paper-mode visibility.
+    """
+
+    def __init__(self, initial_equity: float, paper_account: PaperAccount | None = None) -> None:
         global _memory_pipeline
         cfg = get_settings()
         self._graph = build_trading_graph()
@@ -349,6 +381,9 @@ class PortfolioSupervisor:
         self._memory = MemoryAgent()
         self._open_positions: dict[str, OpenPosition] = {}
 
+        # Paper trading account
+        self._paper_account = paper_account
+
         # Initialize TurboVec semantic memory pipeline
         if cfg.memory_enabled:
             _memory_pipeline = get_memory_pipeline()
@@ -360,6 +395,11 @@ class PortfolioSupervisor:
             logger.info("FeatureExtractor initialized")
         else:
             self._feature_extractor = None
+
+        # Pass paper account to the execution agent
+        global _execution_agent
+        self._execution_agent = ExecutionAgent(paper_account=paper_account)
+        _execution_agent = self._execution_agent
 
         # Initialize MLOps pipeline (lazy — started in self.start())
         self._mlops_drift: Any = None
@@ -396,7 +436,54 @@ class PortfolioSupervisor:
                 await self._mlops_scheduler.start()
             except Exception as exc:
                 logger.warning("MLOps scheduler start failed (continuing): %s", exc)
+
+        # ── Subscribe to Rust kill switch events ───────────────────────────
+        global _rust_ks_task, _rust_ks_active
+        try:
+            stream = await rust_subscribe_kill_switch("python-supervisor")
+            if stream is not None:
+                async def _ks_listener():
+                    global _rust_ks_active
+                    try:
+                        async for event in stream:
+                            if event.active:
+                                _rust_ks_active = True
+                                logger.critical(
+                                    "Rust kill switch TRIGGERED: %s (dd=%.1f%%)",
+                                    event.reason, event.drawdown_pct * 100,
+                                )
+                                # Also trigger Python-side kill switch
+                                if hasattr(self, '_kill_switch'):
+                                    self._kill_switch._active = True
+                    except Exception as exc:
+                        logger.warning("Rust kill switch listener ended: %s", exc)
+                        _rust_ks_active = False
+
+                _rust_ks_task = asyncio.create_task(_ks_listener())
+                logger.info("Subscribed to Rust kill switch events")
+        except Exception as exc:
+            logger.debug("Rust kill switch subscription failed: %s", exc)
+
         logger.info("PortfolioSupervisor started — equity=%.2f", self._portfolio.equity)
+
+    async def stop(self) -> None:
+        """Graceful shutdown: cancel background tasks and close connections."""
+        global _rust_ks_task
+        if _rust_ks_task is not None:
+            _rust_ks_task.cancel()
+            try:
+                await _rust_ks_task
+            except asyncio.CancelledError:
+                pass
+            _rust_ks_task = None
+            logger.info("Rust kill switch listener cancelled")
+        try:
+            from core.sentinelx_bridge import close as close_bridge
+            await close_bridge()
+            logger.debug("Sentinel-X bridge closed")
+        except Exception:
+            pass
+        logger.info("PortfolioSupervisor stopped")
 
     async def run_cycle(
         self,
@@ -484,6 +571,31 @@ class PortfolioSupervisor:
         PNL_GAUGE.labels(symbol=symbol).set(self._portfolio.daily_pnl)
         DRAWDOWN_GAUGE.set(self._portfolio.current_drawdown_pct)
 
+        # ── Query Rust portfolio heat ──────────────────────────────────────
+        rust_heat: float | None = None
+        try:
+            heat = await rust_portfolio_heat(
+                symbol=symbol,
+                current_price=closes[-1] if closes else 0.0,
+                portfolio_equity=self._portfolio.equity,
+                returns=np.diff(np.log(np.array(closes) + 1e-10)) if len(closes) > 5 else None,
+            )
+            if heat is not None:
+                rust_heat = heat
+        except Exception as exc:
+            logger.debug("Rust portfolio heat query failed: %s", exc)
+
+        # ── Push paper account snapshot to dashboard ────────────────────────
+        if self._paper_account:
+            self._paper_account.mark_to_market(symbol, closes[-1] if closes else 0.0)
+            try:
+                from web.server import get_dashboard_state
+
+                ds = get_dashboard_state()
+                await ds.update_paper_state(self._paper_account.snapshot())
+            except Exception as exc:
+                logger.debug("Dashboard paper update failed: %s", exc)
+
         # ── Push data to dashboard state ───────────────────────────────────────
         try:
             from web.server import get_dashboard_state
@@ -516,6 +628,13 @@ class PortfolioSupervisor:
                         "side": decision.final_side.value if decision else "HOLD",
                         "confidence": decision.consensus_score if decision else 0.0,
                     })
+
+            # ── Push Sentinel-X scheduler & Rust metrics ──────────────────────
+            await ds.update_sentinelx_state({
+                "circuit_breaker": get_circuit_breaker_state(),
+                "rust_ks_active": _rust_ks_active,
+                "rust_portfolio_heat": rust_heat,
+            })
         except Exception as exc:
             logger.debug("Dashboard state update failed: %s", exc)
 

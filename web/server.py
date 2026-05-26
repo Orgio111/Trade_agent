@@ -7,6 +7,7 @@ import logging
 import os
 import time
 from collections import defaultdict, deque
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
@@ -78,6 +79,18 @@ class DashboardState:
         self.council_decisions: dict[str, dict] = {}
         self.equity_history: list[dict] = []
         self.last_update: float = time.time()
+
+        # ── Sentinel-X state ───────────────────────────────────────────
+        self.sentinelx_state: dict = {
+            "circuit_breaker": "CLOSED",
+            "rust_ks_active": False,
+            "rust_portfolio_heat": None,
+        }
+        """Tracks GPU circuit breaker state, Rust kill switch, and portfolio heat."""
+
+        # ── Paper trading state ────────────────────────────────────────
+        self.paper_state: dict | None = None
+        """Cached snapshot from PaperAccount (equity, P&L, positions, etc.)."""
 
         # ── Model deployment & inference tracking ────────────────────────
         self.serve_health: dict | None = None
@@ -173,9 +186,17 @@ class DashboardState:
                 "timestamp": datetime.utcnow().isoformat(),
             })
 
+    async def update_paper_state(self, state: dict) -> None:
+        async with self._lock:
+            self.paper_state = state
+
     async def update_serve_health(self, health: dict) -> None:
         async with self._lock:
             self.serve_health = health
+
+    async def update_sentinelx_state(self, state: dict) -> None:
+        async with self._lock:
+            self.sentinelx_state.update(state)
 
     async def update_deployment_health(self, name: str, status: dict) -> None:
         async with self._lock:
@@ -227,11 +248,13 @@ class DashboardState:
                 "features": dict(self.feature_signals),
                 "council": dict(self.council_decisions),
                 "equity_history": list(self.equity_history),
+                "paper": deepcopy(self.paper_state),
                 "deployment": dict(self.model_deployment),
                 "serve_health": self.serve_health,
                 "deployment_health": dict(self.deployment_health),
                 "ppo_latency": list(self.ppo_latency_history),
                 "reload_events": list(self.reload_events),
+                "sentinelx": dict(self.sentinelx_state),
                 "logs": get_logs(50),
                 "updated_at": datetime.utcnow().isoformat(),
             }
@@ -284,6 +307,14 @@ async def api_snapshot():
 async def api_health():
     """Health check endpoint."""
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+
+
+@app.get("/api/paper-status")
+async def api_paper_status():
+    """Return the latest PaperAccount snapshot."""
+    ds = get_dashboard_state()
+    async with ds._lock:
+        return JSONResponse(ds.paper_state or {"mode": "live", "message": "Paper trading not active"})
 
 
 @app.get("/api/serve-status")

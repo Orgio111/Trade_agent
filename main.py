@@ -20,6 +20,7 @@ except ImportError:
 from prometheus_client import start_http_server
 
 from agents.features import get_feature_extractor
+from agents.paper_account import PaperAccount
 from agents.supervisor import PortfolioSupervisor
 from backtest import BacktestConfig, BacktestEngine
 from core.config import get_settings
@@ -92,8 +93,20 @@ async def main() -> None:
     _dashboard_thread = threading.Thread(target=_start_dashboard, daemon=True)
     _dashboard_thread.start()
 
+    # ── Paper trading account (enabled via --paper or PAPER_TRADING=True) ──
+    paper_account: PaperAccount | None = None
+    if cfg.paper_trading:
+        paper_account = PaperAccount(initial_capital=cfg.initial_capital)
+        logger.info(
+            "Paper trading enabled — account=%.2f  initial=%.2f",
+            paper_account.equity, paper_account.initial_capital,
+        )
+
     feed = MarketDataFeed()
-    supervisor = PortfolioSupervisor(initial_equity=cfg.initial_capital)
+    supervisor = PortfolioSupervisor(
+        initial_equity=cfg.initial_capital,
+        paper_account=paper_account,
+    )
     await supervisor.start()
 
     loop = asyncio.get_running_loop()
@@ -200,6 +213,11 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run in backtest mode (replay historical data)",
     )
+    parser.add_argument(
+        "--paper",
+        action="store_true",
+        help="Enable paper trading with position/P&L tracking (overrides PAPER_TRADING env)",
+    )
     parser.add_argument("--symbols", type=str, help="Comma-separated symbols for backtest")
     parser.add_argument("--start", type=str, help="Backtest start date (ISO)")
     parser.add_argument("--end", type=str, help="Backtest end date (ISO)")
@@ -224,6 +242,10 @@ if __name__ == "__main__":
         )
         asyncio.run(_run_backtest(args))
     else:
+        # Override PAPER_TRADING env if --paper flag is passed
+        if args.paper:
+            import os as _os
+            _os.environ["PAPER_TRADING"] = "True"
         if _HAVE_UVLOOP:
             uvloop.install()  # type: ignore[union-attr]
         else:

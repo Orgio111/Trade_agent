@@ -248,6 +248,61 @@ body {
   grid-column: 1 / -1;
 }
 
+/* ─── Paper Trading ─────────────────────────────────────────────────────── */
+.paper-trading {
+  grid-column: 1 / -1;
+}
+
+.paper-positions-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  margin-bottom: 6px;
+}
+
+.paper-positions-title {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.paper-positions {
+  max-height: 140px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.position-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+}
+
+.position-symbol {
+  font-weight: 700;
+  flex: 1;
+}
+
+.position-qty,
+.position-price,
+.position-value {
+  color: var(--text-secondary);
+  min-width: 70px;
+  text-align: right;
+}
+
 /* ─── Chart containers ───────────────────────────────────────────────────── */
 .chart-container {
   margin-top: 12px;
@@ -1230,6 +1285,76 @@ body {
 #connectionStatus.disconnected {
   color: var(--accent-red);
   animation: pulse-dot 1s ease-in-out infinite;
+}
+
+/* ─── Sentinel-X Status ─────────────────────────────────────────────────── */
+#sentinelxCard {
+  grid-column: 1 / -1;
+}
+
+.sentinelx-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.sentinelx-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.sentinelx-metric-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.sentinelx-metric-value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sentinelx-metric-value.positive { color: var(--accent-green); }
+.sentinelx-metric-value.negative { color: var(--accent-red); }
+
+.sentinelx-heat-value {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.sentinelx-heat-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-primary);
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.sentinelx-heat-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent-blue);
+  transition: width 0.5s ease;
+}
+
+.sentinelx-heat-fill.heat-mid {
+  background: var(--accent-yellow);
+}
+
+.sentinelx-heat-fill.heat-high {
+  background: var(--accent-red);
 }
 
 /* ─── Status colors ────────────────────────────────────────────────────────── */

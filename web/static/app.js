@@ -714,6 +714,177 @@
     logEl.scrollTop = logEl.scrollHeight;
   }
 
+  // ── Paper Trading ──────────────────────────────────────────────────────────
+  var paperEquityChart = null;
+
+  function updatePaperTrading(data) {
+    if (!data || data.mode !== 'paper') {
+      var paperCard = document.getElementById('paperCard');
+      if (paperCard) paperCard.style.display = 'none';
+      return;
+    }
+    var paperCard = document.getElementById('paperCard');
+    if (paperCard) paperCard.style.display = '';
+
+    var equityEl = $('paperEquity');
+    var cashEl = $('paperCash');
+    var totalPnlEl = $('paperTotalPnl');
+    var dailyPnlEl = $('paperDailyPnl');
+    var winRateEl = $('paperWinRate');
+    var sharpeEl = $('paperSharpe');
+    var drawdownEl = $('paperDrawdown');
+    var tradesEl = $('paperTrades');
+    var positionsEl = $('paperPositions');
+    var posCountEl = $('paperPositionCount');
+
+    if (equityEl) equityEl.textContent = fmtUSD(data.equity);
+    if (cashEl) cashEl.textContent = fmtUSD(data.cash);
+    if (totalPnlEl) {
+      totalPnlEl.textContent = (data.total_pnl >= 0 ? '+' : '') + fmtUSD(data.total_pnl);
+      totalPnlEl.className = 'metric-value' + (data.total_pnl >= 0 ? ' positive' : ' negative');
+    }
+    if (dailyPnlEl) {
+      dailyPnlEl.textContent = (data.daily_pnl >= 0 ? '+' : '') + fmtUSD(data.daily_pnl);
+      dailyPnlEl.className = 'metric-value' + (data.daily_pnl >= 0 ? ' positive' : ' negative');
+    }
+    if (winRateEl) winRateEl.textContent = (data.win_rate * 100).toFixed(1) + '%';
+    if (sharpeEl) sharpeEl.textContent = data.sharpe_ratio != null ? data.sharpe_ratio.toFixed(2) : '0.00';
+    if (drawdownEl) {
+      drawdownEl.textContent = data.drawdown_pct != null ? data.drawdown_pct.toFixed(2) + '%' : '0.00%';
+      drawdownEl.className = 'metric-value' + (data.drawdown_pct > 5 ? ' negative' : data.drawdown_pct > 0 ? ' status-warn' : '');
+    }
+    if (tradesEl) tradesEl.textContent = data.total_trades || 0;
+
+    // Open positions
+    if (posCountEl) posCountEl.textContent = (data.open_positions || []).length;
+    if (positionsEl) {
+      var positions = data.open_positions || [];
+      if (positions.length === 0) {
+        positionsEl.innerHTML = '<div class="placeholder">No open positions</div>';
+      } else {
+        positionsEl.innerHTML = positions.map(function(p) {
+          var sideCls = p.side || 'HOLD';
+          var value = (p.quantity * p.entry_price).toFixed(2);
+          return '<div class="position-row">' +
+            '<span class="position-symbol">' + p.symbol + '</span>' +
+            '<span class="agent-side ' + sideCls + '">' + sideCls + '</span>' +
+            '<span class="position-qty">' + fmtNum(p.quantity) + '</span>' +
+            '<span class="position-price">' + fmtUSD(p.entry_price) + '</span>' +
+            '<span class="position-value">' + fmtUSD(parseFloat(value)) + '</span>' +
+          '</div>';
+        }).join('');
+      }
+    }
+
+    // Paper equity mini-chart
+    var eqHistory = data.equity_history || [];
+    if (eqHistory.length >= 2) {
+      var canvas = $('paperEquityChart');
+      if (canvas && window.Chart) {
+        var ctx = canvas.getContext('2d');
+        var labels = eqHistory.map(function(p) { return fmtShortTime(p.t); });
+        var values = eqHistory.map(function(p) { return p.v; });
+        if (paperEquityChart) {
+          paperEquityChart.data.labels = labels;
+          paperEquityChart.data.datasets[0].data = values;
+          paperEquityChart.update('none');
+        } else {
+          paperEquityChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels: labels,
+              datasets: [{
+                label: 'Paper Equity',
+                data: values,
+                borderColor: '#eab308',
+                backgroundColor: 'rgba(234, 179, 8, 0.08)',
+                borderWidth: 2,
+                pointRadius: 0,
+                pointHitRadius: 8,
+                fill: true,
+                tension: 0.3,
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  backgroundColor: '#1c1f26',
+                  titleColor: '#eaeef2',
+                  bodyColor: '#8b95a5',
+                  borderColor: '#2a2f3a',
+                  borderWidth: 1,
+                  cornerRadius: 6,
+                  padding: 8,
+                  callbacks: {
+                    label: function(ctx) { return '$' + ctx.parsed.y.toLocaleString('en-US', { minimumFractionDigits: 2 }); }
+                  }
+                }
+              },
+              scales: {
+                x: { display: false, grid: { display: false } },
+                y: {
+                  display: true,
+                  grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
+                  ticks: {
+                    color: '#5a6474',
+                    font: { size: 9, family: 'JetBrains Mono' },
+                    callback: function(v) { return '$' + (v / 1000).toFixed(0) + 'k'; }
+                  }
+                }
+              },
+              animation: { duration: 300 },
+            }
+          });
+        }
+      }
+    }
+  }
+
+  // ── Update Sentinel-X Status ──────────────────────────────────────────────────────
+  function updateSentinelX(data) {
+    if (!data) return;
+
+    // Circuit breaker
+    var cbEl = $('circuitBreaker');
+    if (cbEl) {
+      var state = data.circuit_breaker || 'CLOSED';
+      var isOpen = state === 'OPEN';
+      cbEl.innerHTML = '<span class="serve-status-dot' + (isOpen ? ' status-error' : ' status-ok') + '"></span> ' + state;
+      cbEl.className = 'sentinelx-metric-value' + (isOpen ? ' negative' : ' positive');
+    }
+
+    // Rust kill switch
+    var ksEl = $('rustKsStatus');
+    if (ksEl) {
+      var active = data.rust_ks_active || false;
+      ksEl.innerHTML = '<span class="serve-status-dot' + (active ? ' status-error' : ' status-ok') + '"></span> ' + (active ? 'ACTIVE' : 'INACTIVE');
+      ksEl.className = 'sentinelx-metric-value' + (active ? ' negative' : ' positive');
+    }
+
+    // Portfolio heat
+    var heatEl = $('portfolioHeat');
+    var heatFill = $('heatFill');
+    if (heatEl && heatFill) {
+      var heat = data.rust_portfolio_heat;
+      if (heat != null) {
+        heatEl.innerHTML = '<span class="sentinelx-heat-value">' + heat.toFixed(4) + '</span>';
+        var pct = Math.min(heat * 100, 100);
+        heatFill.style.width = pct + '%';
+        var cls = 'sentinelx-heat-fill';
+        if (heat > 0.1) cls += ' heat-high';
+        else if (heat > 0.05) cls += ' heat-mid';
+        heatFill.className = cls;
+      } else {
+        heatEl.innerHTML = '<span class="sentinelx-heat-value">--</span>';
+        heatFill.style.width = '0%';
+        heatFill.className = 'sentinelx-heat-fill';
+      }
+    }
+  }
+
   // ── Update Config ─────────────────────────────────────────────────────────
   function updateConfig(cfg) {
     if (!cfg) return;
@@ -759,10 +930,12 @@
     updateLogs(data.logs);
     updateEquityChart(data.equity_history);
     updatePriceChart(data.prices);
+    updatePaperTrading(data.paper);
     updateDeployment(data.deployment);
     updateServeHealth(data.serve_health);
     updatePPOLatency(data.ppo_latency);
     updateReloadEvents(data.reload_events);
+    updateSentinelX(data.sentinelx);
     lastUpdated.textContent = 'Updated ' + fmtTime(data.updated_at);
   }
 

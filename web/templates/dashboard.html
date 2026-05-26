@@ -78,10 +78,65 @@
           <span class="metric-label">Kill Switch</span>
           <span class="metric-value" id="killSwitch">● OFF</span>
         </div>
-      </div>
-      <!-- Equity chart -->
+      </div>        <!-- Equity chart -->
       <div class="chart-container">
         <canvas id="equityChart"></canvas>
+      </div>
+    </section>
+
+    <!-- Row 0: Paper Trading Account -->
+    <section class="card paper-trading" id="paperCard" style="display:none;">
+      <h2 class="card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        Paper Trading Account
+        <span class="badge badge-warn" id="paperModeBadge">PAPER</span>
+      </h2>
+      <div class="portfolio-grid">
+        <div class="metric">
+          <span class="metric-label">Paper Equity</span>
+          <span class="metric-value" id="paperEquity">$0.00</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Cash</span>
+          <span class="metric-value" id="paperCash">$0.00</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Total PnL</span>
+          <span class="metric-value" id="paperTotalPnl">$0.00</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Daily PnL</span>
+          <span class="metric-value" id="paperDailyPnl">$0.00</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Win Rate</span>
+          <span class="metric-value" id="paperWinRate">0.0%</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Sharpe</span>
+          <span class="metric-value" id="paperSharpe">0.00</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Drawdown</span>
+          <span class="metric-value" id="paperDrawdown">0.00%</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Trades</span>
+          <span class="metric-value" id="paperTrades">0</span>
+        </div>
+      </div>
+      <!-- Paper positions -->
+      <div class="paper-positions-header">
+        <span class="paper-positions-title">Open Positions</span>
+        <span class="badge badge-count" id="paperPositionCount">0</span>
+      </div>
+      <div class="paper-positions" id="paperPositions">
+        <div class="placeholder">No open positions</div>
+      </div>
+      <!-- Paper equity mini-chart -->
+      <div class="chart-container chart-container-sm">
+        <div class="chart-title">Paper Equity Curve</div>
+        <canvas id="paperEquityChart"></canvas>
       </div>
     </section>
 
@@ -244,7 +299,38 @@
       </div>
     </section>
 
-    <!-- Row 6: Config -->
+    <!-- Row 6: Sentinel-X Status -->
+    <section class="card sentinelx-status" id="sentinelxCard">
+      <h2 class="card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        Sentinel-X Status
+      </h2>
+      <div class="sentinelx-grid">
+        <div class="sentinelx-metric">
+          <span class="sentinelx-metric-label">GPU Circuit Breaker</span>
+          <span class="sentinelx-metric-value" id="circuitBreaker">
+            <span class="serve-status-dot"></span> CLOSED
+          </span>
+        </div>
+        <div class="sentinelx-metric">
+          <span class="sentinelx-metric-label">Rust Kill Switch</span>
+          <span class="sentinelx-metric-value" id="rustKsStatus">
+            <span class="serve-status-dot"></span> INACTIVE
+          </span>
+        </div>
+        <div class="sentinelx-metric">
+          <span class="sentinelx-metric-label">Portfolio Heat</span>
+          <span class="sentinelx-metric-value" id="portfolioHeat">
+            <span class="sentinelx-heat-value">--</span>
+          </span>
+          <div class="sentinelx-heat-bar">
+            <div class="sentinelx-heat-fill" id="heatFill" style="width:0%"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Row 7: Config -->
     <section class="card config-panel">
       <h2 class="card-title">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>

@@ -149,12 +149,45 @@ async def validate_trade(
         return None
 
 
+async def get_portfolio_heat(
+    symbol: str = "*",
+    current_price: float = 0.0,
+    portfolio_equity: float = 100_000.0,
+    returns: np.ndarray | None = None,
+) -> float | None:
+    """Query portfolio heat score from the Rust Risk Engine.
+
+    Returns ``None`` if the bridge is unavailable. The heat score is a
+    correlation-weighted measure of concentration risk (0.0 = none, 1.0 = max).
+    """
+    stub = await _get_stub()
+    if stub is None:
+        return None
+
+    req = pb.RiskRequest(
+        session_id="health-check",
+        symbol=symbol,
+        side="NEUTRAL",
+        current_price=current_price or 100.0,
+        portfolio_equity=portfolio_equity,
+        return_series=(returns.tolist() if returns is not None else [0.0]),
+    )
+    try:
+        with AGENT_LATENCY.labels(agent="sentinelx_heat").time():
+            resp = await stub.Validate(req, timeout=5.0)
+        return resp.portfolio_heat
+    except (grpc.RpcError, Exception) as exc:
+        logger.debug("Portfolio heat query failed: %s", exc)
+        return None
+
+
 async def subscribe_kill_switch(
     subscriber_id: str = "python-main",
-) -> grpc.aio.UnaryStreamCall:
+) -> grpc.aio.UnaryStreamCall | None:
     """Subscribe to kill-switch events from the Rust engine.
 
-    Returns an async iterator of ``KillSwitchEvent`` protos.
+    Returns an async iterator of ``KillSwitchEvent`` protos, or ``None``
+    if the bridge is unavailable.
     """
     stub = await _get_stub()
     if stub is None:
