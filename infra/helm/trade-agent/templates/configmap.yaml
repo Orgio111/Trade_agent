@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "trade-agent.fullname" . }}-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "trade-agent.labels" . | nindent 4 }}
+data:
+  EXCHANGE: {{ .Values.config.exchange | quote }}
+  EXCHANGES: {{ .Values.config.exchanges | quote }}
+  SYMBOLS: {{ .Values.config.symbols | quote }}
+  WS_RECONNECT_DELAY: {{ .Values.config.wsReconnectDelay | quote }}
+
+  NIM_BASE_URL: {{ .Values.config.nimBaseUrl | quote }}
+  NIM_EMBED_MODEL: {{ .Values.config.nimEmbedModel | quote }}
+  NIM_TIMEOUT: {{ .Values.config.nimTimeout | quote }}
+
+  REDIS_URL: "redis://{{ include "trade-agent.fullname" . }}-redis:6379/0"
+
+  PG_DSN: "postgresql+asyncpg://{{ .Values.postgresql.user }}:{{ .Values.postgresql.password }}@{{ include "trade-agent.fullname" . }}-postgres:5432/{{ .Values.postgresql.database }}"
+
+  MAX_DAILY_DRAWDOWN_PCT: {{ .Values.config.maxDailyDrawdownPct | quote }}
+  KELLY_FRACTION: {{ .Values.config.kellyFraction | quote }}
+  MAX_POSITION_PCT: {{ .Values.config.maxPositionPct | quote }}
+  VAR_CONFIDENCE: {{ .Values.config.varConfidence | quote }}
+
+  FEATURES_ENABLED: {{ .Values.config.featuresEnabled | quote }}
+  FEATURE_TRADE_WINDOW_S: {{ .Values.config.featureTradeWindowS | quote }}
+  FEATURE_FUNDING_POLL_S: {{ .Values.config.featureFundingPollS | quote }}
+  FEATURE_OI_POLL_S: {{ .Values.config.featureOiPollS | quote }}
+
+  PSI_DRIFT_THRESHOLD: {{ .Values.config.psiDriftThreshold | quote }}
+  PROMETHEUS_PORT: {{ .Values.config.prometheusPort | quote }}
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
+
+  MEMORY_ENABLED: {{ .Values.config.memoryEnabled | quote }}
+  TURBOVEC_DIMENSION: {{ .Values.config.turbovecDimension | quote }}
+  TURBOVEC_MAX_RESULTS: {{ .Values.config.turbovecMaxResults | quote }}
+
+  RAY_ADDRESS: {{ .Values.config.rayAddress | quote }}

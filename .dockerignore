@@ -1,0 +1,58 @@
+# ── Version control ──────────────────────────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+
+# ── Local / dev artifacts ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ── Environment ───────────────────────────────────────────────────────────────
+.env
+.env.local
+.venv/
+venv/
+*.envrc
+
+# ── Infrastructure / deployment (not needed at runtime) ──────────────────────
+infra/
+sentinel-x/
+docker-compose.yml
+Dockerfile
+
+# ── Tests (not needed in production image) ────────────────────────────────────
+tests/
+*.test.py
+*_test.py
+
+# ── Docs ──────────────────────────────────────────────────────────────────────
+README.md
+docs/
+
+# ── OS / editor files ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.iml
+
+# ── Jupyter / notebooks ──────────────────────────────────────────────────────
+*.ipynb
+notebooks/
+
+# ── Data (local caches, test data) ───────────────────────────────────────────
+data/
+*.csv
+*.parquet
+*.feather

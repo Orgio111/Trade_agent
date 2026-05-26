@@ -107,6 +107,7 @@ class CouncilDecision(BaseModel):
     technical: TechnicalSignal | None = None
     fundamental: FundamentalSignal | None = None
     sentiment: SentimentSignal | None = None
+    features: FeatureSignal | None = None
 
 
 class RiskReport(BaseModel):
@@ -171,6 +172,35 @@ class PortfolioState(BaseModel):
     peak_equity: float = 0.0
     current_drawdown_pct: float = 0.0
     kill_switch_active: bool = False
+
+
+class FeatureSignal(BaseModel):
+    """Order-flow, funding, and open-interest derived features."""
+    symbol: str
+    timestamp: datetime
+    ofi: float | None = None
+    """Order Flow Imbalance over the current bar: (buyVol - sellVol) / (buyVol + sellVol).
+    Range [-1, 1]; positive = aggressive buying pressure."""
+    cvd: float | None = None
+    """Cumulative Volume Delta (rolling) — cumulative sum of (buy_taker_vol - sell_taker_vol)."""
+    cvd_delta: float | None = None
+    """CVD change over the last bar."""
+    funding_rate: float | None = None
+    """Latest perpetual funding rate from the primary exchange (annualized %)."""
+    funding_rate_delta: float | None = None
+    """Funding rate change vs previous value."""
+    open_interest: float | None = None
+    """Latest open interest value."""
+    open_interest_delta: float | None = None
+    """Open interest change over the last poll interval."""
+    oi_price_delta_corr: float | None = None
+    """Short-term rolling correlation between OI delta and price delta.
+    Positive → OI rising with price (trend strength).
+    Negative → OI rising while price falls (potential reversal)."""
+    trade_strength: float | None = None
+    """Normalised trade intensity over the bar — (trade_count / avg_trade_count) in [0, 2]."""
+    trend: Side = Side.HOLD
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 class AlphaFactors(BaseModel):

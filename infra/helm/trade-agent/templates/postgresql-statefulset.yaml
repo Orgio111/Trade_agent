@@ -1,0 +1,53 @@
+{{- if .Values.postgresql.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "trade-agent.fullname" . }}-postgres
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "trade-agent.labels" . | nindent 4 }}
+    component: postgres
+spec:
+  replicas: 1
+  serviceName: {{ include "trade-agent.fullname" . }}-postgres
+  selector:
+    matchLabels:
+      {{- include "trade-agent.postgresSelectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "trade-agent.postgresSelectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.postgresql.image }}
+          resources:
+            {{- toYaml .Values.postgresql.resources | nindent 12 }}
+          env:
+            - name: POSTGRES_USER
+              value: {{ .Values.postgresql.user | quote }}
+            - name: POSTGRES_PASSWORD
+              value: {{ .Values.postgresql.password | quote }}
+            - name: POSTGRES_DB
+              value: {{ .Values.postgresql.database | quote }}
+          ports:
+            - containerPort: 5432
+              name: pg
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.postgresql.user | quote }}, "-d", {{ .Values.postgresql.database | quote }}]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          volumeMounts:
+            - name: pg-data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: pg-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.postgresql.persistence.size }}
+        storageClassName: {{ .Values.postgresql.persistence.storageClass }}
+{{- end }}

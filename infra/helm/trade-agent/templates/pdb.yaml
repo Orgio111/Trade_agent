@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "trade-agent.fullname" . }}-bot-pdb
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "trade-agent.labels" . | nindent 4 }}
+    component: bot
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "trade-agent.botSelectorLabels" . | nindent 6 }}

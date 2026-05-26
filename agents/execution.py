@@ -64,11 +64,18 @@ class ExecutionAgent:
     """
     Wraps a PPO model (stable-baselines3) for optimal execution timing.
     Sends orders to the exchange via ccxt (paper or live).
+
+    Supports three tiers of PPO inference priority:
+    1. Ray Serve remote client (if ``RAY_SERVE_URL`` is configured)
+    2. Local SB3 PPO model file
+    3. Heuristic TWAP/Market fallback
     """
 
     def __init__(self) -> None:
         self._ppo: PPOPolicy | None = None
+        self._serve_client: RayServePPOClient | None = None
         self._load_ppo()
+        self._init_serve_client()
 
     def _load_ppo(self) -> None:
         cfg = get_settings()
@@ -80,6 +87,33 @@ class ExecutionAgent:
             except Exception as exc:
                 logger.warning("Failed to load PPO model: %s — using TWAP fallback", exc)
 
+    def _init_serve_client(self) -> None:
+        """Initialise Ray Serve client if ``RAY_SERVE_URL`` is configured.
+
+        The background auto-reload loop is started lazily on the first
+        ``predict`` call to avoid ``asyncio.ensure_future`` in a synchronous
+        constructor (which would fail if no event loop is running).
+        """
+        cfg = get_settings()
+        if not cfg.ray_serve_url:
+            return
+        try:
+            from agents.serving_client import RayServePPOClient
+
+            self._serve_client = RayServePPOClient(
+                serve_url=cfg.ray_serve_url,
+                auto_reload_interval_s=cfg.ray_serve_auto_reload_s,
+                fallback_model_path=cfg.ppo_model_path,
+            )
+            # Auto-reload loop is started lazily in _predict_via_serve()
+            self._serve_client_started = False
+            logger.info(
+                "Ray Serve PPO client initialised — url=%s  reload=%ds",
+                cfg.ray_serve_url, cfg.ray_serve_auto_reload_s,
+            )
+        except Exception as exc:
+            logger.warning("Failed to init Ray Serve client: %s", exc)
+
     async def execute(
         self,
         decision: CouncilDecision,
@@ -89,7 +123,7 @@ class ExecutionAgent:
         cfg = get_settings()
 
         with AGENT_LATENCY.labels(agent="execution").time():
-            order_type, slice_count = self._decide_algo(decision, risk, recent_prices)
+            order_type, slice_count = await self._decide_algo(decision, risk, recent_prices)
 
             order = Order(
                 session_id=decision.session_id,
@@ -125,11 +159,35 @@ class ExecutionAgent:
         )
         return order
 
-    def _decide_algo(
+    async def _decide_algo(
         self, decision: CouncilDecision, risk: RiskReport, prices: np.ndarray
     ) -> tuple[OrderType, int]:
+        obs = _build_obs(decision, risk, prices)
+
+        # 1. Try Ray Serve remote inference
+        if self._serve_client is not None and self._serve_client.is_remote_available:
+            try:
+                # Start auto-reload loop lazily on first use
+                if not getattr(self, '_serve_client_started', False):
+                    asyncio.ensure_future(self._serve_client.start())
+                    self._serve_client_started = True
+                pred = await self._serve_client.predict(obs)
+                logger.debug(
+                    "Ray Serve predict: action=%d source=%s version=%d (%.1fms)",
+                    pred.action, pred.source, pred.model_version, pred.latency_ms,
+                )
+                algo_map = {
+                    0: (OrderType.MARKET, 1),
+                    1: (OrderType.TWAP, 3),
+                    2: (OrderType.TWAP, 5),
+                    3: (OrderType.VWAP, 5),
+                }
+                return algo_map.get(pred.action, (OrderType.TWAP, 3))
+            except Exception as exc:
+                logger.debug("Ray Serve predict failed in decider: %s — trying local", exc)
+
+        # 2. Try local SB3 model
         if self._ppo is not None:
-            obs = _build_obs(decision, risk, prices)
             action, _ = self._ppo.predict(obs, deterministic=True)
             # Action 0→MARKET, 1→TWAP/3, 2→TWAP/5, 3→VWAP/5
             algo_map = {
@@ -140,7 +198,7 @@ class ExecutionAgent:
             }
             return algo_map.get(int(action[0] if hasattr(action, "__len__") else action), (OrderType.TWAP, 3))
 
-        # Fallback heuristic: large orders → TWAP, small → MARKET
+        # 3. Fallback heuristic: large orders → TWAP, small → MARKET
         size_usd = risk.position_size_usd
         if size_usd > 10_000:
             return OrderType.TWAP, 5

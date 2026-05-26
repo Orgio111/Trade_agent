@@ -39,6 +39,9 @@ class MemoryAgent:
     def __init__(self) -> None:
         self._pool: asyncpg.Pool | None = None
 
+    def is_connected(self) -> bool:
+        return self._pool is not None
+
     async def connect(self) -> None:
         cfg = get_settings()
         # asyncpg uses a different DSN format (no +asyncpg)
@@ -85,7 +88,9 @@ class MemoryAgent:
             """)
 
     async def record_open(self, order: Order, council_json: dict, risk_json: dict) -> None:
-        async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+        if not self._pool:
+            return
+        async with self._pool.acquire() as conn:
             await conn.execute(
                 """INSERT INTO trades
                    (order_id, session_id, symbol, side, entry_price, quantity, council_json, risk_json)
@@ -102,7 +107,9 @@ class MemoryAgent:
             )
 
     async def record_close(self, order_id: str, exit_price: float) -> TradeOutcome | None:
-        async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+        if not self._pool:
+            return None
+        async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM trades WHERE order_id=$1", order_id
             )
@@ -163,7 +170,10 @@ class MemoryAgent:
         outcome.failure_analysis = result.get("failure_analysis", "")
         outcome.updated_prompts = result.get("updated_prompts", {})
 
-        async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+        if not self._pool:
+            return
+
+        async with self._pool.acquire() as conn:
             await conn.execute(
                 """UPDATE trades SET failure_analysis=$1, updated_prompts=$2
                    WHERE order_id=$3""",
@@ -200,7 +210,9 @@ class MemoryAgent:
         )
 
     async def get_win_rate(self, symbol: str, lookback: int = 100) -> float:
-        async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+        if not self._pool:
+            return 0.55
+        async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 """SELECT AVG(win::int) as wr FROM (
                      SELECT win FROM trades WHERE symbol=$1 AND win IS NOT NULL
@@ -212,7 +224,9 @@ class MemoryAgent:
             return float(row["wr"] or 0.55)
 
     async def get_avg_pnl_stats(self, symbol: str, lookback: int = 100) -> tuple[float, float]:
-        async with self._pool.acquire() as conn:  # type: ignore[union-attr]
+        if not self._pool:
+            return 0.015, 0.010
+        async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
                 """SELECT
                      AVG(CASE WHEN win THEN pnl_pct END) as avg_win,

@@ -10,6 +10,7 @@ import logging
 import operator
 import time
 from datetime import datetime
+from dataclasses import dataclass, field
 from typing import Annotated, Any, TypedDict
 
 import numpy as np
@@ -17,16 +18,34 @@ from langgraph.graph import END, StateGraph  # type: ignore[import]
 
 from agents.council import CouncilAgent
 from agents.execution import ExecutionAgent
+from agents.features import FeatureExtractor, get_feature_extractor
 from agents.fundamental import FundamentalAgent
 from agents.memory_agent import MemoryAgent
 from agents.risk_engine import RiskEngine
 from agents.sentiment import SentimentAgent
 from agents.technical import TechnicalAgent
+
+
 from core.sentinelx_gateway import submit_trade as gateway_submit_trade
+
+
+# ── Trade lifecycle: open position tracking ───────────────────────────────────
+@dataclass
+class OpenPosition:
+    """Track an open position for close-detection in run_cycle()."""
+    order_id: str
+    session_id: str
+    side: Side
+    entry_price: float
+    quantity: float
+    opened_at: datetime = field(default_factory=datetime.utcnow)
 from core.config import get_settings
 from core.kill_switch import KillSwitch
+from memory.pipeline import SemanticMemoryPipeline, get_memory_pipeline
+from memory.models import RetrievalPurpose
 from core.models import (
     CouncilDecision,
+    FeatureSignal,
     Order,
     PortfolioState,
     RiskReport,
@@ -42,6 +61,10 @@ from core.observability import (
 
 logger = logging.getLogger(__name__)
 
+# ── Global MLOps references (set by supervisor on init) ──────────────────────
+_mlops_pipeline: Any | None = None
+_mlops_scheduler: Any | None = None
+
 
 # ── LangGraph state schema ─────────────────────────────────────────────────────
 class TradingState(TypedDict):
@@ -53,11 +76,35 @@ class TradingState(TypedDict):
     current_price: float
     portfolio: PortfolioState
     technical_signal: TechnicalSignal | None
+    feature_signal: FeatureSignal | None
     council_decision: CouncilDecision | None
     risk_report: RiskReport | None
     order: Order | None
     logs: Annotated[list[str], operator.add]
     abort: bool
+
+
+# ── Global memory pipeline reference (set by supervisor on init) ─────────────
+_memory_pipeline: SemanticMemoryPipeline | None = None
+
+
+async def _get_memory_context(state: TradingState) -> str:
+    """Retrieve TurboVec memory context for the current market state."""
+    pipe = _memory_pipeline
+    if not pipe:
+        return ""
+    try:
+        ctx = await pipe.retrieve(
+            symbol=state["symbol"],
+            closes=np.array(state["closes"]),
+            volumes=np.array(state["volumes"]) if state.get("volumes") else None,
+            technical=state.get("technical_signal"),
+            purpose=RetrievalPurpose.TRADE_VALIDATION,
+        )
+        return ctx.format_for_prompt() if ctx.results else ""
+    except Exception as exc:
+        logger.debug("Memory retrieval failed for %s: %s", state["symbol"], exc)
+        return ""
 
 
 # ── Node functions ─────────────────────────────────────────────────────────────
@@ -71,6 +118,15 @@ async def node_technical(state: TradingState) -> dict:
         np.array(state["volumes"]),
     )
     return {"technical_signal": sig, "logs": [f"Technical: {sig.trend.value} conf={sig.confidence:.2f}"]}
+
+
+async def node_features(state: TradingState) -> dict:
+    extractor = get_feature_extractor()
+    sig = extractor.compute(
+        state["symbol"],
+        current_price=state.get("current_price"),
+    )
+    return {"feature_signal": sig, "logs": [f"Features: OFI={sig.ofi or 0:+.3f} CVD={sig.cvd or 0:.0f} FR={sig.funding_rate or 0:+.5f} OI={sig.open_interest or 0:.0f}"]}
 
 
 async def node_fundamental(state: TradingState) -> dict:
@@ -87,13 +143,20 @@ async def node_sentiment(state: TradingState) -> dict:
 
 async def node_council(state: TradingState) -> dict:
     agent = CouncilAgent()
+    # Retrieve memory context for this market state
+    memory_ctx = await _get_memory_context(state)
     decision = await agent.deliberate(
         state["symbol"],
         technical=state.get("technical_signal"),
+        features=state.get("feature_signal"),
+        memory_context=memory_ctx,
     )
+    log = f"Council: {decision.final_side.value} consensus={decision.consensus_score:.2f}"
+    if memory_ctx:
+        log += " [memory-augmented]"
     return {
         "council_decision": decision,
-        "logs": [f"Council: {decision.final_side.value} consensus={decision.consensus_score:.2f}"],
+        "logs": [log],
     }
 
 
@@ -137,10 +200,23 @@ async def node_supervisor_decision(state: TradingState) -> dict:
         f"  [{a.agent_name}] {a.position.value}: {a.argument}"
         for a in decision.debate_log
     )
+
+    # Build feature context if available
+    feat_ctx = ""
+    if decision.features:
+        f = decision.features
+        feat_ctx = (
+            f"Features: OFI={f.ofi:+.3f}, CVD={f.cvd:.0f}, "
+            f"Funding={f.funding_rate:+.5f}% (ann.), OI={f.open_interest:.0f}, "
+            f"OI-price_corr={f.oi_price_delta_corr or 0:+.2f}, "
+            f"trend={f.trend.value} conf={f.confidence:.2f}\n"
+        )
+
     prompt = (
         f"Symbol: {decision.symbol}\n"
         f"Council final: {decision.final_side.value} (consensus={decision.consensus_score:.2f})\n"
         f"Debate:\n{debate_summary}\n"
+        f"{feat_ctx}"
         f"Risk: VaR99={risk.var_99:.2%}, size_usd={risk.position_size_usd:.0f}, "
         f"stop={risk.stop_loss_price:.4f}, TP={risk.take_profit_price:.4f}\n"
         "In 2 sentences, explain the final trading rationale."
@@ -196,6 +272,20 @@ async def node_execute(state: TradingState) -> dict:
     # ── Local execution engine ───────────────────────────────────────────────
     agent = ExecutionAgent()
     order = await agent.execute(decision, risk, np.array(state["closes"]))
+
+    # ── Store trade state in TurboVec memory ───────────────────────────────────
+    pipe = _memory_pipeline
+    if pipe and order:
+        try:
+            await pipe.store_market_state(
+                symbol=decision.symbol,
+                closes=np.array(state["closes"]),
+                volumes=np.array(state["volumes"]) if state.get("volumes") else None,
+                technical=decision.technical,
+            )
+        except Exception as exc:
+            logger.debug("Failed to store market state memory: %s", exc)
+
     return {"order": order, "logs": [f"Execution: {order.status.value} @ {order.avg_fill_price:.4f}"]}
 
 
@@ -208,6 +298,7 @@ def build_trading_graph() -> Any:
     g = StateGraph(TradingState)
 
     g.add_node("technical", node_technical)
+    g.add_node("features", node_features)
     g.add_node("fundamental", node_fundamental)
     g.add_node("sentiment", node_sentiment)
     g.add_node("council", node_council)
@@ -216,10 +307,12 @@ def build_trading_graph() -> Any:
     g.add_node("execute", node_execute)
 
     g.set_entry_point("technical")
-    # Fan-out: technical → fundamental & sentiment in parallel
+    # Fan-out: technical → features, fundamental, sentiment in parallel
+    g.add_edge("technical", "features")
     g.add_edge("technical", "fundamental")
     g.add_edge("technical", "sentiment")
-    # Fan-in: both feed council
+    # Fan-in: all three feed council
+    g.add_edge("features", "council")
     g.add_edge("fundamental", "council")
     g.add_edge("sentiment", "council")
 
@@ -244,6 +337,7 @@ class PortfolioSupervisor:
     """Top-level orchestrator. Feeds market data into the LangGraph pipeline."""
 
     def __init__(self, initial_equity: float) -> None:
+        global _memory_pipeline
         cfg = get_settings()
         self._graph = build_trading_graph()
         self._kill_switch = KillSwitch(initial_equity)
@@ -253,9 +347,55 @@ class PortfolioSupervisor:
             peak_equity=initial_equity,
         )
         self._memory = MemoryAgent()
+        self._open_positions: dict[str, OpenPosition] = {}
+
+        # Initialize TurboVec semantic memory pipeline
+        if cfg.memory_enabled:
+            _memory_pipeline = get_memory_pipeline()
+            logger.info("TurboVec semantic memory pipeline initialized")
+
+        # Initialize feature extractor (lazy — started in self.start())
+        if cfg.features_enabled:
+            self._feature_extractor = get_feature_extractor()
+            logger.info("FeatureExtractor initialized")
+        else:
+            self._feature_extractor = None
+
+        # Initialize MLOps pipeline (lazy — started in self.start())
+        self._mlops_drift: Any = None
+        self._mlops_pipeline: Any = None
+        self._mlops_scheduler: Any = None
+        if cfg.mlops_enabled:
+            from mlops.drift_detector import DriftDetector
+            from mlops.pipeline import MLOpsPipeline
+            from mlops.scheduler import MLOpsScheduler
+            self._mlops_drift = DriftDetector("ppo_execution")
+            self._mlops_pipeline = MLOpsPipeline(self._mlops_drift)
+            self._mlops_scheduler = MLOpsScheduler(self._mlops_drift, self._mlops_pipeline)
+            logger.info("MLOps pipeline initialized (check_interval=%ds)", cfg.mlops_check_interval_s)
 
     async def start(self) -> None:
-        await self._memory.connect()
+        global _memory_pipeline
+        try:
+            await self._memory.connect()
+        except Exception as exc:
+            logger.warning("Memory agent connection failed (continuing): %s", exc)
+        if _memory_pipeline:
+            try:
+                await _memory_pipeline.start()
+            except Exception as exc:
+                logger.warning("Memory pipeline start failed (continuing): %s", exc)
+        if self._feature_extractor:
+            try:
+                await self._feature_extractor.start()
+            except Exception as exc:
+                logger.warning("Feature extractor start failed (continuing): %s", exc)
+        # Start MLOps scheduler
+        if self._mlops_scheduler:
+            try:
+                await self._mlops_scheduler.start()
+            except Exception as exc:
+                logger.warning("MLOps scheduler start failed (continuing): %s", exc)
         logger.info("PortfolioSupervisor started — equity=%.2f", self._portfolio.equity)
 
     async def run_cycle(
@@ -279,6 +419,7 @@ class PortfolioSupervisor:
             "current_price": closes[-1] if closes else 0.0,
             "portfolio": self._portfolio,
             "technical_signal": None,
+            "feature_signal": None,
             "council_decision": None,
             "risk_report": None,
             "order": None,
@@ -293,17 +434,90 @@ class PortfolioSupervisor:
             logger.info("[%s] %s", symbol, log_line)
 
         order = result.get("order")
-        if order and result.get("council_decision") and result.get("risk_report"):
+        decision = result.get("council_decision")
+        risk_report = result.get("risk_report")
+
+        # ── Trade close detection ─────────────────────────────────────────────
+        existing = self._open_positions.get(symbol)
+        if existing and decision:
+            should_close = (
+                (order is not None and order.side != existing.side)
+                or (decision.final_side == Side.HOLD and order is None)
+            )
+            if should_close:
+                outcome = await self._memory.record_close(existing.order_id, closes[-1])
+                if outcome:
+                    logger.info(
+                        "Closed %s %s PnL=%.2f (%s)",
+                        symbol, existing.side.value, outcome.pnl or 0,
+                        "WIN" if outcome.win else "LOSS",
+                    )
+                    pipe = _memory_pipeline
+                    if pipe:
+                        try:
+                            vols = np.array(volumes) if volumes else None
+                            await pipe.store_trade_outcome(
+                                decision, outcome, np.array(closes), vols
+                            )
+                        except Exception as exc:
+                            logger.debug("Failed to store trade outcome memory: %s", exc)
+                del self._open_positions[symbol]
+                order = None  # prevent immediate flip
+
+        # ── Trade open ────────────────────────────────────────────────────────
+        if order and decision and risk_report and symbol not in self._open_positions:
             await self._memory.record_open(
                 order,
-                result["council_decision"].model_dump(mode="json"),
-                result["risk_report"].model_dump(mode="json"),
+                decision.model_dump(mode="json"),
+                risk_report.model_dump(mode="json"),
+            )
+            self._open_positions[symbol] = OpenPosition(
+                order_id=order.order_id,
+                session_id=order.session_id,
+                side=order.side,
+                entry_price=order.avg_fill_price or closes[-1],
+                quantity=order.quantity,
             )
 
-        # Update portfolio state (simplified — real impl tracks open positions)
+        # Update portfolio state
         self._portfolio.timestamp = datetime.utcnow()
         PNL_GAUGE.labels(symbol=symbol).set(self._portfolio.daily_pnl)
         DRAWDOWN_GAUGE.set(self._portfolio.current_drawdown_pct)
+
+        # ── Push data to dashboard state ───────────────────────────────────────
+        try:
+            from web.server import get_dashboard_state
+            ds = get_dashboard_state()
+            await ds.update_portfolio(self._portfolio)
+            await ds.update_price(symbol, state["current_price"])
+            if decision:
+                await ds.update_council_decision(symbol, decision)
+            if risk_report:
+                risk_dict = {
+                    "var_95": risk_report.var_95,
+                    "var_99": risk_report.var_99,
+                    "cvar_99": risk_report.cvar_99,
+                    "kelly_fractional": risk_report.kelly_fractional,
+                    "position_size_usd": risk_report.position_size_usd,
+                    "stop_loss_price": risk_report.stop_loss_price,
+                    "take_profit_price": risk_report.take_profit_price,
+                }
+                await ds.update_risk(symbol, risk_dict)
+            if order:
+                await ds.add_order(order)
+            if result.get("feature_signal"):
+                await ds.update_features(symbol, result["feature_signal"])
+            # Update agent signals from the graph logs
+            for log_line in result.get("logs", []):
+                if ":" in log_line:
+                    agent_name = log_line.split(":")[0].strip().lower()
+                    await ds.update_agent_signal(agent_name, {
+                        "status": log_line,
+                        "side": decision.final_side.value if decision else "HOLD",
+                        "confidence": decision.consensus_score if decision else 0.0,
+                    })
+        except Exception as exc:
+            logger.debug("Dashboard state update failed: %s", exc)
 
         triggered = self._kill_switch.update(self._portfolio)
         if triggered:

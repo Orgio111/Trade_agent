@@ -6,6 +6,7 @@
   <title>Trade Agent Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
@@ -23,7 +24,7 @@
         </svg>
         <h1>Trade Agent</h1>
       </div>
-      <span class="badge badge-live">● Live</span>
+      <span class="badge badge-live" id="liveBadge">● Live</span>
     </div>
     <div class="header-right">
       <div class="time-display" id="timeDisplay">--:--:--</div>
@@ -36,6 +37,10 @@
           <span class="stat-mini-label">Paper Mode</span>
           <span class="stat-mini-value badge badge-warn" id="paperMode">--</span>
         </div>
+        <div class="stat-mini">
+          <span class="stat-mini-label">Orders</span>
+          <span class="stat-mini-value" id="orderCount">0</span>
+        </div>
       </div>
     </div>
   </header>
@@ -44,7 +49,10 @@
   <main class="dashboard">
     <!-- Row 1: Portfolio overview -->
     <section class="card portfolio-summary" id="portfolioCard">
-      <h2 class="card-title">Portfolio</h2>
+      <h2 class="card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        Portfolio
+      </h2>
       <div class="portfolio-grid">
         <div class="metric">
           <span class="metric-label">Equity</span>
@@ -68,45 +76,80 @@
         </div>
         <div class="metric">
           <span class="metric-label">Kill Switch</span>
-          <span class="metric-value" id="killSwitch">● Off</span>
+          <span class="metric-value" id="killSwitch">● OFF</span>
         </div>
       </div>
-      <!-- Mini sparkline -->
-      <div class="sparkline-container">
-        <canvas id="equityChart" height="80"></canvas>
+      <!-- Equity chart -->
+      <div class="chart-container">
+        <canvas id="equityChart"></canvas>
       </div>
     </section>
 
-    <!-- Row 1: Market prices -->
+    <!-- Row 1: Market prices & candlestick chart -->
     <section class="card market-prices" id="marketCard">
-      <h2 class="card-title">Market Prices</h2>
+      <h2 class="card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+        Market
+      </h2>
       <div class="prices-list" id="pricesList">
-        <div class="price-item placeholder">Loading symbols...</div>
+        <div class="placeholder">Waiting for market data...</div>
+      </div>
+      <div class="chart-container chart-container-sm">
+        <canvas id="priceChart"></canvas>
       </div>
     </section>
 
-    <!-- Row 2: Agent status -->
+    <!-- Row 2: Agent signals -->
     <section class="card agent-status">
-      <h2 class="card-title">Agent Signals</h2>
+      <h2 class="card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        Agent Signals
+      </h2>
       <div class="agent-grid" id="agentGrid">
-        <div class="agent-card loading">Loading...</div>
+        <div class="loading">Waiting for agent signals...</div>
       </div>
     </section>
 
-    <!-- Row 2: Risk metrics -->
+    <!-- Row 2: Feature signals (order flow) -->
+    <section class="card feature-signals">
+      <h2 class="card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Order Flow & Features
+      </h2>
+      <div id="featuresGrid">
+        <div class="placeholder">No feature data yet</div>
+      </div>
+    </section>
+
+    <!-- Row 3: Council deliberation -->
+    <section class="card council-deliberation">
+      <h2 class="card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+        Council Deliberation
+      </h2>
+      <div id="councilContent">
+        <div class="placeholder">Waiting for council decision...</div>
+      </div>
+    </section>
+
+    <!-- Row 3: Risk metrics -->
     <section class="card risk-metrics">
-      <h2 class="card-title">Risk Metrics</h2>
+      <h2 class="card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Risk Metrics
+      </h2>
       <div class="risk-grid" id="riskGrid">
         <div class="risk-placeholder">No risk data yet</div>
       </div>
       <div class="risk-bars" id="riskBars"></div>
     </section>
 
-    <!-- Row 3: Trade log -->
+    <!-- Row 4: Trade log (full width) -->
     <section class="card trade-log">
       <h2 class="card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
         Trade Log
-        <span class="badge badge-count" id="orderCount">0</span>
+        <span class="badge badge-count" id="orderCountBadge">0</span>
       </h2>
       <div class="trade-table-wrapper">
         <table class="trade-table">
@@ -128,9 +171,85 @@
       </div>
     </section>
 
-    <!-- Row 3: Config -->
+    <!-- Row 4: System logs (full width) -->
+    <section class="card system-log">
+      <h2 class="card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        System Log
+        <span class="badge badge-count" id="logCount">0</span>
+      </h2>
+      <div class="log-container" id="logContainer">
+        <div class="log-placeholder">Waiting for log events...</div>
+      </div>
+    </section>
+
+    <!-- Row 5: Model Deployment & Ray Serve Health -->
+    <section class="card model-deployment" id="deploymentCard">
+      <h2 class="card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+        Model Deployment
+      </h2>
+      <div class="deployment-grid">
+        <div class="deployment-metric">
+          <span class="deployment-metric-label">Version</span>
+          <span class="deployment-metric-value" id="deploymentVersion">--</span>
+        </div>
+        <div class="deployment-metric">
+          <span class="deployment-metric-label">Source</span>
+          <span class="deployment-metric-value" id="deploymentSource">--</span>
+        </div>
+        <div class="deployment-metric">
+          <span class="deployment-metric-label">Model Loaded</span>
+          <span class="deployment-metric-value" id="deploymentLoaded">--</span>
+        </div>
+        <div class="deployment-metric">
+          <span class="deployment-metric-label">Registry</span>
+          <span class="deployment-metric-value" id="deploymentRegistry">--</span>
+        </div>
+      </div>
+      <!-- PPO Latency mini-chart -->
+      <div class="chart-container chart-container-sm">
+        <div class="chart-title">PPO Inference Latency (ms)</div>
+        <canvas id="latencyChart"></canvas>
+      </div>
+      <!-- Auto-reload events -->
+      <div class="reload-log-header">
+        <span class="reload-log-title">Auto-Reload Events</span>
+        <span class="badge badge-count" id="reloadCount">0</span>
+      </div>
+      <div class="reload-log" id="reloadLog">
+        <div class="log-placeholder">No reload events yet</div>
+      </div>
+    </section>
+
+    <section class="card serve-health">
+      <h2 class="card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+        Ray Serve Health
+      </h2>
+      <div class="serve-header">
+        <div class="serve-url-row">
+          <span class="serve-url-label">Endpoint:</span>
+          <span class="serve-url-value" id="serveUrl">--</span>
+          <span class="serve-status-dot" id="serveStatusDot"></span>
+          <span class="serve-status-text" id="serveStatusText">Checking...</span>
+        </div>
+        <button class="serve-refresh-btn" id="refreshServeBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+          Refresh
+        </button>
+      </div>
+      <div class="serve-deployments" id="serveDeployments">
+        <div class="placeholder">Click Refresh or wait for auto-check...</div>
+      </div>
+    </section>
+
+    <!-- Row 6: Config -->
     <section class="card config-panel">
-      <h2 class="card-title">Configuration</h2>
+      <h2 class="card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        Configuration
+      </h2>
       <div class="config-grid" id="configGrid">
         <div class="config-loading">Loading config...</div>
       </div>
@@ -145,5 +264,29 @@
   </footer>
 
   <script src="/static/app.js"></script>
+  <script>
+    // Wire up the Refresh Serve Health button
+    document.addEventListener('DOMContentLoaded', function() {
+      var btn = document.getElementById('refreshServeBtn');
+      if (!btn) return;
+      btn.addEventListener('click', function() {
+        if (window._serveHealthFetching) return;
+        var self = this;
+        self.classList.add('spinning');
+        window._serveHealthFetching = true;
+        fetch('/api/serve-status')
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            if (window.updateServeHealth) window.updateServeHealth(data);
+            self.classList.remove('spinning');
+            window._serveHealthFetching = false;
+          })
+          .catch(function() {
+            self.classList.remove('spinning');
+            window._serveHealthFetching = false;
+          });
+      });
+    });
+  </script>
 </body>
 </html>

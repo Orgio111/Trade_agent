@@ -16,6 +16,7 @@ from core.messaging import MsgType, get_bus
 from core.models import (
     CouncilDecision,
     DebateArgument,
+    FeatureSignal,
     FundamentalSignal,
     SentimentSignal,
     Side,
@@ -25,6 +26,10 @@ from core.nim_client import nim_json
 from core.observability import AGENT_LATENCY, COUNCIL_CONSENSUS
 
 logger = logging.getLogger(__name__)
+
+# ── Memory-augmented system prompt variants ─────────────────────────────────
+# These accept an optional {memory_context} placeholder injected by
+# the SemanticMemoryPipeline before agent deliberation.
 
 _BULL_SYSTEM = """You are the BULL analyst in a hedge fund debate. Your job is to build
 the strongest possible BUY case. Be rigorous and data-driven; cherry-pick
@@ -67,6 +72,7 @@ def _build_market_context(
     technical: TechnicalSignal | None,
     fundamental: FundamentalSignal | None,
     sentiment: SentimentSignal | None,
+    features: FeatureSignal | None = None,
 ) -> str:
     parts = [f"Symbol: {symbol}"]
     if technical:
@@ -76,6 +82,24 @@ def _build_market_context(
             f"MACD={technical.macd:.4f}/{technical.macd_signal:.4f}, "
             f"trend={technical.trend.value}, conf={technical.confidence:.2f}"
         )
+    if features:
+        parts.append(
+            f"Order Flow: OFI={features.ofi:+.3f}, CVD={features.cvd:.0f}, "
+            f"CVD_delta={features.cvd_delta:+.2f}, trade_strength={features.trade_strength:.2f}"
+        )
+        if features.funding_rate is not None:
+            parts.append(
+                f"Funding: rate={features.funding_rate:+.5f}% (ann.), "
+                f"delta={features.funding_rate_delta:+.5f}"
+            )
+        if features.open_interest is not None:
+            parts.append(
+                f"Open Interest: OI={features.open_interest:.0f}, "
+                f"delta={features.open_interest_delta:+.0f}, "
+            )
+            if features.oi_price_delta_corr is not None:
+                parts[-1] += f"OI-price_corr={features.oi_price_delta_corr:+.2f}"
+        parts.append(f"Feature trend: {features.trend.value} conf={features.confidence:.2f}")
     if fundamental:
         parts.append(
             f"Fundamental: on_chain_score={fundamental.on_chain_score:.2f}, "
@@ -118,19 +142,27 @@ class CouncilAgent:
         technical: TechnicalSignal | None = None,
         fundamental: FundamentalSignal | None = None,
         sentiment: SentimentSignal | None = None,
+        features: FeatureSignal | None = None,
+        memory_context: str = "",
     ) -> CouncilDecision:
         session_id = str(uuid.uuid4())
-        context = _build_market_context(symbol, technical, fundamental, sentiment)
+        context = _build_market_context(symbol, technical, fundamental, sentiment, features)
+
+        # Inject historical memory context if available
+        enriched_context = context
+        if memory_context:
+            enriched_context = f"{context}\n\n{memory_context}"
 
         with AGENT_LATENCY.labels(agent="council").time():
             bull_arg, bear_arg = await asyncio.gather(
-                _argue(_BULL_SYSTEM, context, "BullAgent"),
-                _argue(_BEAR_SYSTEM, context, "BearAgent"),
+                _argue(_BULL_SYSTEM, enriched_context, "BullAgent"),
+                _argue(_BEAR_SYSTEM, enriched_context, "BearAgent"),
             )
 
             debate_summary = (
                 f"Bull says (score={bull_arg.quantitative_score:.2f}):\n{bull_arg.argument}\n\n"
-                f"Bear says (score={bear_arg.quantitative_score:.2f}):\n{bear_arg.argument}"
+                f"Bear says (score={bear_arg.quantitative_score:.2f}):\n{bear_arg.argument}\n\n"
+                f"Historical memory was injected as context for both analysts."
             )
 
             synthesis = await nim_json(
@@ -139,7 +171,7 @@ class CouncilAgent:
                     {
                         "role": "user",
                         "content": (
-                            f"Context:\n{context}\n\nDebate:\n{debate_summary}\n\n"
+                            f"Context:\n{enriched_context}\n\nDebate:\n{debate_summary}\n\n"
                             "Apply the STL Protocol and produce the final decision JSON."
                         ),
                     },
@@ -165,6 +197,7 @@ class CouncilAgent:
             technical=technical,
             fundamental=fundamental,
             sentiment=sentiment,
+            features=features,
         )
 
         cfg = get_settings()
