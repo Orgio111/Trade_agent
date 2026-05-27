@@ -211,17 +211,21 @@ class ExecutionAgent:
                     asyncio.ensure_future(self._serve_client.start())
                     self._serve_client_started = True
                 pred = await self._serve_client.predict(obs)
-                logger.debug(
-                    "Ray Serve predict: action=%d source=%s version=%d (%.1fms)",
-                    pred.action, pred.source, pred.model_version, pred.latency_ms,
-                )
-                algo_map = {
-                    0: (OrderType.MARKET, 1),
-                    1: (OrderType.TWAP, 3),
-                    2: (OrderType.TWAP, 5),
-                    3: (OrderType.VWAP, 5),
-                }
-                return algo_map.get(pred.action, (OrderType.TWAP, 3))
+                # Only trust ray_serve source; fallback/local means connection issue
+                if pred.source == "ray_serve":
+                    logger.debug(
+                        "Ray Serve predict: action=%d source=%s version=%d (%.1fms)",
+                        pred.action, pred.source, pred.model_version, pred.latency_ms,
+                    )
+                    algo_map = {
+                        0: (OrderType.MARKET, 1),
+                        1: (OrderType.TWAP, 3),
+                        2: (OrderType.TWAP, 5),
+                        3: (OrderType.VWAP, 5),
+                    }
+                    return algo_map.get(pred.action, (OrderType.TWAP, 3))
+                # Fall through — Ray Serve unavailable
+                logger.debug("Ray Serve unavailable, source=%s", pred.source)
             except Exception as exc:
                 logger.debug("Ray Serve predict failed in decider: %s — trying local", exc)
 

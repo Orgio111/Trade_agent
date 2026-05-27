@@ -43,6 +43,7 @@ logger = logging.getLogger(__name__)
 
 # ── Tuning constants ─────────────────────────────────────────────────────────
 _MAX_WS_FAILURES = 3
+_WS_TIMEOUT = 30           # seconds before watch_trades is considered timed out
 # _BAR_SECONDS is now set from config in FeatureExtractor.__init__
 
 
@@ -377,7 +378,12 @@ class FeatureExtractor:
                 "enableRateLimit": True,
                 "options": {"defaultType": "spot"},
             })
-            await ex.load_markets()
+            try:
+                async with asyncio.timeout(15):
+                    await ex.load_markets()
+            except Exception:
+                await ex.close()
+                raise
             self._trade_exchanges[exchange_id] = ex
         return self._trade_exchanges[exchange_id]
 
@@ -391,7 +397,12 @@ class FeatureExtractor:
                 "enableRateLimit": True,
                 "options": {"defaultType": "swap"},
             })
-            await ex.load_markets()
+            try:
+                async with asyncio.timeout(15):
+                    await ex.load_markets()
+            except Exception:
+                await ex.close()
+                raise
             self._perp_exchanges[exchange_id] = ex
         return self._perp_exchanges[exchange_id]
 
@@ -414,7 +425,8 @@ class FeatureExtractor:
 
             try:
                 exchange = await self._ensure_trade_exchange(exchange_id)
-                trades = await exchange.watch_trades(symbol)
+                async with asyncio.timeout(_WS_TIMEOUT):
+                    trades = await exchange.watch_trades(symbol)
                 for t in trades:
                     if not self._running:
                         return
@@ -426,6 +438,15 @@ class FeatureExtractor:
                 state.trade_ws_failures = 0
 
             except asyncio.TimeoutError:
+                state.trade_ws_failures += 1
+                logger.debug(
+                    "Trade stream timeout %s/%s (%d/%d)",
+                    symbol, exchange_id, state.trade_ws_failures, _MAX_WS_FAILURES,
+                )
+                if state.trade_ws_failures >= _MAX_WS_FAILURES:
+                    state.trade_exchange_idx += 1
+                    state.trade_ws_failures = 0
+                    logger.info("Failing over trade stream %s from %s after timeout", symbol, exchange_id)
                 continue
             except Exception as exc:
                 state.trade_ws_failures += 1

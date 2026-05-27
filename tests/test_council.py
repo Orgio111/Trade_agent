@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from agents.council import CouncilAgent, _build_market_context
+from agents.stl_protocol import STLResult
 from core.models import Side, TechnicalSignal
 from datetime import datetime
 
@@ -76,7 +77,22 @@ async def test_council_deliberate_buy(mock_technical):
             return bear_response
         return synthesis_response
 
+    async def mock_stl(**kwargs):
+        return STLResult(
+            bull_score=0.70,
+            bear_score=0.30,
+            consensus_score=0.40,
+            confidence_pct=85.0,
+            final_side="BUY",
+            blocked=False,
+            block_reason="",
+            agent_weights={},
+            contradictions=[],
+            rationale="Momentum favors bulls with moderate consensus.",
+        )
+
     with patch("agents.council.nim_json", side_effect=mock_nim_json), \
+         patch("agents.council.run_stl_protocol", side_effect=mock_stl), \
          patch("agents.council.get_bus") as mock_bus:
         mock_bus.return_value = AsyncMock()
         mock_bus.return_value.publish = AsyncMock()

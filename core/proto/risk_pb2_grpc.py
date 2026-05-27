@@ -5,24 +5,6 @@ import warnings
 
 from core.proto import risk_pb2 as risk__pb2
 
-GRPC_GENERATED_VERSION = '1.80.0'
-GRPC_VERSION = grpc.__version__
-_version_not_supported = False
-
-try:
-    from grpc._utilities import first_version_is_lower
-    _version_not_supported = first_version_is_lower(GRPC_VERSION, GRPC_GENERATED_VERSION)
-except ImportError:
-    _version_not_supported = True
-
-if _version_not_supported:
-    raise RuntimeError(
-        f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in risk_pb2_grpc.py depends on'
-        + f' grpcio>={GRPC_GENERATED_VERSION}.'
-        + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
-        + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
-    )
 
 
 class RiskEngineStub(object):
@@ -38,17 +20,17 @@ class RiskEngineStub(object):
                 '/sentinelx.risk.RiskEngine/Validate',
                 request_serializer=risk__pb2.RiskRequest.SerializeToString,
                 response_deserializer=risk__pb2.RiskResponse.FromString,
-                _registered_method=True)
+                _registered_method=False)
         self.GetPortfolioHeat = channel.stream_stream(
                 '/sentinelx.risk.RiskEngine/GetPortfolioHeat',
                 request_serializer=risk__pb2.RiskRequest.SerializeToString,
                 response_deserializer=risk__pb2.RiskResponse.FromString,
-                _registered_method=True)
+                _registered_method=False)
         self.SubscribeKillSwitch = channel.unary_stream(
                 '/sentinelx.risk.RiskEngine/SubscribeKillSwitch',
                 request_serializer=risk__pb2.KillSwitchRequest.SerializeToString,
                 response_deserializer=risk__pb2.KillSwitchEvent.FromString,
-                _registered_method=True)
+                _registered_method=False)
 
 
 class RiskEngineServicer(object):
@@ -94,7 +76,6 @@ def add_RiskEngineServicer_to_server(servicer, server):
     generic_handler = grpc.method_handlers_generic_handler(
             'sentinelx.risk.RiskEngine', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('sentinelx.risk.RiskEngine', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -126,7 +107,7 @@ class RiskEngine(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True)
+            _registered_method=False)
 
     @staticmethod
     def GetPortfolioHeat(request_iterator,
@@ -153,7 +134,7 @@ class RiskEngine(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True)
+            _registered_method=False)
 
     @staticmethod
     def SubscribeKillSwitch(request,
@@ -180,4 +161,4 @@ class RiskEngine(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True)
+            _registered_method=False)

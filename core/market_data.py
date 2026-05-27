@@ -33,6 +33,7 @@ _MAX_WS_FAILURES = 3           # WS failures before trying REST on same exchange
 _WS_RECOVERY_INTERVAL = 300    # seconds between WS recovery attempts while in REST/simulated
 _REST_POLL_SECONDS = 60        # OHLCV polling interval in REST mode
 _WS_TIMEOUT = 10               # seconds before watch_ohlcv is considered timed out
+_EXCHANGE_TIMEOUT = 15         # seconds before exchange.load_markets is considered timed out
 
 # ── Simulated data defaults ──────────────────────────────────────────────────
 _SIM_BASE_PRICES: dict[str, float] = {
@@ -123,13 +124,22 @@ class MarketDataFeed:
                 "options": {"defaultType": "spot"},
             })
             try:
-                await exchange.load_markets()
+                async with asyncio.timeout(_EXCHANGE_TIMEOUT):
+                    await exchange.load_markets()
                 logger.info(
                     "Loaded %d markets from %s",
                     len(exchange.markets), exchange_id,
                 )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Timeout (%ds) loading markets from %s — advancing",
+                    _EXCHANGE_TIMEOUT, exchange_id,
+                )
+                await exchange.close()
+                raise ExchangeNotAvailable(f"Timeout loading markets from {exchange_id}")
             except Exception as exc:
                 logger.warning("Failed to load markets from %s: %s", exchange_id, exc)
+                await exchange.close()
                 raise ExchangeNotAvailable(str(exc)) from exc
             self._exchanges[exchange_id] = exchange
         return self._exchanges[exchange_id]
@@ -258,7 +268,40 @@ class MarketDataFeed:
                     await self._publish_tick(symbol, ohlcv[-1], bus, cfg)
                     self._ws_failures[symbol] = 0
             except asyncio.TimeoutError:
-                pass  # No new candle yet — loop and try again
+                # Count consecutive timeouts — if WS connects but no candle
+                # arrives within the timeout, eventually fall back to REST
+                self._ws_failures[symbol] = self._ws_failures.get(symbol, 0) + 1
+                logger.debug(
+                    "WS timeout %s/%s (%d/%d)",
+                    symbol, exchange_id,
+                    self._ws_failures[symbol], _MAX_WS_FAILURES,
+                )
+                if self._ws_failures[symbol] >= _MAX_WS_FAILURES:
+                    # Try REST before advancing to next exchange
+                    try:
+                        ohlcv_list = await exchange.fetch_ohlcv(symbol, "1m", limit=1)
+                        if ohlcv_list:
+                            await self._publish_tick(symbol, ohlcv_list[-1], bus, cfg)
+                            logger.info(
+                                "WS timed out for %s — switched to REST polling", symbol
+                            )
+                            self._rest_mode[symbol] = True
+                            self._ws_failures[symbol] = 0
+                            continue
+                    except Exception:
+                        pass
+                    # Both WS and REST failed — advance to next exchange
+                    logger.info(
+                        "Failing over %s from %s after %d timeouts",
+                        symbol, exchange_id, self._ws_failures[symbol],
+                    )
+                    # Close exchange to release leaked session
+                    try:
+                        await exchange.close()
+                        self._exchanges.pop(exchange_id, None)
+                    except Exception:
+                        pass
+                    self._advance_exchange(symbol)
             except Exception as exc:
                 self._ws_failures[symbol] = self._ws_failures.get(symbol, 0) + 1
                 logger.warning(

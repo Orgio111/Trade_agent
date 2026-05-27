@@ -55,7 +55,7 @@ class Settings(BaseSettings):
 
     # ── PostgreSQL ────────────────────────────────────────────────────────────
     pg_dsn: str = Field(
-        "postgresql+asyncpg://trader:changeme@postgres:5432/tradingdb",
+        "postgresql+asyncpg://trader:secret@postgres:5432/tradingdb",
         alias="PG_DSN",
     )
 
@@ -129,13 +129,13 @@ class Settings(BaseSettings):
 
     # ── Sentinel-X integration ─────────────────────────────────────────────────
     sentinelx_risk_addr: str = Field(
-        "", alias="SENTINELX_RISK_ADDR"
+        "sentinel-rust:50051", alias="SENTINELX_RISK_ADDR"
     )
     """gRPC address of the Rust Risk Engine, e.g. "sentinel-rust:50051".
     Leave empty to use the pure-Python risk engine."""
 
     sentinelx_gateway_url: str = Field(
-        "", alias="SENTINELX_GATEWAY_URL"
+        "http://sentinel-go:8080", alias="SENTINELX_GATEWAY_URL"
     )
     """HTTP base URL of the Go Gateway, e.g. "http://sentinel-go:8080".
     Leave empty to use the local execution engine."""

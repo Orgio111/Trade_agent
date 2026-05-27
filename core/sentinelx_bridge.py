@@ -9,6 +9,7 @@ Wraps the Rust gRPC service with:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Callable
@@ -51,15 +52,20 @@ async def _get_stub() -> pb_grpc.RiskEngineStub | None:
             ],
         )
         _stub = pb_grpc.RiskEngineStub(_channel)
-        # Quick connectivity check
-        await _channel.channel_ready()
+        # Quick connectivity check (5s timeout — don't block startup)
+        await asyncio.wait_for(_channel.channel_ready(), timeout=5.0)
         logger.info("Connected to Rust Risk Engine at %s", cfg.sentinelx_risk_addr)
         return _stub
+    except asyncio.TimeoutError:
+        logger.warning(
+            "Rust Risk Engine at %s not reachable within 5s — using Python fallback",
+            cfg.sentinelx_risk_addr,
+        )
     except Exception:
-        logger.warning("Rust Risk Engine at %s unreachable — will use Python fallback", cfg.sentinelx_risk_addr)
-        _stub = None
-        _channel = None
-        return None
+        logger.warning("Rust Risk Engine at %s unreachable — using Python fallback", cfg.sentinelx_risk_addr)
+    _stub = None
+    _channel = None
+    return None
 
 
 async def close() -> None:

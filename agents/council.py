@@ -85,19 +85,23 @@ def _build_market_context(
             f"trend={technical.trend.value}, conf={technical.confidence:.2f}"
         )
     if features:
+        def _fmt(val, fmt: str) -> str:
+            """Format a value or return 'N/A' if None."""
+            return f"{val:{fmt}}" if val is not None else "N/A"
+
         parts.append(
-            f"Order Flow: OFI={features.ofi:+.3f}, CVD={features.cvd:.0f}, "
-            f"CVD_delta={features.cvd_delta:+.2f}, trade_strength={features.trade_strength:.2f}"
+            f"Order Flow: OFI={_fmt(features.ofi, '+.3f')}, CVD={_fmt(features.cvd, '.0f')}, "
+            f"CVD_delta={_fmt(features.cvd_delta, '+.2f')}, trade_strength={_fmt(features.trade_strength, '.2f')}"
         )
         if features.funding_rate is not None:
             parts.append(
                 f"Funding: rate={features.funding_rate:+.5f}% (ann.), "
-                f"delta={features.funding_rate_delta:+.5f}"
+                f"delta={_fmt(features.funding_rate_delta, '+.5f')}"
             )
         if features.open_interest is not None:
             parts.append(
                 f"Open Interest: OI={features.open_interest:.0f}, "
-                f"delta={features.open_interest_delta:+.0f}, "
+                f"delta={_fmt(features.open_interest_delta, '+.0f')}, "
             )
             if features.oi_price_delta_corr is not None:
                 parts[-1] += f"OI-price_corr={features.oi_price_delta_corr:+.2f}"
@@ -288,6 +292,6 @@ class CouncilAgent:
             bull_score,
             bear_score,
             consensus_score,
-            *(stl.confidence_pct if stl and stl.blocked else ()),
+            *(stl.confidence_pct,) if stl and stl.blocked else (),
         )
         return decision

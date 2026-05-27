@@ -46,7 +46,6 @@ from core.observability import (
 )
 from core.scheduler import TaskType, get_circuit_breaker_state, route
 from core.sentinelx_bridge import (
-    get_kill_switch_status as rust_kill_switch_status,
     get_portfolio_heat as rust_portfolio_heat,
     subscribe_kill_switch as rust_subscribe_kill_switch,
 )

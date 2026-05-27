@@ -5,24 +5,6 @@ import warnings
 
 from core.proto import orders_pb2 as orders__pb2
 
-GRPC_GENERATED_VERSION = '1.80.0'
-GRPC_VERSION = grpc.__version__
-_version_not_supported = False
-
-try:
-    from grpc._utilities import first_version_is_lower
-    _version_not_supported = first_version_is_lower(GRPC_VERSION, GRPC_GENERATED_VERSION)
-except ImportError:
-    _version_not_supported = True
-
-if _version_not_supported:
-    raise RuntimeError(
-        f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in orders_pb2_grpc.py depends on'
-        + f' grpcio>={GRPC_GENERATED_VERSION}.'
-        + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
-        + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
-    )
 
 
 class OrderManagementStub(object):
@@ -38,17 +20,17 @@ class OrderManagementStub(object):
                 '/sentinelx.orders.OrderManagement/SubmitOrder',
                 request_serializer=orders__pb2.OrderRequest.SerializeToString,
                 response_deserializer=orders__pb2.OrderResponse.FromString,
-                _registered_method=True)
+                _registered_method=False)
         self.CancelOrder = channel.unary_unary(
                 '/sentinelx.orders.OrderManagement/CancelOrder',
                 request_serializer=orders__pb2.CancelRequest.SerializeToString,
                 response_deserializer=orders__pb2.CancelResponse.FromString,
-                _registered_method=True)
+                _registered_method=False)
         self.StreamFills = channel.stream_stream(
                 '/sentinelx.orders.OrderManagement/StreamFills',
                 request_serializer=orders__pb2.OrderRequest.SerializeToString,
                 response_deserializer=orders__pb2.OrderResponse.FromString,
-                _registered_method=True)
+                _registered_method=False)
 
 
 class OrderManagementServicer(object):
@@ -94,7 +76,6 @@ def add_OrderManagementServicer_to_server(servicer, server):
     generic_handler = grpc.method_handlers_generic_handler(
             'sentinelx.orders.OrderManagement', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('sentinelx.orders.OrderManagement', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -126,7 +107,7 @@ class OrderManagement(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True)
+            _registered_method=False)
 
     @staticmethod
     def CancelOrder(request,
@@ -153,7 +134,7 @@ class OrderManagement(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True)
+            _registered_method=False)
 
     @staticmethod
     def StreamFills(request_iterator,
@@ -180,4 +161,4 @@ class OrderManagement(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True)
+            _registered_method=False)

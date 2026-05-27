@@ -110,6 +110,8 @@ class DashboardState:
         self.reload_events: deque = deque(maxlen=50)
         """Rolling buffer of auto-reload events."""
         self._lock = asyncio.Lock()
+        self._seen_logs: set[tuple[str, str]] = set()
+        # Track seen log (time, msg) pairs to avoid duplicates across polls
 
     async def update_portfolio(self, state: PortfolioState) -> None:
         async with self._lock:
@@ -271,6 +273,122 @@ def get_dashboard_state() -> DashboardState:
     return _state
 
 
+# ── Bot data bridge (dashboard container mode) ──────────────────────────────
+_BOT_API_URL: str = os.environ.get(
+    "BOT_API_URL",
+    "http://trade_agent_bot:3000",  # Docker DNS name
+)
+_DASHBOARD_POLL_INTERVAL: float = 1.5  # seconds
+
+
+def _is_dashboard_mode() -> bool:
+    """Check if we are running as a standalone dashboard container
+    (separate from the bot process which populates DashboardState).
+    """
+    return "DASHBOARD_PORT" in os.environ
+
+
+async def _merge_bot_data(ds: DashboardState, data: dict) -> None:
+    """Merge bot API snapshot data into the local DashboardState."""
+    try:
+        async with ds._lock:
+            p = data.get("portfolio") or {}
+            if p.get("equity") is not None:
+                ds.portfolio.equity = p["equity"]
+                ds.portfolio.cash = p.get("cash", ds.portfolio.cash)
+                ds.portfolio.daily_pnl = p.get("daily_pnl", ds.portfolio.daily_pnl)
+                ds.portfolio.daily_pnl_pct = (
+                    p.get("daily_pnl_pct", ds.portfolio.daily_pnl_pct * 100) / 100
+                )
+                ds.portfolio.current_drawdown_pct = (
+                    p.get("drawdown_pct", ds.portfolio.current_drawdown_pct * 100) / 100
+                )
+                ds.portfolio.peak_equity = p.get(
+                    "peak_equity", ds.portfolio.peak_equity
+                )
+                ds.portfolio.kill_switch_active = p.get(
+                    "kill_switch", ds.portfolio.kill_switch_active
+                )
+
+            prices = data.get("prices") or {}
+            ds.market_prices.update(prices)
+
+            orders = data.get("orders") or []
+            ds.recent_orders = orders[:100]
+
+            agents = data.get("agents") or {}
+            ds.agent_signals.update(agents)
+
+            risk = data.get("risk") or {}
+            ds.risk_metrics.update(risk)
+
+            features = data.get("features") or {}
+            ds.feature_signals.update(features)
+
+            council = data.get("council") or {}
+            ds.council_decisions.update(council)
+
+            eq = data.get("equity_history") or []
+            ds.equity_history = eq[-500:]
+
+            ds.paper_state = data.get("paper") or ds.paper_state
+
+            dep = data.get("deployment") or {}
+            ds.model_deployment.update(dep)
+
+            sx = data.get("sentinelx") or {}
+            ds.sentinelx_state.update(sx)
+
+            ds.serve_health = data.get("serve_health") or ds.serve_health
+
+            dh = data.get("deployment_health") or {}
+            ds.deployment_health.update(dh)
+
+            logs = data.get("logs") or []
+            for entry in logs[-50:]:
+                # Only add unique log entries (avoid duplicates across polls)
+                key = (entry.get("time", ""), entry.get("msg", ""))
+                if key not in ds._seen_logs:
+                    ds._seen_logs.add(key)
+                    _log_handler.buffer.append(entry)
+
+            for entry in (data.get("ppo_latency") or [])[-200:]:
+                ds.ppo_latency_history.append(entry)
+            for entry in (data.get("reload_events") or [])[-50:]:
+                ds.reload_events.append(entry)
+
+            ds.last_update = time.time()
+    except Exception as exc:
+        logger.debug("Error merging bot data: %s", exc)
+
+
+async def _poll_bot_data() -> None:
+    """Background task: poll the bot container's dashboard API every ~1.5s
+    and merge the snapshot into the local DashboardState."""
+    if not _HAVE_AIOHTTP:
+        logger.warning("aiohttp not available — bot data bridge disabled")
+        return
+
+    ds = get_dashboard_state()
+    try:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=5),
+        ) as session:
+            while True:
+                try:
+                    async with session.get(f"{_BOT_API_URL}/api/snapshot") as resp:
+                        if resp.ok:
+                            data = await resp.json()
+                            await _merge_bot_data(ds, data)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.debug("Bot poll failed: %s", exc)
+                await asyncio.sleep(_DASHBOARD_POLL_INTERVAL)
+    except asyncio.CancelledError:
+        pass
+
+
 # ── FastAPI app ───────────────────────────────────────────────────────────────
 app = FastAPI(title="Trade Agent Dashboard", version="0.1.0")
 
@@ -408,15 +526,26 @@ async def websocket_endpoint(ws: WebSocket):
     """Push live updates every 1-2 seconds while a client is connected."""
     await ws.accept()
     ds = get_dashboard_state()
+    logger.info("Dashboard WebSocket client connected")
     try:
         while True:
             data = await ds.snapshot()
             await ws.send_json(data)
             await asyncio.sleep(1.5)
-            # Wait for pings so we detect disconnects quickly
     except WebSocketDisconnect:
         logger.info("Dashboard WebSocket client disconnected")
     except Exception as exc:
         logger.warning("WebSocket error: %s", exc)
 
+
+# ── Startup event ───────────────────────────────────────────────────────────
+
+@app.on_event("startup")
+async def _on_startup():
+    if _is_dashboard_mode():
+        logger.info(
+            "Dashboard container mode detected — starting bot data poller to %s",
+            _BOT_API_URL,
+        )
+        asyncio.create_task(_poll_bot_data(), name="bot-data-poller")
 

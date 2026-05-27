@@ -5,24 +5,6 @@ import warnings
 
 from core.proto import agents_pb2 as agents__pb2
 
-GRPC_GENERATED_VERSION = '1.80.0'
-GRPC_VERSION = grpc.__version__
-_version_not_supported = False
-
-try:
-    from grpc._utilities import first_version_is_lower
-    _version_not_supported = first_version_is_lower(GRPC_VERSION, GRPC_GENERATED_VERSION)
-except ImportError:
-    _version_not_supported = True
-
-if _version_not_supported:
-    raise RuntimeError(
-        f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in agents_pb2_grpc.py depends on'
-        + f' grpcio>={GRPC_GENERATED_VERSION}.'
-        + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
-        + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
-    )
 
 
 class AgentCouncilStub(object):
@@ -38,12 +20,12 @@ class AgentCouncilStub(object):
                 '/sentinelx.agents.AgentCouncil/Deliberate',
                 request_serializer=agents__pb2.SignalRequest.SerializeToString,
                 response_deserializer=agents__pb2.CouncilDecision.FromString,
-                _registered_method=True)
+                _registered_method=False)
         self.HealthCheck = channel.unary_unary(
                 '/sentinelx.agents.AgentCouncil/HealthCheck',
                 request_serializer=agents__pb2.HealthRequest.SerializeToString,
                 response_deserializer=agents__pb2.HealthResponse.FromString,
-                _registered_method=True)
+                _registered_method=False)
 
 
 class AgentCouncilServicer(object):
@@ -78,7 +60,6 @@ def add_AgentCouncilServicer_to_server(servicer, server):
     generic_handler = grpc.method_handlers_generic_handler(
             'sentinelx.agents.AgentCouncil', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('sentinelx.agents.AgentCouncil', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -110,7 +91,7 @@ class AgentCouncil(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True)
+            _registered_method=False)
 
     @staticmethod
     def HealthCheck(request,
@@ -137,4 +118,4 @@ class AgentCouncil(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=True)
+            _registered_method=False)

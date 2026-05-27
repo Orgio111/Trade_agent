@@ -4,7 +4,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from mlops.drift_detector import DriftDetector, compute_psi
+from mlops.drift_detector import DriftDetector, DriftReport, compute_psi
 
 
 class TestPSI:
@@ -58,4 +58,6 @@ class TestDriftDetector:
         ref = {"feature_a": np.random.randn(200)}
         detector.set_reference(ref)
         scores = detector.check({"feature_b": np.random.randn(200)})
-        assert scores == {}
+        assert isinstance(scores, DriftReport)
+        assert len(scores.psi_scores) == 0
+        assert len(scores.ks_scores) == 0
