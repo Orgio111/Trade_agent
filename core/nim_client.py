@@ -1,37 +1,41 @@
-"""NVIDIA NIM client — OpenAI-compatible wrapper with async support."""
+"""Backward-compatible NIM client — delegates to ``core.llm`` facade.
+
+New code should import directly from ``core.llm``:
+
+    from core.llm import llm_chat, llm_json, llm_embed
+
+This module re-exports the legacy ``nim_chat``, ``nim_json``, and ``nim_embed``
+names so that existing imports continue to work during the migration.
+"""
+
 from __future__ import annotations
 
-import asyncio
-import json
-import logging
+import warnings
 from typing import Any
 
-import openai
-from openai import AsyncOpenAI
-
 from core.config import get_settings
+from core.llm import llm_chat, llm_json, llm_embed
+from core.llm.router import get_provider
 
-logger = logging.getLogger(__name__)
+__all__ = ["get_nim_client", "nim_chat", "nim_json", "nim_embed"]
 
 
-def _make_client() -> AsyncOpenAI:
-    cfg = get_settings()
-    return AsyncOpenAI(
-        api_key=cfg.nim_api_key,
-        base_url=cfg.nim_base_url,
-        timeout=cfg.nim_timeout,
-        max_retries=3,
+def get_nim_client() -> Any:
+    """Return the underlying NIM provider's OpenAI-compatible client.
+
+    Deprecated — prefer using the ``core.llm`` facade directly.
+    """
+    warnings.warn(
+        "get_nim_client() is deprecated. Use core.llm.llm_chat / llm_json / llm_embed instead.",
+        DeprecationWarning,
+        stacklevel=2,
     )
+    from core.llm.providers.nim import NIMProvider
 
-
-_client: AsyncOpenAI | None = None
-
-
-def get_nim_client() -> AsyncOpenAI:
-    global _client
-    if _client is None:
-        _client = _make_client()
-    return _client
+    provider = get_provider("nim")
+    if isinstance(provider, NIMProvider):
+        return provider.client
+    raise RuntimeError("NIM provider not loaded")
 
 
 async def nim_chat(
@@ -41,26 +45,16 @@ async def nim_chat(
     max_tokens: int = 2048,
     response_format: dict | None = None,
 ) -> str:
-    """Single-turn chat completion via NIM."""
-    cfg = get_settings()
-    client = get_nim_client()
-    kwargs: dict[str, Any] = {
-        "model": model or cfg.nim_model,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-    }
-    if response_format:
-        kwargs["response_format"] = response_format
-
-    try:
-        resp = await client.chat.completions.create(**kwargs)
-        return resp.choices[0].message.content or ""
-    except openai.RateLimitError:
-        logger.warning("NIM rate limit — sleeping 10s")
-        await asyncio.sleep(10)
-        resp = await client.chat.completions.create(**kwargs)
-        return resp.choices[0].message.content or ""
+    """Deprecated alias for ``llm_chat`` — delegates to the NIM provider."""
+    # If model is not specified, pass None to use the provider default
+    return await llm_chat(
+        messages,
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        response_format=response_format,
+        provider="nim",
+    )
 
 
 async def nim_json(
@@ -68,31 +62,17 @@ async def nim_json(
     model: str | None = None,
     temperature: float = 0.1,
     max_tokens: int = 1024,
-) -> dict:
-    """Chat completion returning parsed JSON."""
-    raw = await nim_chat(
+) -> dict[str, Any]:
+    """Deprecated alias for ``llm_json`` — delegates to the NIM provider."""
+    return await llm_json(
         messages,
         model=model,
         temperature=temperature,
         max_tokens=max_tokens,
-        response_format={"type": "json_object"},
+        provider="nim",
     )
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        # Fallback: extract first {...} block
-        start = raw.find("{")
-        end = raw.rfind("}") + 1
-        return json.loads(raw[start:end])
 
 
 async def nim_embed(texts: list[str]) -> list[list[float]]:
-    """Batch embedding via NIM embedding endpoint."""
-    cfg = get_settings()
-    client = get_nim_client()
-    resp = await client.embeddings.create(
-        model=cfg.nim_embed_model,
-        input=texts,
-        encoding_format="float",
-    )
-    return [item.embedding for item in resp.data]
+    """Deprecated alias for ``llm_embed`` — delegates to the NIM provider."""
+    return await llm_embed(texts)

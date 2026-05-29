@@ -1,7 +1,7 @@
 //! Walk-Forward Backtest Engine — runs in Rust for maximum throughput.
-use std::collections::VecDeque;
+use serde::Serialize;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct Bar {
     pub close:  f64,
     pub high:   f64,
@@ -9,7 +9,7 @@ pub struct Bar {
     pub volume: f64,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
 pub struct BacktestResult {
     pub total_trades:   usize,
     pub winning_trades: usize,

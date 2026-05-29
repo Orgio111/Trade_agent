@@ -10,7 +10,7 @@ Usage
 -----
     result = await route(
         TaskType.LLM,
-        gpu_fn=lambda: nim_chat([...]),
+        gpu_fn=lambda: llm_chat([...]),
         cpu_fn=lambda: _cpu_fallback(...),
     )
 """

@@ -29,7 +29,7 @@ from typing import Any
 import numpy as np
 
 from core.config import get_settings
-from core.nim_client import nim_embed
+from core.llm import llm_embed
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class EmbeddingPipeline:
 
         if self.use_nim:
             try:
-                result = await nim_embed([text])
+                result = await llm_embed([text])
                 vec = np.array(result[0], dtype=np.float32)
                 if len(vec) != self.dimension:
                     logger.warning(

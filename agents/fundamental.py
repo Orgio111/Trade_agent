@@ -9,7 +9,7 @@ import httpx
 from core.config import get_settings
 from core.messaging import MsgType, get_bus
 from core.models import FundamentalSignal, Side
-from core.nim_client import nim_json
+from core.llm import llm_json
 from core.observability import AGENT_LATENCY, SIGNAL_COUNTER
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ class FundamentalAgent:
     async def analyze(self, symbol: str) -> FundamentalSignal:
         with AGENT_LATENCY.labels(agent="fundamental").time():
             metrics = await self._fetch_on_chain(symbol)
-            result = await nim_json(
+            result = await llm_json(
                 [
                     {"role": "system", "content": _SYSTEM_PROMPT},
                     {

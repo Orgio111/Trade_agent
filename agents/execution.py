@@ -101,14 +101,6 @@ class ExecutionAgent:
         ``predict`` call to avoid ``asyncio.ensure_future`` in a synchronous
         constructor (which would fail if no event loop is running).
         """
-
-    def _init_serve_client(self) -> None:
-        """Initialise Ray Serve client if ``RAY_SERVE_URL`` is configured.
-
-        The background auto-reload loop is started lazily on the first
-        ``predict`` call to avoid ``asyncio.ensure_future`` in a synchronous
-        constructor (which would fail if no event loop is running).
-        """
         cfg = get_settings()
         if not cfg.ray_serve_url:
             return

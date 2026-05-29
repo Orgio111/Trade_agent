@@ -3,8 +3,26 @@
 import grpc
 import warnings
 
-from core.proto import risk_pb2 as risk__pb2
+import risk_pb2 as risk__pb2
 
+GRPC_GENERATED_VERSION = '1.80.0'
+GRPC_VERSION = grpc.__version__
+_version_not_supported = False
+
+try:
+    from grpc._utilities import first_version_is_lower
+    _version_not_supported = first_version_is_lower(GRPC_VERSION, GRPC_GENERATED_VERSION)
+except ImportError:
+    _version_not_supported = True
+
+if _version_not_supported:
+    raise RuntimeError(
+        f'The grpc package installed is at version {GRPC_VERSION},'
+        + ' but the generated code in risk_pb2_grpc.py depends on'
+        + f' grpcio>={GRPC_GENERATED_VERSION}.'
+        + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
+        + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
+    )
 
 
 class RiskEngineStub(object):
@@ -20,17 +38,22 @@ class RiskEngineStub(object):
                 '/sentinelx.risk.RiskEngine/Validate',
                 request_serializer=risk__pb2.RiskRequest.SerializeToString,
                 response_deserializer=risk__pb2.RiskResponse.FromString,
-                _registered_method=False)
+                _registered_method=True)
         self.GetPortfolioHeat = channel.stream_stream(
                 '/sentinelx.risk.RiskEngine/GetPortfolioHeat',
                 request_serializer=risk__pb2.RiskRequest.SerializeToString,
                 response_deserializer=risk__pb2.RiskResponse.FromString,
-                _registered_method=False)
+                _registered_method=True)
         self.SubscribeKillSwitch = channel.unary_stream(
                 '/sentinelx.risk.RiskEngine/SubscribeKillSwitch',
                 request_serializer=risk__pb2.KillSwitchRequest.SerializeToString,
                 response_deserializer=risk__pb2.KillSwitchEvent.FromString,
-                _registered_method=False)
+                _registered_method=True)
+        self.RunBacktest = channel.unary_unary(
+                '/sentinelx.risk.RiskEngine/RunBacktest',
+                request_serializer=risk__pb2.BacktestRequest.SerializeToString,
+                response_deserializer=risk__pb2.BacktestResponse.FromString,
+                _registered_method=True)
 
 
 class RiskEngineServicer(object):
@@ -54,6 +77,12 @@ class RiskEngineServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def RunBacktest(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_RiskEngineServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -72,10 +101,16 @@ def add_RiskEngineServicer_to_server(servicer, server):
                     request_deserializer=risk__pb2.KillSwitchRequest.FromString,
                     response_serializer=risk__pb2.KillSwitchEvent.SerializeToString,
             ),
+            'RunBacktest': grpc.unary_unary_rpc_method_handler(
+                    servicer.RunBacktest,
+                    request_deserializer=risk__pb2.BacktestRequest.FromString,
+                    response_serializer=risk__pb2.BacktestResponse.SerializeToString,
+            ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
             'sentinelx.risk.RiskEngine', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('sentinelx.risk.RiskEngine', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -107,7 +142,7 @@ class RiskEngine(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=False)
+            _registered_method=True)
 
     @staticmethod
     def GetPortfolioHeat(request_iterator,
@@ -134,7 +169,7 @@ class RiskEngine(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=False)
+            _registered_method=True)
 
     @staticmethod
     def SubscribeKillSwitch(request,
@@ -161,4 +196,31 @@ class RiskEngine(object):
             wait_for_ready,
             timeout,
             metadata,
-            _registered_method=False)
+            _registered_method=True)
+
+    @staticmethod
+    def RunBacktest(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/sentinelx.risk.RiskEngine/RunBacktest',
+            risk__pb2.BacktestRequest.SerializeToString,
+            risk__pb2.BacktestResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)

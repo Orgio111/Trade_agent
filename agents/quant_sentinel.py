@@ -20,7 +20,7 @@ from enum import Enum
 
 import numpy as np
 
-from core.nim_client import nim_json
+from core.llm import llm_json
 from core.scheduler import TaskType, route
 
 log = logging.getLogger(__name__)
@@ -127,7 +127,7 @@ Conservative bias: mark non-trending, high-volatility regimes as not tradeable."
 
 async def _gpu_quant_llm(stats: dict, symbol: str) -> dict:
     """NIM LLM interprets statistical regime output (GPU path)."""
-    return await nim_json(
+    return await llm_json(
         [
             {"role": "system", "content": _QUANT_SYSTEM},
             {

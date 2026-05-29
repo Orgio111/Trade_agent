@@ -3,6 +3,11 @@ requires = ["setuptools>=70"]
 build-backend = "setuptools.backends.legacy:build"
 
 [project.optional-dependencies]
+gateway = [
+    "pyjwt>=2.8",
+    "uvicorn[standard]>=0.29",
+    "fastapi>=0.110",
+]
 sentinelx = [
     "grpcio>=1.62",
     "grpcio-tools>=1.62",

@@ -16,7 +16,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from core.nim_client import nim_json
+from core.llm import llm_json
 from core.scheduler import TaskType, route
 
 log = logging.getLogger(__name__)
@@ -98,7 +98,7 @@ async def run_stl_protocol(
     )
 
     async def _gpu_calibrate() -> dict:
-        return await nim_json(
+        return await llm_json(
             [
                 {"role": "system", "content": _CALIBRATION_SYSTEM},
                 {"role": "user", "content": debate_input + "\n\nApply STL Protocol and return JSON."},

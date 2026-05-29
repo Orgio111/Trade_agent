@@ -53,6 +53,30 @@ service RiskEngine {
   rpc Validate(RiskRequest)          returns (RiskResponse);
   rpc GetPortfolioHeat(stream RiskRequest) returns (stream RiskResponse);
   rpc SubscribeKillSwitch(KillSwitchRequest) returns (stream KillSwitchEvent);
+  rpc RunBacktest(BacktestRequest)   returns (BacktestResponse);
 }
 
 message KillSwitchRequest { string subscriber_id = 1; }
+
+// ── Backtest request / response ────────────────────────────────────────────────
+message BacktestRequest {
+  string  symbol          = 1;
+  repeated double closes  = 2;
+  repeated double highs   = 3;
+  repeated double lows    = 4;
+  repeated double volumes = 5;
+  double  initial_equity   = 6;
+  double  kelly_fraction   = 7;
+  double  atr_multiplier   = 8;
+  int32   atr_period       = 9;
+}
+
+message BacktestResponse {
+  int32   total_trades    = 1;
+  int32   winning_trades  = 2;
+  double  total_pnl       = 3;
+  double  sharpe_ratio    = 4;
+  double  max_drawdown    = 5;
+  double  win_rate        = 6;
+  repeated double returns = 7;
+}

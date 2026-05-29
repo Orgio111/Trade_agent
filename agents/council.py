@@ -24,7 +24,7 @@ from core.models import (
 )
 from agents.stl_protocol import STLResult, run_stl_protocol
 from agents.quant_sentinel import QuantSentinelAgent
-from core.nim_client import nim_json
+from core.llm import llm_json
 from core.observability import AGENT_LATENCY, COUNCIL_CONSENSUS
 
 logger = logging.getLogger(__name__)
@@ -122,7 +122,7 @@ def _build_market_context(
 
 
 async def _argue(system_prompt: str, context: str, role: str) -> DebateArgument:
-    result = await nim_json(
+    result = await llm_json(
         [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Market context:\n{context}\n\nMake your case."},
@@ -233,7 +233,7 @@ class CouncilAgent:
                     f"Historical memory was injected as context for both analysts."
                 )
 
-                synthesis = await nim_json(
+                synthesis = await llm_json(
                     [
                         {"role": "system", "content": _SUPERVISOR_SYSTEM},
                         {

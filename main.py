@@ -1,6 +1,6 @@
 """
-Entry point — boots uvloop, starts the market data feed, supervisor loop,
-and the web monitoring dashboard.
+Entry point — boots uvloop, launches concurrent per-symbol supervisor tasks,
+starts the market data feed, web dashboard, and optional API gateway.
 """
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import asyncio
 import logging
 import signal
 import sys
-import threading
 
 try:
     import uvloop  # type: ignore[import]
@@ -35,63 +34,109 @@ logging.basicConfig(
 logger = logging.getLogger("main")
 
 
-async def _run_supervisor_loop(
+# ── Concurrent per-symbol supervisor loops ─────────────────────────────────
+
+async def _run_symbol_loop(
     supervisor: PortfolioSupervisor,
     feed: MarketDataFeed,
+    symbol: str,
     cfg,
 ) -> None:
-    logger.info("Supervisor loop started for symbols: %s", cfg.symbols)
+    """Independent supervisor cycle for a single symbol.
+
+    Each symbol runs in its own ``while True`` loop with its own cadence,
+    so N symbols never block one another.
+    """
+    logger.info("Supervisor loop started for %s (cadence=%.1fs)", symbol, cfg.supervisor_cadence_s)
     while True:
-        for symbol in cfg.symbols:
-            tick = feed.latest_tick(symbol)
-            if tick is None:
-                continue
-            closes = feed.get_closes(symbol).tolist()
-            highs = feed.get_highs(symbol).tolist()
-            lows = feed.get_lows(symbol).tolist()
-            volumes = feed.get_volumes(symbol).tolist()
-            if len(closes) < 50:
-                continue  # not enough warmup data
-            try:
-                await supervisor.run_cycle(symbol, closes, highs, lows, volumes)
-            except Exception as exc:
-                logger.error("Supervisor cycle error for %s: %s", symbol, exc, exc_info=True)
-        await asyncio.sleep(60)  # 1-minute cadence
+        tick = feed.latest_tick(symbol)
+        if tick is None:
+            await asyncio.sleep(1)
+            continue
+        closes = feed.get_closes(symbol).tolist()
+        highs = feed.get_highs(symbol).tolist()
+        lows = feed.get_lows(symbol).tolist()
+        volumes = feed.get_volumes(symbol).tolist()
+        if len(closes) < 50:
+            await asyncio.sleep(10)
+            continue  # not enough warmup data
+        try:
+            await supervisor.run_cycle(symbol, closes, highs, lows, volumes)
+        except Exception as exc:
+            logger.error("Supervisor cycle error for %s: %s", symbol, exc, exc_info=True)
+        await asyncio.sleep(cfg.supervisor_cadence_s)
 
 
-# ── Web dashboard server thread ──────────────────────────────────────────────
-_dashboard_thread: threading.Thread | None = None
+# ── Web dashboard server (async uvicorn) ──────────────────────────────────
+_dashboard_task: asyncio.Task | None = None
 
 
-def _start_dashboard() -> None:
-    """Start the FastAPI dashboard server in a daemon thread."""
+async def _start_dashboard() -> None:
+    """Start the FastAPI dashboard server as an async uvicorn task."""
     try:
         import uvicorn  # type: ignore[import]
-        logger.info("Starting web dashboard on http://0.0.0.0:3000")
-        uvicorn.run(
+
+        config = uvicorn.Config(
             "web.server:app",
             host="0.0.0.0",
             port=3000,
             log_level="info",
             reload=False,
         )
+        server = uvicorn.Server(config)
+        logger.info("Starting web dashboard on http://0.0.0.0:3000")
+        await server.serve()
     except ImportError:
         logger.warning("uvicorn not installed — dashboard disabled. pip install uvicorn fastapi")
     except Exception as exc:
         logger.error("Dashboard server error: %s", exc)
 
 
+# ── API Gateway server (optional, async uvicorn) ──────────────────────────
+_gateway_task: asyncio.Task | None = None
+
+
+async def _start_gateway() -> None:
+    """Start the API Gateway with JWT auth & rate limiting (optional)."""
+    cfg = get_settings()
+    if not cfg.gateway_enabled:
+        logger.info("API Gateway disabled (set GATEWAY_ENABLED=True to enable)")
+        return
+    try:
+        import uvicorn  # type: ignore[import]
+
+        config = uvicorn.Config(
+            "gateway.app:app",
+            host="0.0.0.0",
+            port=cfg.gateway_port,
+            log_level="info",
+            reload=False,
+        )
+        server = uvicorn.Server(config)
+        logger.info("Starting API Gateway on http://0.0.0.0:%d", cfg.gateway_port)
+        await server.serve()
+    except ImportError:
+        logger.warning("uvicorn not installed — gateway disabled")
+    except Exception as exc:
+        logger.error("Gateway server error: %s", exc)
+
+
 async def main() -> None:
     cfg = get_settings()
 
-    # Start Prometheus metrics server
+    # Start Prometheus metrics HTTP server (runs in a background daemon thread
+    # internally — pragmatic choice; prometheus_client lacks full async support)
     start_http_server(cfg.prometheus_port)
     logger.info("Prometheus metrics on :%d/metrics", cfg.prometheus_port)
 
-    # Start web dashboard in a daemon thread
-    global _dashboard_thread
-    _dashboard_thread = threading.Thread(target=_start_dashboard, daemon=True)
-    _dashboard_thread.start()
+    # Start web dashboard as an async task instead of a daemon thread
+    global _dashboard_task
+    _dashboard_task = asyncio.create_task(_start_dashboard(), name="dashboard")
+
+    # Start API Gateway (if enabled)
+    global _gateway_task
+    if cfg.gateway_enabled:
+        _gateway_task = asyncio.create_task(_start_gateway(), name="gateway")
 
     # ── Paper trading account (enabled via --paper or PAPER_TRADING=True) ──
     paper_account: PaperAccount | None = None
@@ -124,9 +169,15 @@ async def main() -> None:
         logger.info("Signal handlers unavailable on Windows — press Ctrl+C to stop gracefully")
 
     feed_task = asyncio.create_task(feed.start(), name="market_feed")
-    supervisor_task = asyncio.create_task(
-        _run_supervisor_loop(supervisor, feed, cfg), name="supervisor"
-    )
+
+    # ── Launch one concurrent supervisor task per symbol ─────────────────
+    supervisor_tasks = [
+        asyncio.create_task(
+            _run_symbol_loop(supervisor, feed, sym, cfg),
+            name=f"supervisor-{sym}",
+        )
+        for sym in cfg.symbols
+    ]
 
     try:
         await stop_event.wait()
@@ -134,7 +185,25 @@ async def main() -> None:
         logger.info("Main task cancelled — shutting down")
     finally:
         feed_task.cancel()
-        supervisor_task.cancel()
+        for st in supervisor_tasks:
+            st.cancel()
+
+        # Cancel dashboard task
+        if _dashboard_task is not None:
+            _dashboard_task.cancel()
+            try:
+                await _dashboard_task
+            except asyncio.CancelledError:
+                pass
+
+        # Cancel gateway task
+        if _gateway_task is not None:
+            _gateway_task.cancel()
+            try:
+                await _gateway_task
+            except asyncio.CancelledError:
+                pass
+
         await feed.stop()
 
         # Stop feature extractor
@@ -154,7 +223,7 @@ async def main() -> None:
         logger.info("Shutdown complete.")
 
 
-# ── Backtest CLI ──────────────────────────────────────────────────────────────
+# ── Backtest CLI ──────────────────────────────────────────────────────────
 
 async def _run_backtest(args: argparse.Namespace) -> None:
     """Entry point for the backtest sub-command."""
@@ -180,10 +249,10 @@ async def _run_backtest(args: argparse.Namespace) -> None:
     print("  BACKTEST RESULTS")
     print("═" * 60)
     print(f"  Symbols:        {cfg.symbols}")
-    print(f"  Period:         {cfg.start} → {cfg.end}")
+    print(f"  Period:         {cfg.start} \u2192 {cfg.end}")
     print(f"  Timeframe:      {cfg.timeframe}")
     print(f"  Initial capital: ${cfg.initial_capital:,.2f}")
-    print("─" * 60)
+    print("\u2500" * 60)
     s = summary["summary"]
     print(f"  Final equity:    ${s['final_equity']:,.2f}")
     print(f"  Total return:    {s['total_return_pct']:+.2f}%")
@@ -197,16 +266,16 @@ async def _run_backtest(args: argparse.Namespace) -> None:
     print("═" * 60)
 
     if result.errors:
-        print(f"\n⚠  {len(result.errors)} error(s):")
+        print(f"\n\u26a0  {len(result.errors)} error(s):")
         for e in result.errors[:5]:
-            print(f"   • {e}")
+            print(f"   \u2022 {e}")
 
     print()
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Multi-agent AI trading system — live or backtest mode.",
+        description="Multi-agent AI trading system \u2014 live or backtest mode.",
     )
     parser.add_argument(
         "--backtest",
@@ -249,5 +318,5 @@ if __name__ == "__main__":
         if _HAVE_UVLOOP:
             uvloop.install()  # type: ignore[union-attr]
         else:
-            logger.info("uvloop not available — using asyncio default event loop")
+            logger.info("uvloop not available \u2014 using asyncio default event loop")
         asyncio.run(main())

@@ -38,7 +38,7 @@ from core.models import (
     Side,
     TechnicalSignal,
 )
-from core.nim_client import nim_chat
+from core.llm import llm_chat
 from core.observability import (
     AGENT_LATENCY,
     PNL_GAUGE,
@@ -238,7 +238,7 @@ async def node_supervisor_decision(state: TradingState) -> dict:
         f"stop={risk.stop_loss_price:.4f}, TP={risk.take_profit_price:.4f}\n"
         "In 2 sentences, explain the final trading rationale."
     )
-    rationale = await nim_chat(
+    rationale = await llm_chat(
         [{"role": "user", "content": prompt}], temperature=0.2, max_tokens=200
     )
     decision.rationale = rationale

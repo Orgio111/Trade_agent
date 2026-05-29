@@ -17,8 +17,14 @@ class Settings(BaseSettings):
         protected_namespaces=(),
     )
 
+    # ── Multi-provider LLM routing ────────────────────────────────────────────
+    llm_default_provider: str = Field(
+        "nim", alias="LLM_DEFAULT_PROVIDER",
+    )
+    """Default LLM provider (``"nim"``, ``"openai"``, ``"anthropic"``)."""
+
     # ── NVIDIA NIM ──────────────────────────────────────────────────────────
-    nim_api_key: str = Field(..., alias="NIM_API_KEY")
+    nim_api_key: str = Field("", alias="NIM_API_KEY")
     nim_base_url: str = Field(
         "https://integrate.api.nvidia.com/v1", alias="NIM_BASE_URL"
     )
@@ -27,6 +33,16 @@ class Settings(BaseSettings):
         "nvidia/nv-embedqa-e5-v5", alias="NIM_EMBED_MODEL"
     )
     nim_timeout: float = Field(30.0, alias="NIM_TIMEOUT")
+
+    # ── OpenAI ────────────────────────────────────────────────────────────────
+    openai_api_key: str = Field("", alias="OPENAI_API_KEY")
+    openai_base_url: str = Field("", alias="OPENAI_BASE_URL")
+    openai_timeout: float = Field(30.0, alias="OPENAI_TIMEOUT")
+
+    # ── Anthropic ──────────────────────────────────────────────────────────────
+    anthropic_api_key: str = Field("", alias="ANTHROPIC_API_KEY")
+    anthropic_base_url: str = Field("", alias="ANTHROPIC_BASE_URL")
+    anthropic_timeout: float = Field(60.0, alias="ANTHROPIC_TIMEOUT")
 
     # ── Market data ──────────────────────────────────────────────────────────
     exchange: Literal["binance", "coinbase", "kraken"] = Field(
@@ -170,7 +186,7 @@ class Settings(BaseSettings):
     )
     """Number of bars for rolling CVD normalisation / OI-price correlation."""
 
-    # ── Backtesting ───────────────────────────────────────────────────────────
+    # ── Backtesting (Python engine) ───────────────────────────────────────────
     backtest_mode: bool = Field(False, alias="BACKTEST")
     """Enable backtest mode — load historical data instead of live feeds."""
 
@@ -189,6 +205,44 @@ class Settings(BaseSettings):
     backtest_max_cycles: int = Field(0, alias="BACKTEST_MAX_CYCLES")
     """Limit bars processed in backtest (0 = all).  Useful for quick tests."""
 
+    # ── Rust Backtest Engine (Phase 5) ───────────────────────────────────────
+    rust_backtest_enabled: bool = Field(
+        True, alias="RUST_BACKTEST_ENABLED"
+    )
+    """Set ``False`` to always use the pure-Python backtest engine."""
+
+    rust_backtest_binary: str = Field(
+        "", alias="RUST_BACKTEST_BINARY"
+    )
+    """Path to the ``sentinel-risk`` binary.  Leave empty for auto-detection
+    (checks ``SENTINELX_RUST_BINARY`` env var, then default build dirs)."""
+
+    rust_backtest_timeout_s: float = Field(
+        30.0, alias="RUST_BACKTEST_TIMEOUT_S"
+    )
+    """Subprocess timeout in seconds for Rust backtest execution."""
+
+    rust_backtest_kelly: float = Field(
+        0.25, alias="RUST_BACKTEST_KELLY"
+    )
+    """Fractional Kelly factor passed to the Rust backtest engine."""
+
+    rust_backtest_atr_period: int = Field(
+        14, alias="RUST_BACKTEST_ATR_PERIOD"
+    )
+    """ATR lookback period for the Rust backtest engine."""
+
+    rust_backtest_atr_multiplier: float = Field(
+        2.0, alias="RUST_BACKTEST_ATR_MULTIPLIER"
+    )
+    """ATR stop-loss multiplier for the Rust backtest engine."""
+
+    rust_backtest_auto_launch: bool = Field(
+        False, alias="RUST_BACKTEST_AUTO_LAUNCH"
+    )
+    """If ``True``, ``main.py`` spawns the Rust risk engine as a subprocess
+    on startup (useful for local dev without Docker)."""
+
     # ── TurboVec Memory Engine ─────────────────────────────────────────────────
     turbovec_index_dir: str = Field(
         ".turbovec", alias="TURBOVEC_INDEX_DIR"
@@ -206,6 +260,44 @@ class Settings(BaseSettings):
 
     memory_enabled: bool = Field(True, alias="MEMORY_ENABLED")
     """Toggle semantic memory pipeline on/off."""
+
+    # ── Supervisor loop ────────────────────────────────────────────────────────
+    supervisor_cadence_s: float = Field(60.0, alias="SUPERVISOR_CADENCE_S")
+    """Sleep interval (seconds) between supervisor cycles per symbol.
+    Each symbol gets its own concurrent loop — this is the delay *per symbol*,
+    so N symbols run independently at this cadence."""
+
+    # ── API Gateway Auth ──────────────────────────────────────────────────────
+    gateway_enabled: bool = Field(False, alias="GATEWAY_ENABLED")
+    """Set to ``True`` to start the API Gateway alongside the dashboard."""
+
+    gateway_port: int = Field(8080, alias="GATEWAY_PORT")
+    """Port for the API Gateway HTTP server."""
+
+    gateway_jwt_secret: str = Field(
+        "change-me-in-production", alias="GATEWAY_JWT_SECRET",
+    )
+    """HMAC secret used to sign JWT tokens for the API Gateway.
+    **Change this in production.**"""
+
+    gateway_jwt_algorithm: str = Field("HS256", alias="GATEWAY_JWT_ALGORITHM")
+    """JWT signing algorithm (``"HS256"``, ``"RS256"``, etc.)."""
+
+    gateway_jwt_expiry_minutes: int = Field(60, alias="GATEWAY_JWT_EXPIRY_MINUTES")
+    """JWT token validity period in minutes."""
+
+    gateway_rate_limit_per_minute: int = Field(
+        60, alias="GATEWAY_RATE_LIMIT_PER_MINUTE",
+    )
+    """Maximum number of API requests per client IP per minute."""
+
+    gateway_admin_api_key: str = Field(
+        "", alias="GATEWAY_ADMIN_API_KEY",
+    )
+    """Optional static API key for admin-level operations (health, metrics).
+    Leave empty to disable admin endpoints."""
+
+    @property
 
     @property
     def exchanges(self) -> list[str]:

@@ -91,7 +91,7 @@ async def test_council_deliberate_buy(mock_technical):
             rationale="Momentum favors bulls with moderate consensus.",
         )
 
-    with patch("agents.council.nim_json", side_effect=mock_nim_json), \
+    with patch("agents.council.llm_json", side_effect=mock_nim_json), \
          patch("agents.council.run_stl_protocol", side_effect=mock_stl), \
          patch("agents.council.get_bus") as mock_bus:
         mock_bus.return_value = AsyncMock()
@@ -135,7 +135,7 @@ async def test_council_low_consensus_hold():
                     "supporting_factors": [], "risk_factors": []}
         return synthesis_response
 
-    with patch("agents.council.nim_json", side_effect=side_effect), \
+    with patch("agents.council.llm_json", side_effect=side_effect), \
          patch("agents.council.get_bus") as mock_bus:
         mock_bus.return_value = AsyncMock()
         mock_bus.return_value.publish = AsyncMock()

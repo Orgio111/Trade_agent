@@ -14,7 +14,7 @@ import asyncpg  # type: ignore[import]
 from core.config import get_settings
 from core.messaging import MsgType, get_bus
 from core.models import Order, OrderStatus, Side, TradeOutcome
-from core.nim_client import nim_json
+from core.llm import llm_json
 from core.observability import AGENT_LATENCY
 
 logger = logging.getLogger(__name__)
@@ -160,7 +160,7 @@ class MemoryAgent:
                 f"Win: {outcome.win}\n"
                 f"Council context: {council_json}"
             )
-            result = await nim_json(
+            result = await llm_json(
                 [
                     {"role": "system", "content": _REFLECTION_SYSTEM},
                     {"role": "user", "content": context},

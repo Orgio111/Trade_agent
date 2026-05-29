@@ -9,8 +9,10 @@ use tokio::sync::RwLock;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 
+use crate::backtest::engine::BacktestEngine;
 use crate::proto::{
     risk_engine_server::RiskEngine,
+    BacktestRequest, BacktestResponse,
     KillSwitchEvent, KillSwitchRequest,
     RiskRequest, RiskResponse,
 };
@@ -185,6 +187,47 @@ impl RiskEngine for RiskEngineService {
             }
         });
         Ok(Response::new(ReceiverStream::new(rx)))
+    }
+
+    async fn run_backtest(
+        &self,
+        request: Request<BacktestRequest>,
+    ) -> Result<Response<BacktestResponse>, Status> {
+        let req = request.into_inner();
+
+        // Build bars from the OHLCV series
+        let n = req.closes.len().min(req.highs.len()).min(req.lows.len()).min(req.volumes.len());
+        if n < 2 {
+            return Ok(Response::new(BacktestResponse::default()));
+        }
+
+        let bars: Vec<crate::backtest::engine::Bar> = (0..n)
+            .map(|i| crate::backtest::engine::Bar {
+                close:  req.closes[i],
+                high:   req.highs[i],
+                low:    req.lows[i],
+                volume: req.volumes[i],
+            })
+            .collect();
+
+        let engine = BacktestEngine::new(
+            req.initial_equity.max(1_000.0),
+            req.atr_period.max(1) as usize,
+            req.atr_multiplier.max(0.5),
+            req.kelly_fraction.max(0.01).min(1.0),
+        );
+
+        let result = engine.run(&bars);
+
+        Ok(Response::new(BacktestResponse {
+            total_trades:   result.total_trades as i32,
+            winning_trades: result.winning_trades as i32,
+            total_pnl:      result.total_pnl,
+            sharpe_ratio:   result.sharpe_ratio,
+            max_drawdown:   result.max_drawdown,
+            win_rate:       result.win_rate,
+            returns:        result.returns,
+        }))
     }
 
     async fn subscribe_kill_switch(
