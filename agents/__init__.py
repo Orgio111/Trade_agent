@@ -1,1 +1,0 @@
-"""Specialized trading agents package."""
