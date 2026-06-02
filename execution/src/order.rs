@@ -45,6 +45,7 @@ pub struct Order {
 }
 
 impl Order {
+    #[allow(dead_code)]
     pub fn new(
         symbol: String,
         side: OrderSide,
@@ -71,11 +72,13 @@ impl Order {
         }
     }
 
+    #[allow(dead_code)]
     pub fn notional_value(&self) -> f64 {
         let price = self.price.unwrap_or(0.0);
         self.quantity * price * self.leverage as f64
     }
 
+    #[allow(dead_code)]
     pub fn is_filled(&self) -> bool {
         matches!(self.status, OrderStatus::Filled)
     }
@@ -108,6 +111,7 @@ pub struct TakeProfitLevel {
 }
 
 impl Position {
+    #[allow(dead_code)]
     pub fn new(
         symbol: String,
         side: OrderSide,

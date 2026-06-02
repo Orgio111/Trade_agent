@@ -58,7 +58,7 @@ class AgentModelMap:
 NIM_REASONING = ModelConfig(
     name="DeepSeek V4 Flash",
     provider="nvidia_nim",
-    api_model_id="deepseek/deepseek-v4-flash",
+    api_model_id="deepseek-ai/deepseek-v4-flash",
     context_window=1_000_000,
     reasoning_score=0.95,
     speed_score=0.7,
@@ -157,6 +157,37 @@ OR_PHI_4 = ModelConfig(
     free_tier=True,
 )
 
+# Groq LPU models (ultra-fast inference)
+GR_LLAMA3_8B = ModelConfig(
+    name="Llama 3 8B (Groq)",
+    provider="groq",
+    api_model_id="llama3-8b-8192",
+    context_window=8_192,
+    reasoning_score=0.55,
+    speed_score=0.95,
+    free_tier=True,
+)
+
+GR_QWEN3_32B = ModelConfig(
+    name="Qwen3 32B (Groq)",
+    provider="groq",
+    api_model_id="qwen/qwen3-32b",
+    context_window=32_768,
+    reasoning_score=0.85,
+    speed_score=0.75,
+    free_tier=True,
+)
+
+GR_LLAMA70B = ModelConfig(
+    name="Llama 3.3 70B (Groq)",
+    provider="groq",
+    api_model_id="llama-3.3-70b-versatile",
+    context_window=32_768,
+    reasoning_score=0.92,
+    speed_score=0.70,
+    free_tier=True,
+)
+
 # Local models (self-hosted)
 LOCAL_MISTRAL = ModelConfig(
     name="Mistral 7B (Local)",
@@ -167,6 +198,64 @@ LOCAL_MISTRAL = ModelConfig(
     speed_score=0.95,
     free_tier=True,
 )
+
+# ── Agent -> Provider Chain Mapping ──────────────────────────
+#
+# Maps each agent to its optimal provider chain for the InferenceRouter.
+# The router tries providers in order, falling through on failure.
+#
+# Agent type → [primary_provider, fallback_provider, tertiary_provider]
+#
+# Design principles:
+#   - Scalping/Execution: Groq first (ultra-fast LPU inference, 800+ tok/s)
+#   - Market Analyst/DeepSeek: NVIDIA NIM first (highest quality reasoning)
+#   - Risk Guardian: OpenRouter first (fast structured output models like QwQ-32B)
+#   - Sentiment/Regime: OpenRouter free tier (cheap, good enough for classification)
+#   - All: OpenRouter as universal fallback (200+ models, highest availability)
+
+AGENT_PROVIDER_CHAINS: dict[str, list[str]] = {
+    # ═══ Reasoning agents — quality first, speed second ═══
+    # Uses NVIDIA NIM for highest quality analysis, falls back to Groq, then OpenRouter
+    "supervisor":        ["nvidia_nim", "groq", "openrouter"],
+    "market_analyst":    ["nvidia_nim", "groq", "openrouter"],
+    "deepseek_analyst":  ["nvidia_nim", "groq", "openrouter"],
+    "swing_agent":       ["nvidia_nim", "groq", "openrouter"],
+
+    # ═══ Ultra-fast agents — speed first, any provider ═══
+    # Groq LPU inference (800+ tok/s) for latency-sensitive decisions
+    "scalping_agent":    ["groq", "openrouter", "nvidia_nim"],
+    "execution_agent":   ["groq", "openrouter", "nvidia_nim"],
+    "anomaly_agent":     ["groq", "openrouter", "nvidia_nim"],
+
+    # ═══ Risk & safety — structured, reliable, moderate speed ═══
+    # Groq first for fast risk checks, then OpenRouter for thorough analysis
+    "risk_guardian":     ["groq", "openrouter", "nvidia_nim"],
+
+    # ═══ Classification — cheap, fast, low-stakes ═══
+    # OpenRouter free tier is sufficient for classification tasks
+    "sentiment_agent":   ["openrouter", "groq", "nvidia_nim"],
+    "regime_agent":      ["openrouter", "groq", "nvidia_nim"],
+    "memory":            ["openrouter", "groq", "nvidia_nim"],
+
+    # ═══ Default fallback for any unregistered agent ═══
+    "default":           ["groq", "nvidia_nim", "openrouter"],
+}
+
+# Agent → InferenceRouter task_type override
+# Allows agents to request specific model capabilities independent of their prompt's task_type
+AGENT_TASK_TYPE_OVERRIDES: dict[str, str] = {
+    "scalping_agent":    "urgent",           # Ultra-low latency required
+    "execution_agent":   "urgent",           # Ultra-low latency required
+    "anomaly_agent":     "fast",             # Fast pattern matching
+    "risk_guardian":     "reasoning",        # Needs careful reasoning
+    "sentiment_agent":   "classification",   # Simple text classification
+    "regime_agent":      "classification",   # Simple regime classification
+    "memory":            "classification",   # Simple text operations
+    "market_analyst":    "analysis",         # Deep market analysis
+    "supervisor":        "reasoning",        # Complex multi-factor reasoning
+    "deepseek_analyst":  "reasoning",        # Deep reasoning with R1
+    "swing_agent":       "analysis",         # Medium-term market analysis
+}
 
 
 # ── Agent -> Model Mapping ──────────────────────────────────
@@ -271,12 +360,44 @@ class AgentModelRouter:
       - Task type (reasoning-heavy vs latency-sensitive)
       - Cost constraints (try free tier first)
       - Availability (fallback on failure)
-      - Performance tracking (prefer reliable routes)
+      - Adaptive performance tracking (real observed P50 latency reorders chains)
+
+    Adaptive routing tracks per-agent per-provider latencies using exponential
+    moving averages (EMA). After collecting enough samples, it automatically
+    reorders provider chains so faster providers are tried first.
+
+    Configuration:
+      - EMA_ALPHA:          Smoothing factor (0.1 = smooth, 0.5 = responsive)
+      - MIN_SAMPLES:        Minimum requests before adaptive reordering kicks in
+      - MIN_SAMPLES_FAST:   Lower threshold for latency-sensitive agents
+      - FAILURE_LATENCY_MS: Assumed latency when a provider fails (timeout * 2)
     """
+
+    # EMA smoothing — lower = smoother (less noisy), higher = more responsive
+    EMA_ALPHA = 0.2
+    # Minimum observations before adaptive reordering activates
+    MIN_SAMPLES = 10
+    MIN_SAMPLES_FAST = 5  # Lower threshold for latency-sensitive agents
+    # Penalty for failed requests (in ms) — used instead of actual latency
+    FAILURE_LATENCY_MS = 30_000  # 30s
 
     def __init__(self):
         self._route_stats: dict[str, dict] = {}
         self._fallback_cache: dict[str, bool] = {}
+
+        # ── Adaptive routing state ────────────────────────────────────────
+        # Structure: {agent_id: {provider_name: {
+        #     "ema_latency_ms": float,   # Exponential moving average of latencies
+        #     "samples": int,             # Total observations
+        #     "successes": int,           # Successful requests
+        #     "failures": int,            # Failed requests
+        #     "last_updated": float,      # Timestamp of last observation
+        #     "p50_latency_ms": float,    # Raw P50 (for reference)
+        #     "_raw": [float],            # Recent raw latencies (for P50 calc)
+        # }}}
+        self._perf: dict[str, dict[str, dict]] = {}
+
+    # ── Model selection (static, from config) ────────────────────────────
 
     def get_model_chain(self, agent_id: str, task_type: str = "reasoning") -> list[ModelConfig]:
         """
@@ -326,6 +447,128 @@ class AgentModelRouter:
 
         return agent_map.primary_model
 
+    # ── Adaptive provider chain reordering ─────────────────────────────
+
+    def record_provider_latency(
+        self,
+        agent_id: str,
+        provider: str,
+        latency_ms: float,
+        success: bool = True,
+    ):
+        """
+        Record a latency observation for an agent→provider pair.
+
+        Updates the EMA-based latency tracking. Failed requests are recorded
+        with a high latency penalty to deprioritize unreliable providers.
+
+        Args:
+            agent_id:  Which agent made the request
+            provider:  Which provider was used ("groq", "nvidia_nim", "openrouter")
+            latency_ms: Observed latency in milliseconds
+            success:   Whether the request succeeded
+        """
+        # Ensure agent entry exists
+        if agent_id not in self._perf:
+            self._perf[agent_id] = {}
+
+        # Ensure provider entry exists
+        if provider not in self._perf[agent_id]:
+            self._perf[agent_id][provider] = {
+                "ema_latency_ms": 0.0,
+                "samples": 0,
+                "successes": 0,
+                "failures": 0,
+                "last_updated": 0.0,
+                "p50_latency_ms": 0.0,
+                "_raw": [],
+            }
+
+        perf = self._perf[agent_id][provider]
+
+        # Use penalty latency for failures instead of the actual (missing) value
+        effective_latency = latency_ms if success else max(latency_ms, self.FAILURE_LATENCY_MS)
+
+        # Update EMA
+        if perf["samples"] == 0:
+            perf["ema_latency_ms"] = effective_latency
+        else:
+            perf["ema_latency_ms"] = (
+                self.EMA_ALPHA * effective_latency
+                + (1 - self.EMA_ALPHA) * perf["ema_latency_ms"]
+            )
+
+        perf["samples"] += 1
+        if success:
+            perf["successes"] += 1
+        else:
+            perf["failures"] += 1
+        perf["last_updated"] = time.time()
+
+        # Keep a sliding window of raw latencies for P50 calculation
+        perf["_raw"].append(effective_latency)
+        if len(perf["_raw"]) > 50:
+            perf["_raw"] = perf["_raw"][-25:]  # Keep last 25
+
+        # Recalculate P50 from recent raw samples
+        if len(perf["_raw"]) >= 3:
+            sorted_raw = sorted(perf["_raw"])
+            perf["p50_latency_ms"] = sorted_raw[len(sorted_raw) // 2]
+
+    def get_optimal_provider_chain(
+        self,
+        agent_id: str,
+        base_chain: list[str] | None = None,
+    ) -> list[str]:
+        """
+        Get an agent's provider chain sorted by observed P50 latency.
+
+        Uses EMA-smoothed latency to reorder providers so the fastest
+        (for this specific agent) is tried first. Falls back to the
+        static `base_chain` if there aren't enough samples yet.
+
+        Args:
+            agent_id:   Which agent's chain to optimize
+            base_chain: The static default chain (from AGENT_PROVIDER_CHAINS)
+                        If None, uses the "default" chain.
+
+        Returns:
+            Provider names ordered by performance (fastest first)
+        """
+        if base_chain is None:
+            base_chain = AGENT_PROVIDER_CHAINS.get(agent_id, AGENT_PROVIDER_CHAINS["default"])
+
+        agent_perf = self._perf.get(agent_id, {})
+
+        # Determine minimum samples threshold
+        agent_map = AGENT_MODEL_MAP.get(agent_id)
+        min_samples = self.MIN_SAMPLES_FAST if (agent_map and agent_map.latency_sensitive) else self.MIN_SAMPLES
+
+        # Check if we have enough data to adapt
+        has_enough_data = all(
+            provider in agent_perf and agent_perf[provider]["samples"] >= min_samples
+            for provider in base_chain
+        )
+
+        if not has_enough_data:
+            return list(base_chain)
+
+        # Sort by EMA latency (ascending) — fastest first
+        def _sort_key(provider: str) -> float:
+            if provider in agent_perf:
+                return agent_perf[provider]["ema_latency_ms"]
+            return float("inf")  # Unknown providers go last
+
+        return sorted(base_chain, key=_sort_key)
+
+    def get_provider_latency(self, agent_id: str, provider: str) -> float | None:
+        """Get the EMA latency for a specific agent→provider pair."""
+        return (
+            self._perf.get(agent_id, {}).get(provider, {}).get("ema_latency_ms")
+        )
+
+    # ── Result tracking (legacy) ────────────────────────────────────────
+
     def record_result(self, agent_id: str, model_name: str, success: bool,
                       latency_ms: float):
         """Record a routing result for performance tracking."""
@@ -337,12 +580,79 @@ class AgentModelRouter:
             self._route_stats[key]["successes"] += 1
         self._route_stats[key]["latencies"].append(latency_ms)
 
+    # ── Stats & monitoring ────────────────────────────────────────────
+
     def get_route_stats(self, agent_id: Optional[str] = None) -> dict:
         """Get routing statistics."""
         if agent_id:
             prefix = f"{agent_id}:"
             return {k: v for k, v in self._route_stats.items() if k.startswith(prefix)}
         return dict(self._route_stats)
+
+    def get_adaptive_routing_summary(self, agent_id: Optional[str] = None) -> dict:
+        """
+        Get adaptive routing performance data.
+
+        Returns per-provider EMA latencies, sample counts, and whether
+        each agent has enough data for adaptive reordering.
+
+        Args:
+            agent_id: If provided, returns data only for this agent
+
+        Returns:
+            dict with agent-level and provider-level performance data
+        """
+        result = {}
+
+        targets = [agent_id] if agent_id else list(self._perf.keys())
+
+        for aid in targets:
+            if aid not in self._perf:
+                continue
+
+            agent_entry = {}
+            for provider, perf in self._perf[aid].items():
+                agent_entry[provider] = {
+                    "ema_latency_ms": round(perf["ema_latency_ms"], 1),
+                    "p50_latency_ms": round(perf["p50_latency_ms"], 1),
+                    "samples": perf["samples"],
+                    "successes": perf["successes"],
+                    "failures": perf["failures"],
+                    "success_rate": (
+                        round(perf["successes"] / perf["samples"], 3)
+                        if perf["samples"] > 0 else 0.0
+                    ),
+                    "last_updated": perf["last_updated"],
+                }
+
+            # Check if all providers in the default chain have enough data
+            base_chain = AGENT_PROVIDER_CHAINS.get(aid)
+            if base_chain:
+                # Use the same threshold as get_optimal_provider_chain
+                agent_map = AGENT_MODEL_MAP.get(aid)
+                min_s = self.MIN_SAMPLES_FAST if (agent_map and agent_map.latency_sensitive) else self.MIN_SAMPLES
+                enough = all(
+                    p in self._perf[aid] and self._perf[aid][p]["samples"] >= min_s
+                    for p in base_chain
+                )
+                agent_entry["_adaptive_ready"] = enough
+
+                # Always show what the adapted chain would be (get_optimal_provider_chain handles its own threshold)
+                adapted = self.get_optimal_provider_chain(aid, base_chain)
+                agent_entry["_adapted_chain"] = adapted
+                if adapted != list(base_chain):
+                    agent_entry["_chain_adapted"] = True
+
+            result[aid] = agent_entry
+
+        return result
+
+    def reset_adaptive_data(self, agent_id: Optional[str] = None):
+        """Reset adaptive routing data for one or all agents."""
+        if agent_id:
+            self._perf.pop(agent_id, None)
+        else:
+            self._perf.clear()
 
     def get_agent_model_summary(self) -> list[dict]:
         """Get a summary of all agent-to-model mappings."""

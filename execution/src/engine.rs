@@ -9,6 +9,7 @@ use crate::exchange::{ExchangeConnector, BinanceConnector};
 pub struct TradingEngine {
     pub positions: Arc<DashMap<String, Position>>,
     pub orders: Arc<DashMap<String, Order>>,
+    #[allow(dead_code)]
     pub risk: RiskEngine,
     pub exchange: Arc<dyn ExchangeConnector>,
     pub balance: Arc<tokio::sync::RwLock<f64>>,
@@ -42,12 +43,22 @@ impl TradingEngine {
 
     async fn update_positions(&self) {
         for mut pos in self.positions.iter_mut() {
-            // In Phase 1, use mock price updates
-            let entry = pos.entry_price;
-            pos.update_price(entry * (1.0 + 0.001)); // Simulate slight movement
+            // Fetch real price from exchange for accurate PnL
+            match self.exchange.get_ticker(&pos.symbol).await {
+                Ok(ticker) => {
+                    pos.update_price(ticker.last);
+                }
+                Err(e) => {
+                    // Fallback to simulated movement if exchange call fails
+                    let entry = pos.entry_price;
+                    pos.update_price(entry * (1.0 + 0.001));
+                    tracing::warn!("⚠️  Price update from exchange failed: {} — using simulated", e);
+                }
+            }
         }
     }
 
+    #[allow(dead_code)]
     pub async fn execute_order(&self, order: Order, atr: f64, drawdown: f64) -> Result<OrderStatus> {
         let balance = *self.balance.read().await;
         let all_positions: Vec<Position> = self.positions.iter().map(|p| p.clone()).collect();
@@ -100,6 +111,7 @@ impl TradingEngine {
         Ok(OrderStatus::Filled)
     }
 
+    #[allow(dead_code)]
     pub async fn close_position(&self, position_id: &str) -> Result<()> {
         if let Some((_, pos)) = self.positions.remove(position_id) {
             let pnl = pos.unrealized_pnl;
@@ -118,10 +130,12 @@ impl TradingEngine {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn get_position(&self, id: &str) -> Option<Position> {
         self.positions.get(id).map(|p| p.clone())
     }
 
+    #[allow(dead_code)]
     pub async fn get_balance(&self) -> f64 {
         *self.balance.read().await
     }

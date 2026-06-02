@@ -33,6 +33,7 @@ impl Default for RiskParams {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RiskCheckResult {
     pub approved: bool,
@@ -43,6 +44,7 @@ pub struct RiskCheckResult {
 }
 
 pub struct RiskEngine {
+    #[allow(dead_code)]
     pub params: RiskParams,
 }
 
@@ -51,6 +53,7 @@ impl RiskEngine {
         Self { params }
     }
 
+    #[allow(dead_code)]
     /// ATR-based position sizing
     pub fn calculate_position_size(
         &self,
@@ -66,6 +69,7 @@ impl RiskEngine {
         position.min(max_size).max(0.0)
     }
 
+    #[allow(dead_code)]
     /// Half-Kelly criterion position sizing
     pub fn kelly_size(
         &self,
@@ -83,6 +87,7 @@ impl RiskEngine {
         balance * half_kelly
     }
 
+    #[allow(dead_code)]
     /// Full risk gate check before trade
     pub fn check_trade(
         &self,
@@ -169,6 +174,7 @@ impl RiskEngine {
         }
     }
 
+    #[allow(dead_code)]
     /// Calculate dynamic leverage based on volatility and confidence
     pub fn dynamic_leverage(
         &self,
@@ -193,6 +199,7 @@ impl RiskEngine {
         (final_leverage as u8).clamp(1, self.params.max_leverage)
     }
 
+    #[allow(dead_code)]
     /// Calculate maximum drawdown from equity curve
     pub fn max_drawdown(equity_curve: &[f64]) -> f64 {
         if equity_curve.is_empty() {

@@ -8,6 +8,45 @@ from prometheus_client import Counter, Histogram, Gauge, generate_latest, REGIST
 from starlette.responses import Response
 
 
+# ── Adaptive Routing Metrics ─────────────────────────────
+
+ADAPTIVE_EMA_LATENCY = Gauge(
+    "adaptive_ema_latency_ms",
+    "EMA-smoothed inference latency in milliseconds per agent→provider pair",
+    ["agent", "provider"],
+)
+
+ADAPTIVE_P50_LATENCY = Gauge(
+    "adaptive_p50_latency_ms",
+    "P50 (median) observed inference latency in milliseconds per agent→provider pair",
+    ["agent", "provider"],
+)
+
+ADAPTIVE_SUCCESS_RATE = Gauge(
+    "adaptive_success_rate",
+    "Request success rate (0-1) per agent→provider pair",
+    ["agent", "provider"],
+)
+
+ADAPTIVE_SAMPLES_TOTAL = Gauge(
+    "adaptive_samples_total",
+    "Total request samples collected per agent→provider pair",
+    ["agent", "provider"],
+)
+
+ADAPTIVE_CHAIN_ADAPTED = Gauge(
+    "adaptive_chain_adapted",
+    "Whether the agent's provider chain has been reordered by adaptive routing (1=adapted, 0=base chain)",
+    ["agent"],
+)
+
+ADAPTIVE_CHAIN_ADAPTATION_EVENTS = Counter(
+    "adaptive_chain_adaptation_events_total",
+    "Total number of times each agent's provider chain has been reordered",
+    ["agent"],
+)
+
+
 # ── Trading Metrics ──────────────────────────────────────
 
 TRADES_TOTAL = Counter(
@@ -149,3 +188,63 @@ def update_ml_metrics(confidence: float, direction: str, accuracy: float, age_ho
     ML_PREDICTION_CONFIDENCE.labels(direction=direction).set(confidence)
     ML_MODEL_ACCURACY.set(accuracy)
     ML_MODEL_AGE_HOURS.set(age_hours)
+
+
+def update_adaptive_routing_metrics(agent_router):
+    """
+    Sync AgentModelRouter adaptive routing state into Prometheus gauges.
+
+    Reads per-agent per-provider performance data from the router and updates:
+      - ADAPTIVE_EMA_LATENCY
+      - ADAPTIVE_P50_LATENCY
+      - ADAPTIVE_SUCCESS_RATE
+      - ADAPTIVE_SAMPLES_TOTAL
+      - ADAPTIVE_CHAIN_ADAPTED
+
+    Call this periodically (e.g. every 5s from the metrics loop) to keep
+    Prometheus metrics up to date with adaptive routing state.
+
+    Args:
+        agent_router: An AgentModelRouter instance with performance data
+    """
+    summary = agent_router.get_adaptive_routing_summary()
+
+    for agent_id, providers in summary.items():
+        for provider, perf in providers.items():
+            if provider.startswith("_"):
+                # Skip internal keys like _adaptive_ready, _adapted_chain, _chain_adapted
+                continue
+
+            ADAPTIVE_EMA_LATENCY.labels(
+                agent=agent_id, provider=provider
+            ).set(perf.get("ema_latency_ms", 0.0))
+
+            ADAPTIVE_P50_LATENCY.labels(
+                agent=agent_id, provider=provider
+            ).set(perf.get("p50_latency_ms", 0.0))
+
+            ADAPTIVE_SUCCESS_RATE.labels(
+                agent=agent_id, provider=provider
+            ).set(perf.get("success_rate", 0.0))
+
+            ADAPTIVE_SAMPLES_TOTAL.labels(
+                agent=agent_id, provider=provider
+            ).set(perf.get("samples", 0))
+
+        # Set chain adaptation status
+        adapted = providers.get("_chain_adapted", False)
+        ADAPTIVE_CHAIN_ADAPTED.labels(agent=agent_id).set(1 if adapted else 0)
+
+
+def record_chain_adaptation(agent_id: str):
+    """
+    Increment the chain adaptation counter for an agent.
+
+    Call this when `get_optimal_provider_chain()` returns a different
+    ordering than the static base chain for the first time (or whenever
+    the ordering changes).
+
+    Args:
+        agent_id: The agent whose chain was reordered
+    """
+    ADAPTIVE_CHAIN_ADAPTATION_EVENTS.labels(agent=agent_id).inc()

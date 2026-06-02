@@ -1,0 +1,80 @@
+# ═══════════════════════════════════════════════════════════
+# QUANTEX — Docker Compose Dev Override
+#
+# Enables hot-reload development for frontend and orchestrator:
+#   - Frontend: Next.js dev mode (hot-reload on save)
+#   - Orchestrator: uvicorn --reload (hot-reload on save)
+#   - CORS-free: Both services on same Docker network
+#   - No nginx needed: Access services directly on mapped ports
+#
+# Usage:
+#   docker compose up -d
+#   docker compose logs -f
+#
+# Access:
+#   http://localhost:3000  ← Frontend (hot-reload)
+#   http://localhost:8001  ← Orchestrator API (hot-reload)
+#   http://localhost:3001  ← Grafana
+#   http://localhost:9090  ← Prometheus
+#
+# ═══════════════════════════════════════════════════════════
+
+version: "3.9"
+
+services:
+  # ── Orchestrator: Hot-reload ────────────────────────────
+  # Overrides: ports, volumes, command
+  orchestrator:
+    ports:
+      - "8001:8001"
+    volumes:
+      # Mount source code for hot-reload
+      - ./orchestrator:/app/orchestrator
+      # Mount .env so API keys are loaded from the host file
+      - ./.env:/app/.env
+    command: uvicorn orchestrator.main:app --host 0.0.0.0 --port 8001 --reload
+
+  # ── Frontend: Hot-reload Dev Mode ──────────────────────
+  # Override: use node:22-alpine directly instead of production build
+  # so we can run `npm run dev` with hot-reload.
+  frontend:
+    build: ~
+    image: node:22-alpine
+    working_dir: /app
+    ports:
+      - "3000:3000"
+    volumes:
+      # Mount source code for hot-reload
+      - ./frontend:/app
+      # Anonymous volume prevents host node_modules from masking the image
+      - /app/node_modules
+      # Keep .next cache across restarts
+      - frontend_next:/app/.next
+    environment:
+      NODE_ENV: development
+      # Service discovery — internal Docker network, no CORS needed
+      API_TARGET: http://orchestrator:8001
+      # Dev mode: route WebSocket through orchestrator (not Go realtime service)
+      WS_TARGET: http://orchestrator:8001
+      # Enable polling for filesystem watch in Docker
+      WATCHPACK_POLLING: "true"
+    command: >
+      sh -c "
+        npm install --prefer-offline --no-audit --no-fund &&
+        npm run dev
+      "
+    depends_on:
+      orchestrator:
+        condition: service_started
+
+  # ── Nginx: Disabled in dev mode ─────────────────────────
+  # Access frontend directly at localhost:3000 and
+  # orchestrator directly at localhost:8001.
+  nginx:
+    profiles:
+      - production
+      - fullstack
+
+volumes:
+  # Persist frontend .next build cache across restarts
+  frontend_next:

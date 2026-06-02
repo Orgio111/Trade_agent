@@ -42,3 +42,42 @@ groups:
           severity: info
         annotations:
           summary: "Sustained low confidence ({{ $value }}) across swarm"
+
+  - name: quantex-adaptive-routing
+    interval: 30s
+    rules:
+      - alert: ProviderDegraded
+        expr: adaptive_success_rate < 0.8
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent {{ $labels.agent }} — {{ $labels.provider }} success rate dropped to {{ $value | humanizePercentage }}"
+          description: "Provider {{ $labels.provider }} for agent {{ $labels.agent }} is degraded with {{ $value | humanizePercentage }} success rate over the last 2 minutes."
+
+      - alert: ProviderFailure
+        expr: adaptive_success_rate == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Agent {{ $labels.agent }} — {{ $labels.provider }} is failing all requests"
+          description: "Provider {{ $labels.provider }} for agent {{ $labels.agent }} has 0% success rate. All requests are failing. Failover chain may be required."
+
+      - alert: ChainFlapping
+        expr: increase(adaptive_chain_adaptation_events_total[5m]) > 5
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent {{ $labels.agent }} — {{ $value }} chain reorders in 5 minutes"
+          description: "Provider chain for {{ $labels.agent }} has been reordered {{ $value }} times in 5 minutes. Flapping indicates unstable provider latency — consider pinning the chain."
+
+      - alert: HighLatency
+        expr: adaptive_ema_latency_ms > 2000
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent {{ $labels.agent }} — {{ $labels.provider }} EMA latency {{ $value }}ms exceeds 2000ms"
+          description: "Provider {{ $labels.provider }} for agent {{ $labels.agent }} has sustained EMA latency of {{ $value }}ms, degrading inference responsiveness."

@@ -8,11 +8,16 @@ import asyncio
 import time as time_module
 from datetime import datetime, timedelta
 
+from dotenv import load_dotenv
+load_dotenv()  # Load .env file for API keys (GROQ, NVIDIA, OPENROUTER)
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from .nim_client import NIMOrchestrator
 from .nim_enhanced import EnhancedNIMOrchestrator, NeMoDistiller
+from .inference_integration import InferenceIntegration
 from .strategy import StrategyEngine, Signal
 from .agents import (
     MarketAnalystAgent, RiskGuardianAgent, SentimentAgent,
@@ -27,6 +32,7 @@ from .database import Database, TradeRecord, PositionRecord, StrategyPerfRecord
 from .metrics import (
     metrics_endpoint, record_trade, update_portfolio_metrics,
     record_agent_latency, update_ml_metrics,
+    update_adaptive_routing_metrics, record_chain_adaptation,
 )
 from .swarm.debate_system import AgentSwarm, ScalpingAgent, SwingAgent, RegimeAgent, AnomalyAgent
 from .memory.vector_memory import TradingMemorySystem, AgentCredibilityTracker
@@ -38,13 +44,14 @@ from .data.pipeline import MarketDataOrchestrator
 from .market_structure import MarketStructureEngine, FakeBreakoutDetector
 from .microstructure import SpoofingDetector, HiddenLiquidityDetector, DeltaCVDTracker, LiquidationCascadePredictor, OrderBookImbalanceAnalyzer
 from .execution import ExecutionOrchestrator, TWAPExecutor, VWAPExecutor, IcebergExecutor, SmartOrderRouter, SlippageEstimator, get_execution_plan, ExecutionPlan
-from .agent_routing import AgentModelRouter, TaskRouter, AGENT_MODEL_MAP
+from .agent_routing import AgentModelRouter, TaskRouter, AGENT_MODEL_MAP, AGENT_PROVIDER_CHAINS, AGENT_TASK_TYPE_OVERRIDES
 
 
 # ── Global State ──────────────────────────────────────────
 
 nim: NIMOrchestrator | None = None
 nim_enhanced: EnhancedNIMOrchestrator | None = None
+nim_integration: InferenceIntegration | None = None
 strategy_engine: StrategyEngine | None = None
 market_analyst: MarketAnalystAgent | None = None
 deepseek_analyst: DeepSeekAnalysisAgent | None = None
@@ -89,9 +96,63 @@ task_router: TaskRouter | None = None
 active_connections: list[WebSocket] = []
 
 
+async def _compute_signal(
+    symbol: str = "BTCUSDT",
+    source: str = "strategy",
+) -> dict:
+    """Generate mock price data and compute a trading signal.
+
+    Shared helper used by both the REST /api/v1/signal endpoint
+    and the WebSocket signal broadcast task.
+    """
+    import numpy as np
+    import pandas as pd
+    rng = np.random.RandomState()
+    periods = 100
+    dates = pd.date_range(end=datetime.now(), periods=periods, freq="1min")
+    base = 50000 + rng.normal(0, 200)
+    df = pd.DataFrame({
+        "open": rng.normal(base, 100, periods),
+        "high": rng.normal(base + 200, 100, periods),
+        "low": rng.normal(base - 200, 100, periods),
+        "close": rng.normal(base, 100, periods),
+        "volume": rng.normal(100, 20, periods),
+    }, index=dates)
+    df["high"] = df[["open", "close"]].max(axis=1) + abs(rng.normal(0, 50, periods))
+    df["low"] = df[["open", "close"]].min(axis=1) - abs(rng.normal(0, 50, periods))
+
+    if source == "ml" and ml_engine:
+        signal = ml_engine.predict_signal(df)
+    elif source == "swarm" and swarm:
+        context = {
+            "symbol": symbol, "price": float(df["close"].iloc[-1]),
+            "df": df, "regime": "unknown",
+            "portfolio": paper_account.get_portfolio() if paper_account else {},
+        }
+        decision = await swarm.run_swarm_debate(context)
+        return {
+            "symbol": symbol, "source": "swarm",
+            "signal": decision.direction, "confidence": decision.confidence,
+            "entry_price": df["close"].iloc[-1], "reason": decision.reasoning[:200],
+            "debate_log": decision.debate_log[:10],
+        }
+    elif strategy_engine:
+        signal = strategy_engine.generate_signal(df)
+    else:
+        return {"error": "No signal source available"}
+
+    return {
+        "symbol": symbol, "source": source,
+        "signal": signal.direction, "confidence": signal.confidence,
+        "entry_price": signal.entry_price, "stop_loss": signal.stop_loss,
+        "take_profits": signal.take_profits, "reason": signal.reason,
+        "metadata": signal.metadata,
+    }
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global nim, nim_enhanced, strategy_engine, market_analyst, deepseek_analyst
+    global nim, nim_enhanced, nim_integration, strategy_engine, market_analyst, deepseek_analyst
     global risk_guardian, sentiment_agent, scalping_agent, swing_agent
     global regime_agent, anomaly_agent
     global paper_account, position_manager, backtest_engine, feature_engine
@@ -102,20 +163,23 @@ async def lifespan(app: FastAPI):
     global spoofing_detector, hidden_liquidity, delta_tracker, liq_cascade, ob_imbalance
     global execution_orch, agent_router, task_router
 
-    # Phase 1-3 components
-    nim = NIMOrchestrator()
+    # Phase 1-3 components (nim_enhanced kept for NeMoDistiller backward compat)
+    nim = InferenceIntegration(budget_tier=os.getenv("INFERENCE_BUDGET_TIER", "free"))
     nim_enhanced = EnhancedNIMOrchestrator()
+    nim_integration = nim  # Alias for clarity — same InferenceIntegration instance
     strategy_engine = StrategyEngine()
-    market_analyst = MarketAnalystAgent(nim)
-    deepseek_analyst = DeepSeekAnalysisAgent(nim)
-    risk_guardian = RiskGuardianAgent(nim)
+
+    # Agents now use the new InferenceIntegration (backward compatible interface)
+    market_analyst = MarketAnalystAgent(nim_integration)
+    deepseek_analyst = DeepSeekAnalysisAgent(nim_integration)
+    risk_guardian = RiskGuardianAgent(nim_integration)
     sentiment_agent = SentimentAgent()
 
     # Individual agents
-    scalping_agent = ScalpingAgent(nim)
-    swing_agent = SwingAgent(nim)
-    regime_agent = RegimeAgent(nim)
-    anomaly_agent = AnomalyAgent(nim)
+    scalping_agent = ScalpingAgent(nim_integration)
+    swing_agent = SwingAgent(nim_integration)
+    regime_agent = RegimeAgent(nim_integration)
+    anomaly_agent = AnomalyAgent(nim_integration)
 
     # Trading components
     paper_account = PaperAccount(
@@ -142,7 +206,7 @@ async def lifespan(app: FastAPI):
     # v1.0: Swarm Intelligence
     memory = TradingMemorySystem(use_stub=True)
     credibility_tracker = AgentCredibilityTracker(memory)
-    swarm = AgentSwarm(nim)
+    swarm = AgentSwarm(nim_integration)
     risk_engine = RiskEngine()
     panic_mode = PanicMode()
     anti_overtrade = AntiOvertradeSystem()
@@ -167,6 +231,78 @@ async def lifespan(app: FastAPI):
     # Start data feeds
     asyncio.create_task(data_orchestrator.start_all_feeds())
 
+    #    # WebSocket broadcast: inference routing data
+    async def _ws_routing_broadcast():
+        while True:
+            await asyncio.sleep(5)
+            if nim_integration and active_connections:
+                try:
+                    # Reuse the same logic as the REST endpoint
+                    provider_health = await nim_integration.get_provider_health()
+                    agent_chains = {}
+                    for agent_id, chain in sorted(AGENT_PROVIDER_CHAINS.items()):
+                        if agent_id == "default":
+                            continue
+                        adapted = nim_integration.agent_router.get_optimal_provider_chain(agent_id, chain)
+                        agent_chains[agent_id] = {
+                            "base_chain": chain,
+                            "adapted_chain": adapted,
+                            "task_override": AGENT_TASK_TYPE_OVERRIDES.get(agent_id),
+                            "adapted": adapted != chain,
+                        }
+                    agent_chains["default"] = {
+                        "base_chain": AGENT_PROVIDER_CHAINS.get("default", []),
+                        "adapted_chain": None,
+                        "task_override": None,
+                        "adapted": False,
+                    }
+                    payload = {
+                        "type": "inference_routing",
+                        "provider_health": provider_health,
+                        "agent_chains": agent_chains,
+                        "adaptive_routing": nim_integration.agent_router.get_adaptive_routing_summary(),
+                        "agent_mappings": nim_integration.get_agent_model_summary(),
+                        "cost_usage": {
+                            "today": nim_integration.get_todays_usage(),
+                            "cache": nim_integration.get_cache_stats(),
+                            "over_budget": nim_integration.is_over_budget(),
+                        },
+                    }
+                    await broadcast(payload)
+                except Exception:
+                    pass
+
+    asyncio.create_task(_ws_routing_broadcast())
+
+    # WebSocket broadcast: portfolio data (replaces HTTP polling)
+    async def _ws_portfolio_broadcast():
+        while True:
+            await asyncio.sleep(5)
+            if paper_account and active_connections:
+                try:
+                    p = paper_account.get_portfolio()
+                    payload = {"type": "portfolio", **p}
+                    await broadcast(payload)
+                except Exception:
+                    pass
+
+    asyncio.create_task(_ws_portfolio_broadcast())
+
+    # WebSocket broadcast: live signal data (replaces HTTP polling)
+    async def _ws_signal_broadcast():
+        while True:
+            await asyncio.sleep(15)
+            if strategy_engine and active_connections:
+                try:
+                    result = await _compute_signal(symbol="BTCUSDT", source="ml")
+                    if "error" not in result:
+                        payload = {"type": "signal", **result}
+                        await broadcast(payload)
+                except Exception:
+                    pass
+
+    asyncio.create_task(_ws_signal_broadcast())
+
     # Metrics loop
     update_portfolio_metrics(
         balance=paper_account.balance, equity=paper_account.balance,
@@ -174,6 +310,7 @@ async def lifespan(app: FastAPI):
     )
 
     async def _metrics_loop():
+        last_adapted_state: dict[str, list[str]] = {}
         while True:
             await asyncio.sleep(5)
             if paper_account:
@@ -184,6 +321,22 @@ async def lifespan(app: FastAPI):
                     consec_losses=p["consecutive_losses"], total_pnl=p["total_pnl"],
                 )
 
+            # Adaptive routing metrics (sync router → Prometheus)
+            if nim_integration and nim_integration.agent_router:
+                update_adaptive_routing_metrics(nim_integration.agent_router)
+
+                # Detect chain adaptation events
+                for agent_id, base_chain in AGENT_PROVIDER_CHAINS.items():
+                    if agent_id == "default":
+                        continue
+                    current = nim_integration.agent_router.get_optimal_provider_chain(
+                        agent_id, base_chain
+                    )
+                    prev = last_adapted_state.get(agent_id)
+                    if prev is not None and current != prev:
+                        record_chain_adaptation(agent_id)
+                    last_adapted_state[agent_id] = current
+
     asyncio.create_task(_metrics_loop())
 
     print("✅ QUANTEX AI Orchestrator v1.0 initialized")
@@ -191,6 +344,8 @@ async def lifespan(app: FastAPI):
     print(f"   ML model: {'loaded' if ml_engine._model else 'not trained'}")
     print(f"   Memory: {'Qdrant stub' if memory else 'unavailable'}")
     print(f"   Data feeds: running {len(data_orchestrator.feeds)} feeds")
+    print(f"   Inference: multi-provider router (Groq + NVIDIA NIM + OpenRouter)")
+    print(f"   Budget tier: {os.getenv('INFERENCE_BUDGET_TIER', 'free')}")
     yield
 
     # Cleanup
@@ -203,6 +358,20 @@ app = FastAPI(
     title="QUANTEX AI Orchestrator",
     version="1.0.0",
     lifespan=lifespan,
+)
+
+# ── CORS ───────────────────────────────────────────────────
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",       # Next.js dev server
+        "http://localhost:3001",       # Grafana (if needed)
+        "http://frontend:3000",        # Docker Compose service
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -267,6 +436,7 @@ async def system_status():
         "services": {
             "nim": nim is not None,
             "nim_enhanced": nim_enhanced is not None,
+            "nim_integration": nim_integration is not None,
             "strategy": strategy_engine is not None,
             "swarm": swarm is not None,
             "memory": memory is not None,
@@ -345,50 +515,7 @@ async def update_price(data: dict):
 
 @app.get("/api/v1/signal")
 async def get_signal(symbol: str = "BTCUSDT", source: str = "strategy"):
-    import numpy as np
-    import pandas as pd
-    rng = np.random.RandomState()
-    periods = 100
-    dates = pd.date_range(end=datetime.now(), periods=periods, freq="1min")
-    base = 50000 + rng.normal(0, 200)
-    df = pd.DataFrame({
-        "open": rng.normal(base, 100, periods),
-        "high": rng.normal(base + 200, 100, periods),
-        "low": rng.normal(base - 200, 100, periods),
-        "close": rng.normal(base, 100, periods),
-        "volume": rng.normal(100, 20, periods),
-    }, index=dates)
-    df["high"] = df[["open", "close"]].max(axis=1) + abs(rng.normal(0, 50, periods))
-    df["low"] = df[["open", "close"]].min(axis=1) - abs(rng.normal(0, 50, periods))
-
-    if source == "ml" and ml_engine:
-        signal = ml_engine.predict_signal(df)
-    elif source == "swarm" and swarm:
-        # Use swarm with full debate
-        context = {
-            "symbol": symbol, "price": float(df["close"].iloc[-1]),
-            "df": df, "regime": "unknown",
-            "portfolio": paper_account.get_portfolio() if paper_account else {},
-        }
-        decision = await swarm.run_swarm_debate(context)
-        return {
-            "symbol": symbol, "source": "swarm",
-            "signal": decision.direction, "confidence": decision.confidence,
-            "entry_price": df["close"].iloc[-1], "reason": decision.reasoning[:200],
-            "debate_log": decision.debate_log[:10],
-        }
-    elif strategy_engine:
-        signal = strategy_engine.generate_signal(df)
-    else:
-        return {"error": "No signal source available"}
-
-    return {
-        "symbol": symbol, "source": source,
-        "signal": signal.direction, "confidence": signal.confidence,
-        "entry_price": signal.entry_price, "stop_loss": signal.stop_loss,
-        "take_profits": signal.take_profits, "reason": signal.reason,
-        "metadata": signal.metadata,
-    }
+    return await _compute_signal(symbol, source)
 
 
 # ── API: Swarm ──────────────────────────────────────────────────────
@@ -524,7 +651,19 @@ async def rl_train(params: dict = {}):
     import numpy as np
     import pandas as pd
     days = params.get("days", 90)
-    data = DataLoader.generate_mock_data(periods=days * 24, start_price=50000.0)
+    # Try real Binance data first, fallback to mock
+    symbol = params.get("symbol", "BTCUSDT")
+    interval = params.get("interval", "1h")
+    end = datetime.now()
+    start = end - timedelta(days=days)
+    try:
+        data = await DataLoader.from_binance_api(symbol=symbol, interval=interval, start_time=start, end_time=end)
+        source = "Binance API"
+    except Exception:
+        data = DataLoader.generate_mock_data(periods=days * 24, start_price=50000.0)
+        source = "Mock (Binance unavailable)"
+    if data.empty:
+        return {"error": "No data available"}
     env = TradingEnvironment(data, initial_balance=1000.0)
     obs = env.reset()
     total_reward = 0.0
@@ -538,7 +677,7 @@ async def rl_train(params: dict = {}):
     return {
         "status": "completed", "steps": steps, "total_reward": round(total_reward, 4),
         "final_balance": round(info.get("balance", 0), 4),
-        "trades": len(env.trades),
+        "trades": len(env.trades), "data_source": source,
     }
 
 
@@ -619,14 +758,26 @@ async def ml_train(params: dict = {}):
     import numpy as np
     import pandas as pd
     days = params.get("days", 90)
-    data = DataLoader.generate_mock_data(periods=days * 24, start_price=50000.0)
+    # Try real Binance data first, fallback to mock
+    symbol = params.get("symbol", "BTCUSDT")
+    interval = params.get("interval", "1h")
+    end = datetime.now()
+    start = end - timedelta(days=days)
+    try:
+        data = await DataLoader.from_binance_api(symbol=symbol, interval=interval, start_time=start, end_time=end)
+        source = "Binance API"
+    except Exception:
+        data = DataLoader.generate_mock_data(periods=days * 24, start_price=50000.0)
+        source = "Mock (Binance unavailable)"
+    if data.empty:
+        return {"error": "No data available"}
     t0 = time_module.time()
     result = ml_engine.train(data, force=params.get("force", False))
     duration = time_module.time() - t0
     if result.get("status") == "trained":
         update_ml_metrics(confidence=0.5, direction="long",
                           accuracy=result.get("test_accuracy", 0.5), age_hours=0.0)
-    return {**result, "duration_seconds": round(duration, 2)}
+    return {**result, "duration_seconds": round(duration, 2), "data_source": source, "candles": len(data)}
 
 
 @app.post("/api/v1/ml/predict")
@@ -636,12 +787,26 @@ async def ml_predict(params: dict = {}):
     import numpy as np
     import pandas as pd
     symbol = params.get("symbol", "BTCUSDT")
-    df = DataLoader.generate_mock_data(periods=200, start_price=50000.0)
+    days = params.get("days", 14)
+    interval = params.get("interval", "1h")
+    # Try real Binance data first, fallback to mock
+    end = datetime.now()
+    start = end - timedelta(days=days)
+    try:
+        df = await DataLoader.from_binance_api(symbol=symbol, interval=interval, start_time=start, end_time=end)
+        source = "Binance API"
+    except Exception:
+        df = DataLoader.generate_mock_data(periods=days * 24, start_price=50000.0)
+        source = "Mock (Binance unavailable)"
+    if df.empty:
+        return {"error": "No data available"}
     raw = params.get("raw", False)
     signal = ml_engine.predict(df) if raw else ml_engine.predict_signal(df)
     needs_train = ml_engine.needs_retraining(df)
     return {
         "symbol": symbol,
+        "data_source": source,
+        "candles": len(df),
         "signal": signal if raw else {
             "direction": signal.direction, "confidence": signal.confidence,
             "entry_price": signal.entry_price, "stop_loss": signal.stop_loss,
@@ -1038,6 +1203,87 @@ async def get_agent_routing():
         "agent_mappings": agent_router.get_agent_model_summary(),
         "free_models": agent_router.get_free_model_list(),
     }
+
+
+@app.get("/api/v2/inference/routing")
+async def get_inference_routing():
+    """
+    Full inference routing overview — shows every agent's live routing config.
+
+    Returns:
+        - provider_health: Live health status of Groq, NVIDIA NIM, OpenRouter
+        - agent_chains: Static provider chain per agent (from AGENT_PROVIDER_CHAINS)
+        - task_overrides: Task type overrides per agent (from AGENT_TASK_TYPE_OVERRIDES)
+        - adaptive_routing: Real observed P50 latencies and adapted chains
+        - agent_mappings: Agent→model assignments
+        - cost_usage: Today's token/cost usage and cache efficiency
+    """
+    if not nim_integration:
+        return {"error": "Inference integration not initialized"}
+
+    # Import configs for display
+    from .agent_routing import (
+        AGENT_PROVIDER_CHAINS,
+        AGENT_TASK_TYPE_OVERRIDES,
+    )
+
+    provider_health = await nim_integration.get_provider_health()
+
+    # Build per-agent chain display with adapted versions
+    agent_chains = {}
+    for agent_id, chain in sorted(AGENT_PROVIDER_CHAINS.items()):
+        if agent_id == "default":
+            continue
+        adapted = nim_integration.agent_router.get_optimal_provider_chain(agent_id, chain)
+        agent_chains[agent_id] = {
+            "base_chain": chain,
+            "adapted_chain": adapted,
+            "task_override": AGENT_TASK_TYPE_OVERRIDES.get(agent_id),
+            "adapted": adapted != chain,
+        }
+
+    # Default chain
+    agent_chains["default"] = {
+        "base_chain": AGENT_PROVIDER_CHAINS.get("default", []),
+        "adapted_chain": None,
+        "task_override": None,
+        "adapted": False,
+    }
+
+    return {
+        "provider_health": provider_health,
+        "agent_chains": agent_chains,
+        "adaptive_routing": nim_integration.agent_router.get_adaptive_routing_summary(),
+        "agent_mappings": nim_integration.get_agent_model_summary(),
+        "cost_usage": {
+            "today": nim_integration.get_todays_usage(),
+            "cache": nim_integration.get_cache_stats(),
+            "over_budget": nim_integration.is_over_budget(),
+        },
+    }
+
+
+@app.get("/api/v2/inference/adaptive-routing")
+async def get_adaptive_routing(
+    agent_id: str = Query(None, description="Filter to a single agent (e.g. 'scalping_agent')"),
+):
+    """
+    Adaptive routing performance data — per-agent per-provider latency tracking.
+
+    Shows the EMA-smoothed latency observations, sample counts, and whether
+    the adaptive router has enough data to reorder each agent's provider chain.
+
+    Returns the raw output of AgentModelRouter.get_adaptive_routing_summary():
+        - {agent_id: {provider: {ema_latency_ms, samples, success_rate,
+                                 _adaptive_ready, _adapted_chain, ...}}}
+
+    Query params:
+        - agent_id: (optional) Filter to a single agent
+    """
+    if not nim_integration:
+        return {"error": "Inference integration not initialized"}
+
+    return nim_integration.agent_router.get_adaptive_routing_summary(agent_id=agent_id)
 
 
 @app.post("/api/v2/agents/resolve")

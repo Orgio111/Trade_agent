@@ -1,0 +1,102 @@
+{
+  "providers": {
+    "groq": {
+      "available": true,
+      "health": {
+        "provider": "groq",
+        "available": true,
+        "avg_latency_ms": 0.0,
+        "p95_latency_ms": 0.0,
+        "success_rate": 1.0,
+        "total_requests": 0,
+        "error_count": 0,
+        "free_tier": true
+      },
+      "models": [
+        "fast",
+        "reasoning",
+        "analysis"
+      ],
+      "inference_ok": true,
+      "latency_ms": 500.0
+    },
+    "nvidia_nim": {
+      "available": true,
+      "health": {
+        "provider": "nvidia_nim",
+        "available": true,
+        "avg_latency_ms": 0.0,
+        "p95_latency_ms": 0.0,
+        "success_rate": 1.0,
+        "total_requests": 0,
+        "error_count": 0,
+        "free_tier": true
+      },
+      "models": [
+        "reasoning",
+        "analysis",
+        "fast"
+      ],
+      "inference_ok": true,
+      "latency_ms": 59063.0
+    },
+    "openrouter": {
+      "available": true,
+      "health": {
+        "provider": "openrouter",
+        "available": true,
+        "avg_latency_ms": 0.0,
+        "p95_latency_ms": 0.0,
+        "success_rate": 1.0,
+        "total_requests": 0,
+        "error_count": 0,
+        "free_tier": true
+      },
+      "models": [
+        "reasoning_free",
+        "fast_free",
+        "analysis_free"
+      ],
+      "inference_ok": false,
+      "error": "unhashable type: 'list'"
+    }
+  },
+  "router": {
+    "health": {
+      "groq": {
+        "available": true,
+        "circuit_open": false
+      },
+      "nvidia_nim": {
+        "available": true,
+        "circuit_open": false
+      },
+      "openrouter": {
+        "available": true,
+        "circuit_open": false
+      }
+    },
+    "inference_ok": true,
+    "used_provider": "groq",
+    "latency_ms": 937.0,
+    "agent_chains_count": 12,
+    "cost_today": {
+      "total_cost": 0.0,
+      "total_tokens": 23,
+      "requests": 1,
+      "cached_requests": 0
+    }
+  },
+  "adaptive_routing": {
+    "tested": [
+      "market_analyst",
+      "scalping_agent",
+      "risk_guardian"
+    ]
+  },
+  "integration": {
+    "agent_count": 11,
+    "bridge_ok": true
+  },
+  "errors": []
+}

@@ -4,6 +4,23 @@
   "tags": ["quantex", "trading", "live"],
   "timezone": "browser",
   "refresh": "5s",
+  "links": [
+    {
+      "title": "Adaptive Routing",
+      "type": "dashboards",
+      "targetBlank": false,
+      "tags": ["adaptive", "routing"],
+      "asDropdown": false,
+      "icon": "external link"
+    },
+    {
+      "title": "Dashboard: Adaptive Routing",
+      "type": "link",
+      "url": "/d/quantex-adaptive-routing/quantex-adaptive-routing",
+      "targetBlank": false,
+      "icon": "apps"
+    }
+  ],
   "panels": [
     {
       "title": "Account Balance",
@@ -183,7 +200,7 @@
     {
       "title": "Services Status",
       "type": "table",
-      "gridPos": {"h": 6, "w": 24, "x": 0, "y": 24},
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 24},
       "targets": [{"expr": "up", "legendFormat": "{{job}}"}],
       "fieldConfig": {
         "defaults": {
@@ -194,6 +211,69 @@
           ]}
         }
       }
+    },
+    {
+      "title": "Active Alerts",
+      "type": "table",
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 24},
+      "targets": [
+        {
+          "expr": "ALERTS{alertstate=\"firing\"}",
+          "legendFormat": "{{alertname}}",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "alertstate": true,
+              "Value": true
+            },
+            "indexByName": {
+              "alertname": 0,
+              "severity": 1,
+              "agent": 2,
+              "provider": 3
+            },
+            "renameByName": {
+              "alertname": "Alert",
+              "agent": "Agent",
+              "provider": "Provider"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "blue", "value": 0},
+              {"color": "yellow", "value": 0.5},
+              {"color": "red", "value": 0.9}
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "critical": {"color": "red", "text": "CRITICAL"},
+                "warning": {"color": "yellow", "text": "WARNING"},
+                "info": {"color": "blue", "text": "INFO"}
+              }
+            }
+          ]
+        }
+      },
+      "description": "Currently firing Prometheus alerts across all rule groups"
     }
   ]
 }

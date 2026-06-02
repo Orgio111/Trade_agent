@@ -65,7 +65,7 @@ services:
     container_name: quantex-nats
     restart: unless-stopped
     ports: ["4222:4222", "8222:8222"]
-    command: ["--jetstream", "--store_dir=/data"]
+    command: ["--jetstream", "--store_dir=/data", "-m", "8222"]
     volumes:
       - nats_data:/data
     healthcheck:
@@ -101,7 +101,9 @@ services:
     environment:
       NVIDIA_API_KEY: ${NVIDIA_API_KEY}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-placeholder}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      INFERENCE_BUDGET_TIER: ${INFERENCE_BUDGET_TIER:-free}
+      OPENAI_API_KEY: sk-placeholder-key
       DATABASE_URL: postgresql://quantex:secret@postgres:5432/quantex
       REDIS_HOST: redis
       INITIAL_BALANCE: ${INITIAL_BALANCE:-1000.0}

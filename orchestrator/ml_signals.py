@@ -43,7 +43,7 @@ class MLSignalEngine:
 
     def __init__(
         self,
-        model_dir: str = "models",
+        model_dir: str = "/tmp/models",
         retrain_interval_hours: int = 24,
         min_training_samples: int = 500,
         lookahead_periods: int = 12,

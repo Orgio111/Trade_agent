@@ -9,6 +9,7 @@ const AgentSwarmVisor = dynamic(() => import("../components/AgentSwarmVisor"), {
 const PriceChart = dynamic(() => import("../components/PriceChart"), { ssr: false });
 const MicrostructurePanel = dynamic(() => import("../components/MicrostructurePanel"), { ssr: false });
 const MarketStructurePanel = dynamic(() => import("../components/MarketStructurePanel"), { ssr: false });
+const InferenceRoutingPanel = dynamic(() => import("../components/InferenceRoutingPanel"), { ssr: false });
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -42,16 +43,16 @@ const SIGNAL_COLORS: Record<string, string> = {
 function generateMockCandles(count: number) {
   const candles = [];
   let price = 50000;
-  const now = new Date();
+  const now = Math.floor(Date.now() / 1000);  // Current time in Unix seconds
   for (let i = count; i >= 0; i--) {
-    const t = new Date(now.getTime() - i * 3600000);
+    const t = now - i * 3600;  // Hourly candles as Unix timestamps
     const change = (Math.random() - 0.5) * 400;
     const open = price;
     const close = price + change;
     const high = Math.max(open, close) + Math.random() * 200;
     const low = Math.min(open, close) - Math.random() * 200;
     candles.push({
-      time: t.toISOString().slice(0, 19),
+      time: t,
       open, high, low, close,
       volume: Math.random() * 200 + 50,
     });
@@ -116,6 +117,65 @@ function generateStructureData() {
   };
 }
 
+// ── Inference Routing Types ──────────────────────────────
+
+interface ProviderHealth {
+  available: boolean;
+  avg_latency_ms?: number;
+  error_rate?: number;
+  [key: string]: unknown;
+}
+
+interface AgentChain {
+  base_chain: string[];
+  adapted_chain: string[] | null;
+  task_override: string | null;
+  adapted: boolean;
+}
+
+interface ProviderPerf {
+  ema_latency_ms: number;
+  p50_latency_ms: number;
+  samples: number;
+  successes: number;
+  failures: number;
+  success_rate: number;
+  last_updated: number;
+}
+
+interface AdaptiveAgentData {
+  [provider: string]: ProviderPerf | boolean | string[] | undefined;
+  _adaptive_ready?: boolean;
+  _adapted_chain?: string[];
+  _chain_adapted?: boolean;
+}
+
+interface AgentMapping {
+  agent_id: string;
+  agent_name: string;
+  primary_model: string;
+  primary_provider: string;
+  primary_free: boolean;
+  fallback_model: string | null;
+  latency_sensitive: boolean;
+  reasoning_score: number;
+  speed_score: number;
+}
+
+interface CostUsage {
+  today?: Record<string, unknown>;
+  cache?: Record<string, unknown>;
+  over_budget?: boolean;
+}
+
+interface InferenceRoutingData {
+  provider_health: Record<string, ProviderHealth>;
+  agent_chains: Record<string, AgentChain>;
+  adaptive_routing: Record<string, AdaptiveAgentData>;
+  agent_mappings: AgentMapping[];
+  cost_usage: CostUsage;
+}
+
 // ── Main Component ────────────────────────────────────────
 
 export default function Dashboard() {
@@ -125,6 +185,7 @@ export default function Dashboard() {
   const [candles, setCandles] = useState(generateMockCandles(100));
   const [microData, setMicroData] = useState(generateMicroData());
   const [structureData, setStructureData] = useState(generateStructureData());
+  const [inferenceRouting, setInferenceRouting] = useState<InferenceRoutingData | null>(null);
   const [wsStatus, setWsStatus] = useState("disconnected");
   const [events, setEvents] = useState<string[]>([]);
   const [riskScore, setRiskScore] = useState(42);
@@ -147,7 +208,7 @@ export default function Dashboard() {
 
   const fetchPortfolio = useCallback(async () => {
     try {
-      const res = await fetch("http://localhost:8001/api/v1/portfolio");
+      const res = await fetch("/api/portfolio");
       if (res.ok) {
         const data = await res.json();
         setPortfolio(data);
@@ -158,7 +219,7 @@ export default function Dashboard() {
 
   const fetchSignal = useCallback(async () => {
     try {
-      const res = await fetch("http://localhost:8001/api/v1/signal?symbol=BTCUSDT&source=ml");
+      const res = await fetch("/api/signal?symbol=BTCUSDT&source=ml");
       if (res.ok) {
         const data = await res.json();
         setSignal(data);
@@ -176,7 +237,7 @@ export default function Dashboard() {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch("http://localhost:8001/api/v1/status");
+      const res = await fetch("/api/status");
       if (res.ok) {
         const data = await res.json();
         const p = data.portfolio;
@@ -195,9 +256,6 @@ export default function Dashboard() {
     fetchSignal();
     fetchStatus();
 
-    const portInterval = setInterval(fetchPortfolio, 10000);
-    const sigInterval = setInterval(fetchSignal, 15000);
-    const statusInterval = setInterval(fetchStatus, 30000);
     const agentInterval = setInterval(() => {
       // Simulate agent state changes
       setAgents((prev) =>
@@ -217,7 +275,7 @@ export default function Dashboard() {
         const last = prev[prev.length - 1];
         const change = (Math.random() - 0.5) * 200;
         const newCandle = {
-          time: new Date().toISOString().slice(0, 19),
+          time: Math.floor(Date.now() / 1000),
           open: last.close,
           high: Math.max(last.close, last.close + change) + Math.random() * 100,
           low: Math.min(last.close, last.close + change) - Math.random() * 100,
@@ -246,7 +304,24 @@ export default function Dashboard() {
         ws.onmessage = (msg) => {
           try {
             const data = JSON.parse(msg.data);
-            setEvents((prev) => [JSON.stringify(data).slice(0, 80), ...prev.slice(0, 49)]);
+            // Handle typed WebSocket events
+            if (data.type === "inference_routing") {
+              setInferenceRouting(data);
+            } else if (data.type === "portfolio") {
+              setPortfolio(data);
+              setRiskScore(Math.round((data.drawdown || 0) * 100 + (data.consecutive_losses || 0) * 5));
+            } else if (data.type === "signal") {
+              setSignal(data);
+              setAgents((prev) =>
+                prev.map((a) =>
+                  a.id === "ML"
+                    ? { ...a, signal: data.signal as any, confidence: data.confidence }
+                    : a
+                )
+              );
+            } else {
+              setEvents((prev) => [JSON.stringify(data).slice(0, 80), ...prev.slice(0, 49)]);
+            }
           } catch { /* ignore */ }
         };
       } catch { /* ignore */ }
@@ -257,15 +332,21 @@ export default function Dashboard() {
     setAgents(defaultAgents);
 
     return () => {
-      clearInterval(portInterval);
-      clearInterval(sigInterval);
-      clearInterval(statusInterval);
       clearInterval(agentInterval);
       clearInterval(tickInterval);
     };
   }, [fetchPortfolio, fetchSignal, fetchStatus]);
 
   const pnlColor = (portfolio?.total_pnl ?? 0) >= 0 ? "#00ff88" : "#ff0044";
+
+  // ── Tab click handler ──────────────────────────────
+
+  const handleTabClick = (tab: string) => {
+    setActiveTab(tab);
+    if (tab === "inference") {
+      // Data is pushed via WebSocket every 5s — no fetch needed
+    }
+  };
   const riskLabel = riskScore < 30 ? "Low" : riskScore < 60 ? "Medium" : "High";
   const riskColor = riskScore < 30 ? "#00ff88" : riskScore < 60 ? "#ffaa00" : "#ff0044";
 
@@ -354,8 +435,8 @@ export default function Dashboard() {
 
       {/* ═══ Tab Navigation ═══ */}
       <div style={{ display: "flex", gap: 4, gridColumn: "1 / -1" }}>
-        {["overview", "trading", "risk", "microstructure"].map((tab) => (
-          <button key={tab} onClick={() => setActiveTab(tab)}
+        {["overview", "trading", "risk", "microstructure", "inference"].map((tab) => (
+          <button key={tab} onClick={() => handleTabClick(tab)}
             style={{
               padding: "8px 20px", borderRadius: 8, fontSize: 11, fontWeight: 500,
               background: activeTab === tab ? "#1a1a2e" : "transparent",
@@ -571,6 +652,11 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ═══ INFERENCE ROUTING TAB ═══ */}
+      {activeTab === "inference" && (
+        <InferenceRoutingPanel data={inferenceRouting} />
       )}
 
       {/* ═══ MICROSTRUCTURE TAB ═══ */}

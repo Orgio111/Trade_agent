@@ -1,0 +1,563 @@
+{
+  "title": "QUANTEX Adaptive Routing",
+  "uid": "quantex-adaptive-routing",
+  "tags": ["quantex", "inference", "routing", "adaptive"],
+  "timezone": "browser",
+  "refresh": "5s",
+  "editable": true,
+  "annotations": {
+    "list": [
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "enable": true,
+        "name": "Adaptive Routing Alerts",
+        "iconColor": "yellow",
+        "expr": "ALERTS{alertname=~\"ProviderDegraded|ProviderFailure|ChainFlapping|HighLatency\", alertstate=\"firing\"}",
+        "titleFormat": "{{ alertname }} — {{ agent }} / {{ provider }}",
+        "textFormat": "{{ severity | upper }} — agent {{ agent }} / provider {{ provider }}",
+        "showIn": 0,
+        "tagKeys": "alertname,severity",
+        "type": "tags"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "enable": true,
+        "name": "Chain Adaptation Spikes",
+        "iconColor": "orange",
+        "expr": "rate(adaptive_chain_adaptation_events_total[5m]) > 0.0167",
+        "titleFormat": "Chain adaptation: {{ agent }}",
+        "textFormat": "Latency reorder for {{ agent }} — check provider stability",
+        "showIn": 0,
+        "tagKeys": "agent",
+        "type": "tags"
+      }
+    ]
+  },
+  "links": [
+    {
+      "title": "Live Trading",
+      "type": "dashboards",
+      "targetBlank": false,
+      "tags": ["trading", "live"],
+      "asDropdown": false,
+      "icon": "external link"
+    },
+    {
+      "title": "Dashboard: Live Trading",
+      "type": "link",
+      "url": "/d/quantex-live/quantex-live-trading-dashboard",
+      "targetBlank": false,
+      "icon": "apps"
+    }
+  ],
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "title": "Overview",
+      "type": "row"
+    },
+    {
+      "title": "Agents Tracked",
+      "type": "stat",
+      "gridPos": {"h": 3, "w": 4, "x": 0, "y": 1},
+      "targets": [
+        {
+          "expr": "count(adaptive_chain_adapted)",
+          "legendFormat": "Agents"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "fixed", "fixedColor": "blue"},
+          "mappings": [],
+          "thresholds": {"steps": [{"color": "blue", "value": null}]}
+        }
+      },
+      "description": "Number of agents with adaptive routing data"
+    },
+    {
+      "title": "Adapted Chains",
+      "type": "stat",
+      "gridPos": {"h": 3, "w": 4, "x": 4, "y": 1},
+      "targets": [
+        {
+          "expr": "sum(adaptive_chain_adapted)",
+          "legendFormat": "Adapted"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "mappings": [],
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 0.5},
+              {"color": "red", "value": 0}
+            ]
+          }
+        }
+      },
+      "description": "Number of agents whose provider chain has been reordered"
+    },
+    {
+      "title": "Adaptation Events",
+      "type": "stat",
+      "gridPos": {"h": 3, "w": 4, "x": 8, "y": 1},
+      "targets": [
+        {
+          "expr": "sum(increase(adaptive_chain_adaptation_events_total[15m]))",
+          "legendFormat": "Events/15m"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 3},
+              {"color": "red", "value": 10}
+            ]
+          }
+        }
+      },
+      "description": "Chain reordering events in the last 15 minutes"
+    },
+    {
+      "title": "Total Samples",
+      "type": "stat",
+      "gridPos": {"h": 3, "w": 4, "x": 12, "y": 1},
+      "targets": [
+        {
+          "expr": "sum(adaptive_samples_total)",
+          "legendFormat": "Samples"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "fixed", "fixedColor": "purple"},
+          "mappings": [],
+          "thresholds": {"steps": [{"color": "purple", "value": null}]}
+        }
+      },
+      "description": "Total inference request samples collected across all agents"
+    },
+    {
+      "title": "Avg Success Rate",
+      "type": "stat",
+      "gridPos": {"h": 3, "w": 4, "x": 16, "y": 1},
+      "targets": [
+        {
+          "expr": "avg(adaptive_success_rate)",
+          "legendFormat": "Avg SR"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0.8},
+              {"color": "green", "value": 0.95}
+            ]
+          }
+        }
+      },
+      "description": "Average success rate across all agent-provider pairs"
+    },
+    {
+      "title": "Adaptive Readiness",
+      "type": "stat",
+      "gridPos": {"h": 3, "w": 4, "x": 20, "y": 1},
+      "targets": [
+        {
+          "expr": "count(max by(agent) (adaptive_samples_total) >= 10)",
+          "legendFormat": "Ready"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "green", "value": 0}
+            ]
+          }
+        }
+      },
+      "description": "Agents with 10+ samples (enough for adaptive reordering)"
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 4},
+      "title": "EMA Latency Heatmap",
+      "type": "row"
+    },
+    {
+      "title": "EMA Latency per Agent x Provider",
+      "type": "table",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 5},
+      "targets": [
+        {
+          "expr": "adaptive_ema_latency_ms",
+          "legendFormat": "{{agent}} / {{provider}}",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        {
+          "id": "pivot",
+          "options": {
+            "rows": ["agent"],
+            "columns": ["provider"],
+            "value": "Value"
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {"fields": {}, "sort": []}
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "green", "value": 0, "op": ">"},
+              {"color": "green", "value": 200},
+              {"color": "yellow", "value": 500},
+              {"color": "orange", "value": 1000},
+              {"color": "red", "value": 2000}
+            ]
+          },
+          "custom": {
+            "displayMode": "color-background",
+            "align": "center",
+            "cellOptions": {"type": "color-background", "mode": "basic"}
+          }
+        }
+      },
+      "description": "Live EMA-smoothed inference latency. Green = fast, Red = slow. Shows the data the adaptive router uses to reorder provider chains."
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 15},
+      "title": "Provider Performance",
+      "type": "row"
+    },
+    {
+      "title": "Success Rate — Per Agent x Provider",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [
+        {
+          "expr": "adaptive_success_rate{agent=\"scalping_agent\", provider=\"groq\"}",
+          "legendFormat": "Scalping/Groq"
+        },
+        {
+          "expr": "adaptive_success_rate{agent=\"scalping_agent\", provider=\"openrouter\"}",
+          "legendFormat": "Scalping/OpenRouter"
+        },
+        {
+          "expr": "adaptive_success_rate{agent=\"execution_agent\", provider=\"groq\"}",
+          "legendFormat": "Execution/Groq"
+        },
+        {
+          "expr": "adaptive_success_rate{agent=\"market_analyst\", provider=\"nvidia_nim\"}",
+          "legendFormat": "Analyst/NIM"
+        },
+        {
+          "expr": "adaptive_success_rate{agent=\"risk_guardian\", provider=\"groq\"}",
+          "legendFormat": "Risk/Groq"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "lineWidth": 2,
+          "fillOpacity": 5,
+          "color": {"mode": "palette-classic"},
+          "thresholds": {
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0.8},
+              {"color": "green", "value": 0.95}
+            ]
+          }
+        }
+      },
+      "description": "Success rate per key agent-provider pair. Red < 80%, Yellow < 95%, Green > 95%."
+    },
+    {
+      "title": "P50 Latency — Per Agent x Provider",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "targets": [
+        {
+          "expr": "adaptive_p50_latency_ms{agent=\"scalping_agent\", provider=\"groq\"}",
+          "legendFormat": "Scalping/Groq"
+        },
+        {
+          "expr": "adaptive_p50_latency_ms{agent=\"scalping_agent\", provider=\"openrouter\"}",
+          "legendFormat": "Scalping/OpenRouter"
+        },
+        {
+          "expr": "adaptive_p50_latency_ms{agent=\"execution_agent\", provider=\"groq\"}",
+          "legendFormat": "Execution/Groq"
+        },
+        {
+          "expr": "adaptive_p50_latency_ms{agent=\"market_analyst\", provider=\"nvidia_nim\"}",
+          "legendFormat": "Analyst/NIM"
+        },
+        {
+          "expr": "adaptive_p50_latency_ms{agent=\"risk_guardian\", provider=\"groq\"}",
+          "legendFormat": "Risk/Groq"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0,
+          "lineWidth": 2,
+          "fillOpacity": 5,
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "description": "Median observed latency per agent-provider pair. Lower is better."
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 24},
+      "title": "Chain Adaptation",
+      "type": "row"
+    },
+    {
+      "title": "Chain Adaptation Events Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 25},
+      "targets": [
+        {
+          "expr": "rate(adaptive_chain_adaptation_events_total[5m])",
+          "legendFormat": "{{agent}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "lineWidth": 2,
+          "fillOpacity": 10,
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "description": "Rate of provider chain reordering events per agent. Spikes indicate routing instability."
+    },
+    {
+      "title": "Chain Adapted Status",
+      "type": "table",
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 25},
+      "targets": [
+        {
+          "expr": "adaptive_chain_adapted",
+          "legendFormat": "{{agent}}",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {"Time": true, "__name__": true, "instance": true, "job": true},
+            "indexByName": {"agent": 0, "Value": 1},
+            "renameByName": {"Value": "Adapted"}
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "red", "value": 0}
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {"text": "No", "color": "green"},
+                "1": {"text": "Yes", "color": "yellow"}
+              }
+            }
+          ]
+        }
+      },
+      "description": "Which agents have had their provider chain reordered by adaptive routing."
+    },
+
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 32},
+      "title": "Data Quality",
+      "type": "row"
+    },
+    {
+      "title": "Samples Collected — Per Agent x Provider",
+      "type": "bargauge",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 33},
+      "targets": [
+        {
+          "expr": "adaptive_samples_total",
+          "legendFormat": "{{agent}} / {{provider}}",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 5},
+              {"color": "green", "value": 10}
+            ]
+          },
+          "custom": {
+            "displayMode": "basic",
+            "orientation": "horizontal"
+          }
+        }
+      },
+      "description": "Number of latency samples collected per agent-provider pair. >= 10 samples enables adaptive reordering."
+    },
+    {
+      "title": "EMA Latency — All Pairs",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 33},
+      "targets": [
+        {
+          "expr": "adaptive_ema_latency_ms",
+          "legendFormat": "{{agent}}/{{provider}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "min": 0,
+          "lineWidth": 2,
+          "fillOpacity": 5,
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "description": "EMA-smoothed latency for all agent-provider pairs over time."
+    },
+    {
+      "title": "Active Alerts",
+      "type": "table",
+      "gridPos": {"h": 7, "w": 24, "x": 0, "y": 44},
+      "targets": [
+        {
+          "expr": "ALERTS{alertstate=\"firing\"}",
+          "legendFormat": "{{alertname}}",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "alertstate": true,
+              "Value": true
+            },
+            "indexByName": {
+              "alertname": 0,
+              "severity": 1,
+              "agent": 2,
+              "provider": 3
+            },
+            "renameByName": {
+              "alertname": "Alert",
+              "agent": "Agent",
+              "provider": "Provider"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "blue", "value": 0},
+              {"color": "yellow", "value": 0.5},
+              {"color": "red", "value": 0.9}
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "critical": {"color": "red", "text": "CRITICAL"},
+                "warning": {"color": "yellow", "text": "WARNING"},
+                "info": {"color": "blue", "text": "INFO"}
+              }
+            }
+          ]
+        }
+      },
+      "description": "Currently firing Prometheus alerts across all rule groups"
+    },
+    {
+      "title": "Dashboard Info",
+      "type": "text",
+      "gridPos": {"h": 3, "w": 24, "x": 0, "y": 41},
+      "options": {
+        "content": "## Adaptive Routing Metrics\n\nThis dashboard shows live Prometheus metrics from the QUANTEX adaptive routing engine. Data appears after agents make inference requests — the router tracks EMA-smoothed latencies per agent-provider pair and automatically reorders provider chains when enough samples (≥10) show a faster provider exists.\n\n| Color Key | Meaning |\n|-----------|---------|\n| 🟢 Green | Fast / Healthy |\n| 🟡 Yellow | Acceptable / Warning |\n| 🟠 Orange | Slow |\n| 🔴 Red | Degraded / Failing |",
+        "mode": "markdown"
+      },
+      "description": "Legend and explanation for the adaptive routing dashboard"
+    }
+  ],
+  "schemaVersion": 38,
+  "version": 1,
+  "gnetId": null
+}

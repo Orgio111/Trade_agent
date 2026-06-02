@@ -50,6 +50,7 @@ class MarketAnalystAgent:
                 "reasoning",
                 [{"role": "user", "content": prompt}],
                 temperature=0.1,
+                agent_id=self.agent_id,
             )
             result = json.loads(response)
             return AgentOpinion(
@@ -106,6 +107,7 @@ class RiskGuardianAgent:
                 "reasoning",
                 [{"role": "user", "content": prompt}],
                 temperature=0.05,
+                agent_id=self.agent_id,
             )
             result = json.loads(response)
             return AgentOpinion(
@@ -210,6 +212,7 @@ class DeepSeekAnalysisAgent:
                 [{"role": "user", "content": prompt}],
                 temperature=0.1,
                 stream=stream,
+                agent_id=self.agent_id,
             )
 
             if stream:

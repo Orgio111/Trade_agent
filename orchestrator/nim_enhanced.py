@@ -25,7 +25,7 @@ from openai import AsyncOpenAI
 # ── Model Routing Tables ──────────────────────────────────
 
 NIM_MODELS = {
-    "reasoning": "deepseek/deepseek-v4-flash",
+    "reasoning": "deepseek-ai/deepseek-v4-flash",
     "coding": "qwen/qwen3-coder-480b-a35b-instruct",
     "embedding": "nvidia/nv-embedqa-e5-v5",
     "multimodal": "nvidia/nemotron-nano-omni",
@@ -85,21 +85,24 @@ class EnhancedNIMOrchestrator:
 
     def __init__(self, redis_host: str = "localhost", redis_port: int = 6379):
         # NIM cloud client
+        nim_key = os.getenv("NVIDIA_API_KEY", "") or os.getenv("OPENAI_API_KEY", "sk-placeholder")
         self.nim_client = AsyncOpenAI(
             base_url="https://integrate.api.nvidia.com/v1",
-            api_key=os.getenv("NVIDIA_API_KEY", ""),
+            api_key=nim_key,
         )
 
         # NIM local (self-hosted fallback)
+        local_key = os.getenv("NIM_LOCAL_KEY", "") or os.getenv("OPENAI_API_KEY", "sk-placeholder")
         self.nim_local = AsyncOpenAI(
             base_url=os.getenv("NIM_LOCAL_URL", "http://localhost:8000/v1"),
-            api_key=os.getenv("NIM_LOCAL_KEY", ""),
+            api_key=local_key,
         )
 
         # OpenRouter
+        or_key = os.getenv("OPENROUTER_API_KEY", "") or os.getenv("OPENAI_API_KEY", "sk-placeholder")
         self.openrouter = AsyncOpenAI(
             base_url="https://openrouter.ai/api/v1",
-            api_key=os.getenv("OPENROUTER_API_KEY", ""),
+            api_key=or_key,
         )
 
         # Redis cache (optional)

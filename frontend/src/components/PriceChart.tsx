@@ -2,13 +2,13 @@
 
 import { useEffect, useRef } from "react";
 import {
-  createChart, IChartApi, ISeriesApi,
+  createChart, IChartApi, ISeriesApi, Time,
   CandlestickData, LineData, HistogramData,
   CandlestickSeries, LineSeries, HistogramSeries,
 } from "lightweight-charts";
 
 interface Candle {
-  time: string;
+  time: number | string;
   open: number;
   high: number;
   low: number;
@@ -34,6 +34,54 @@ function computeEMA(closes: number[], period: number): number[] {
   return result;
 }
 
+/**
+ * Safe helper to convert candle data to CandlestickData[].
+ * Filters out any items with null/NaN values to avoid lightweight-charts
+ * "Value is null" errors during rendering.
+ */
+function toCandleData(candles: Candle[]): CandlestickData[] {
+  return candles
+    .filter((d) => {
+      if (d.open == null || isNaN(d.open)) return false;
+      if (d.high == null || isNaN(d.high)) return false;
+      if (d.low == null || isNaN(d.low)) return false;
+      if (d.close == null || isNaN(d.close)) return false;
+      if (d.time == null) return false;
+      return true;
+    })
+    .map((d) => ({
+      time: d.time as Time,
+      open: d.open,
+      high: d.high,
+      low: d.low,
+      close: d.close,
+    }));
+}
+
+function toVolumeData(candles: Candle[]): HistogramData[] {
+  return candles
+    .filter((d) => d.volume != null && !isNaN(d.volume) && d.time != null)
+    .map((d) => ({
+      time: d.time as Time,
+      value: d.volume,
+      color: d.close >= d.open ? "#00ff8822" : "#ff004422",
+    }));
+}
+
+function toEmaData(
+  candles: Candle[],
+  values: number[]
+): LineData[] {
+  if (values.length === 0 || candles.length < values.length) return [];
+  return candles
+    .slice(candles.length - values.length)
+    .filter((d) => d.time != null)
+    .map((d, i) => ({
+      time: d.time as Time,
+      value: values[i],
+    }));
+}
+
 export default function PriceChart({ data }: PriceChartProps) {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartApiRef = useRef<IChartApi | null>(null);
@@ -41,7 +89,9 @@ export default function PriceChart({ data }: PriceChartProps) {
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const ema9Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const ema21Ref = useRef<ISeriesApi<"Line"> | null>(null);
+  const hasFitRef = useRef(false);
 
+  // ── Chart creation (runs once) ───────────────────────────
   useEffect(() => {
     if (!chartRef.current) return;
 
@@ -73,7 +123,7 @@ export default function PriceChart({ data }: PriceChartProps) {
       },
     });
 
-    // v5 API: use addSeries with series definition
+    // Candlestick series
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
       upColor: "#00ff88",
       downColor: "#ff0044",
@@ -82,7 +132,9 @@ export default function PriceChart({ data }: PriceChartProps) {
       wickUpColor: "#00ff88",
       wickDownColor: "#ff0044",
     });
+    candleSeriesRef.current = candlestickSeries;
 
+    // Volume histogram
     const volumeSeries = chart.addSeries(HistogramSeries, {
       priceFormat: { type: "volume" },
       priceScaleId: "volume",
@@ -90,14 +142,18 @@ export default function PriceChart({ data }: PriceChartProps) {
     chart.priceScale("volume").applyOptions({
       scaleMargins: { top: 0.85, bottom: 0 },
     });
+    volumeSeriesRef.current = volumeSeries;
 
+    // EMA 9
     const ema9 = chart.addSeries(LineSeries, {
       color: "#00aaff",
       lineWidth: 1,
       title: "EMA 9",
       priceLineVisible: false,
     });
+    ema9Ref.current = ema9;
 
+    // EMA 21
     const ema21 = chart.addSeries(LineSeries, {
       color: "#ffaa00",
       lineWidth: 1,
@@ -105,56 +161,11 @@ export default function PriceChart({ data }: PriceChartProps) {
       title: "EMA 21",
       priceLineVisible: false,
     });
-
-    candleSeriesRef.current = candlestickSeries;
-    volumeSeriesRef.current = volumeSeries;
-    ema9Ref.current = ema9;
     ema21Ref.current = ema21;
+
     chartApiRef.current = chart;
 
-    // Set data
-    if (data.length > 0) {
-      const candleData: CandlestickData[] = data.map((d) => ({
-        time: d.time as any,
-        open: d.open,
-        high: d.high,
-        low: d.low,
-        close: d.close,
-      }));
-      candlestickSeries.setData(candleData);
-
-      const volData: HistogramData[] = data.map((d) => ({
-        time: d.time as any,
-        value: d.volume,
-        color: d.close >= d.open ? "#00ff8822" : "#ff004422",
-      }));
-      volumeSeries.setData(volData);
-
-      // True EMA computation
-      const closes = data.map((d) => d.close);
-      const ema9Values = computeEMA(closes, 9);
-      const ema21Values = computeEMA(closes, 21);
-
-      if (ema9Values.length > 0) {
-        const ema9Data: LineData[] = data.slice(data.length - ema9Values.length).map((d, i) => ({
-          time: d.time as any,
-          value: ema9Values[i],
-        }));
-        ema9.setData(ema9Data);
-      }
-
-      if (ema21Values.length > 0) {
-        const ema21Data: LineData[] = data.slice(data.length - ema21Values.length).map((d, i) => ({
-          time: d.time as any,
-          value: ema21Values[i],
-        }));
-        ema21.setData(ema21Data);
-      }
-    }
-
-    chart.timeScale().fitContent();
-
-    // Debounced resize
+    // Debounced resize handler
     let resizeTimer: ReturnType<typeof setTimeout>;
     const handleResize = () => {
       clearTimeout(resizeTimer);
@@ -171,7 +182,73 @@ export default function PriceChart({ data }: PriceChartProps) {
       clearTimeout(resizeTimer);
       chart.remove();
       chartApiRef.current = null;
+      candleSeriesRef.current = null;
+      volumeSeriesRef.current = null;
+      ema9Ref.current = null;
+      ema21Ref.current = null;
     };
+  }, []); // ⬅️ Empty deps — chart created once
+
+  // ── Data updates (runs every time data changes) ──────────
+  useEffect(() => {
+    if (!candleSeriesRef.current || !volumeSeriesRef.current) return;
+
+    if (data.length === 0) return;
+
+    // Candles
+    const candleData = toCandleData(data);
+    if (candleData.length > 0) {
+      try {
+        candleSeriesRef.current.setData(candleData);
+      } catch (err) {
+        console.warn("PriceChart: candle setData error", err);
+      }
+    }
+
+    // Volume
+    const volData = toVolumeData(data);
+    if (volData.length > 0) {
+      try {
+        volumeSeriesRef.current.setData(volData);
+      } catch (err) {
+        console.warn("PriceChart: volume setData error", err);
+      }
+    }
+
+    // EMAs
+    const closes = data.map((d) => d.close);
+    const ema9Values = computeEMA(closes, 9);
+    const ema21Values = computeEMA(closes, 21);
+
+    if (ema9Ref.current && ema9Values.length > 0) {
+      const ema9Data = toEmaData(data, ema9Values);
+      if (ema9Data.length > 0) {
+        try {
+          ema9Ref.current.setData(ema9Data);
+        } catch (err) {
+          console.warn("PriceChart: EMA9 setData error", err);
+        }
+      }
+    }
+
+    if (ema21Ref.current && ema21Values.length > 0) {
+      const ema21Data = toEmaData(data, ema21Values);
+      if (ema21Data.length > 0) {
+        try {
+          ema21Ref.current.setData(ema21Data);
+        } catch (err) {
+          console.warn("PriceChart: EMA21 setData error", err);
+        }
+      }
+    }
+
+    // Fit content on first load only — prevents snapping back on every tick
+    if (!hasFitRef.current && chartApiRef.current && candleData.length > 0) {
+      try {
+        chartApiRef.current.timeScale().fitContent();
+        hasFitRef.current = true;
+      } catch { /* ignore */ }
+    }
   }, [data]);
 
   return (

@@ -61,7 +61,7 @@ Order Book Imbalance: {context.get('book_imbalance', 0):.3f}
 Output JSON: {{"signal":"long|short|hold","confidence":0.0-1.0,"reasoning":"","target_px":0.0,"sl_px":0.0}}
 Focus ONLY on immediate micro-structure. Be quick, be decisive."""
         try:
-            resp = await self.nim.route_inference("fast", [{"role": "user", "content": prompt}], temperature=0.1)
+            resp = await self.nim.route_inference("fast", [{"role": "user", "content": prompt}], temperature=0.1, agent_id=self.agent_id)
             result = json.loads(resp)
             return AgentOpinion(self.agent_id, result["signal"], result["confidence"], result["reasoning"])
         except Exception as e:
@@ -88,7 +88,7 @@ Resistance: ${context.get('resistance', 0):.2f}
 Output JSON: {{"signal":"long|short|hold","confidence":0.0-1.0,"reasoning":"","target_px":0.0}}
 Be patient. Look for high RR setups (>2:1)."""
         try:
-            resp = await self.nim.route_inference("reasoning", [{"role": "user", "content": prompt}], temperature=0.1)
+            resp = await self.nim.route_inference("reasoning", [{"role": "user", "content": prompt}], temperature=0.1, agent_id=self.agent_id)
             result = json.loads(resp)
             return AgentOpinion(self.agent_id, result["signal"], result["confidence"], result["reasoning"])
         except Exception as e:
@@ -175,7 +175,7 @@ Output JSON: {{
     "reasoning": ""
 }}"""
         try:
-            resp = await self.nim.route_inference("fast", [{"role": "user", "content": prompt}], temperature=0.05)
+            resp = await self.nim.route_inference("fast", [{"role": "user", "content": prompt}], temperature=0.05, agent_id=self.agent_id)
             return json.loads(resp)
         except Exception:
             return {"order_type": "market", "leverage": 3, "dca_levels": 1, "entry_ladder": [{"level": 1, "pct": 1.0}]}
