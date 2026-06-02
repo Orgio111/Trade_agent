@@ -1,0 +1,291 @@
+# QUANTEX Service Deployments
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quantex-orchestrator
+  namespace: quantex
+  labels: { app: quantex, component: orchestrator }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: quantex, component: orchestrator }
+  template:
+    metadata:
+      labels: { app: quantex, component: orchestrator }
+    spec:
+      containers:
+        - name: orchestrator
+          image: quantex/orchestrator:latest
+          ports:
+            - containerPort: 8001
+          env:
+            - name: NVIDIA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: quantex-secrets
+                  key: nvidia-api-key
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: quantex-secrets
+                  key: openrouter-api-key
+            - name: DATABASE_URL
+              value: "postgresql://quantex:secret@quantex-postgres:5432/quantex"
+            - name: REDIS_HOST
+              value: "quantex-redis"
+          livenessProbe:
+            httpGet: { path: /health, port: 8001 }
+            initialDelaySeconds: 10
+          resources:
+            requests: { cpu: "1", memory: "2Gi" }
+            limits: { cpu: "2", memory: "4Gi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quantex-orchestrator
+  namespace: quantex
+spec:
+  selector: { app: quantex, component: orchestrator }
+  ports:
+    - port: 8001
+      targetPort: 8001
+      name: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quantex-realtime
+  namespace: quantex
+  labels: { app: quantex, component: realtime }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: quantex, component: realtime }
+  template:
+    metadata:
+      labels: { app: quantex, component: realtime }
+    spec:
+      containers:
+        - name: realtime
+          image: quantex/realtime:latest
+          ports:
+            - containerPort: 8082
+          livenessProbe:
+            httpGet: { path: /health, port: 8082 }
+          resources:
+            requests: { cpu: "0.5", memory: "512Mi" }
+            limits: { cpu: "1", memory: "1Gi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quantex-realtime
+  namespace: quantex
+spec:
+  selector: { app: quantex, component: realtime }
+  ports:
+    - port: 8082
+      targetPort: 8082
+      name: http
+    - port: 8083
+      targetPort: 8083
+      name: ws
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quantex-frontend
+  namespace: quantex
+  labels: { app: quantex, component: frontend }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: quantex, component: frontend }
+  template:
+    metadata:
+      labels: { app: quantex, component: frontend }
+    spec:
+      containers:
+        - name: frontend
+          image: quantex/frontend:latest
+          ports:
+            - containerPort: 3000
+          resources:
+            requests: { cpu: "0.5", memory: "512Mi" }
+            limits: { cpu: "1", memory: "1Gi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quantex-frontend
+  namespace: quantex
+spec:
+  selector: { app: quantex, component: frontend }
+  ports:
+    - port: 3000
+      targetPort: 3000
+      name: http
+---
+# PostgreSQL
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: quantex-postgres
+  namespace: quantex
+spec:
+  serviceName: quantex-postgres
+  replicas: 1
+  selector:
+    matchLabels: { app: quantex, component: postgres }
+  template:
+    metadata:
+      labels: { app: quantex, component: postgres }
+    spec:
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg16
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: "quantex"
+            - name: POSTGRES_USER
+              value: "quantex"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: quantex-secrets
+                  key: postgres-password
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quantex-postgres
+  namespace: quantex
+spec:
+  selector: { app: quantex, component: postgres }
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+# Redis
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quantex-redis
+  namespace: quantex
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: quantex, component: redis }
+  template:
+    metadata:
+      labels: { app: quantex, component: redis }
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.2-alpine
+          command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+          ports:
+            - containerPort: 6379
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+      volumes:
+        - name: redis-data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quantex-redis
+  namespace: quantex
+spec:
+  selector: { app: quantex, component: redis }
+  ports:
+    - port: 6379
+      targetPort: 6379
+---
+# Prometheus
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quantex-prometheus
+  namespace: quantex
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: quantex, component: prometheus }
+  template:
+    metadata:
+      labels: { app: quantex, component: prometheus }
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:latest
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - name: prometheus-config
+              mountPath: /etc/prometheus
+      volumes:
+        - name: prometheus-config
+          configMap:
+            name: quantex-prometheus-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quantex-prometheus
+  namespace: quantex
+spec:
+  selector: { app: quantex, component: prometheus }
+  ports:
+    - port: 9090
+      targetPort: 9090
+---
+# Grafana
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quantex-grafana
+  namespace: quantex
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: quantex, component: grafana }
+  template:
+    metadata:
+      labels: { app: quantex, component: grafana }
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: "quantex123"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quantex-grafana
+  namespace: quantex
+spec:
+  selector: { app: quantex, component: grafana }
+  ports:
+    - port: 3000
+      targetPort: 3000

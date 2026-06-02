@@ -1,0 +1,44 @@
+# QUANTEX — Alerting Rules
+groups:
+  - name: quantex-trading
+    interval: 30s
+    rules:
+      - alert: HighDrawdown
+        expr: current_drawdown_pct > 15
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Drawdown {{ $value }}% exceeds 15% threshold"
+
+      - alert: ConsecutiveLosses
+        expr: consecutive_losses_total > 4
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} consecutive losses — cooldown required"
+
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+
+      - alert: HighTradeFrequency
+        expr: rate(trades_total[5m]) > 20
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Overtrading detected — {{ $value }} trades/min"
+
+      - alert: LowConfidence
+        expr: avg_over_time(swarm_consensus_score[1h]) < 0.4
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "Sustained low confidence ({{ $value }}) across swarm"

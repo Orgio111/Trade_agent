@@ -1,0 +1,60 @@
+# QUANTEX Ray Cluster — Distributed RL Training
+apiVersion: ray.io/v1alpha1
+kind: RayCluster
+metadata:
+  name: quantex-ray-cluster
+  namespace: quantex
+spec:
+  headGroupSpec:
+    replicas: 1
+    rayStartParams:
+      num-cpus: "4"
+    template:
+      spec:
+        containers:
+          - name: ray-head
+            image: quantex/ray-trading:latest
+            ports:
+              - containerPort: 10001
+              - containerPort: 8265
+            resources:
+              requests:
+                cpu: 4
+                memory: 8Gi
+              limits:
+                cpu: 4
+                memory: 8Gi
+  workerGroupSpecs:
+    - groupName: rl-workers
+      replicas: 3
+      rayStartParams:
+        num-cpus: "2"
+      template:
+        spec:
+          containers:
+            - name: ray-worker
+              image: quantex/ray-trading:latest
+              resources:
+                requests:
+                  cpu: 2
+                  memory: 4Gi
+                limits:
+                  cpu: 2
+                  memory: 4Gi
+---
+# Ray Service for accessing the cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: quantex-ray-head
+  namespace: quantex
+spec:
+  selector:
+    ray.io/node-type: head
+  ports:
+    - name: dashboard
+      port: 8265
+      targetPort: 8265
+    - name: gcs
+      port: 10001
+      targetPort: 10001

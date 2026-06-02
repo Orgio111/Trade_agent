@@ -1,0 +1,8 @@
+# QUANTEX Kubernetes Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: quantex
+  labels:
+    app: quantex
+    tier: trading-system

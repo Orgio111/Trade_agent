@@ -1,0 +1,265 @@
+# ═══════════════════════════════════════════════════════════
+# QUANTEX — Docker Compose (Full Production Stack)
+# Layer 1: Infra | Layer 2: Storage | Layer 3: Streaming
+# Layer 4: Services | Layer 5-7: Application
+# ═══════════════════════════════════════════════════════════
+
+version: "3.9"
+
+services:
+  # ── LAYER 1: INFRASTRUCTURE ─────────────────────────────
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: quantex-postgres
+    restart: unless-stopped
+    ports: ["5432:5432"]
+    environment:
+      POSTGRES_DB: quantex
+      POSTGRES_USER: quantex
+      POSTGRES_PASSWORD: secret
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quantex"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: quantex-redis
+    restart: unless-stopped
+    ports: ["6379:6379"]
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+
+  # ── LAYER 2-3: STORAGE + STREAMING ─────────────────────
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: quantex-qdrant
+    restart: unless-stopped
+    ports: ["6333:6333", "6334:6334"]
+    volumes:
+      - qdrant_data:/qdrant/storage
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+
+  nats:
+    image: nats:2.10-alpine
+    container_name: quantex-nats
+    restart: unless-stopped
+    ports: ["4222:4222", "8222:8222"]
+    command: ["--jetstream", "--store_dir=/data"]
+    volumes:
+      - nats_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q http://localhost:8222/healthz -O /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+
+  influxdb:
+    image: influxdb:2.7
+    container_name: quantex-influxdb
+    restart: unless-stopped
+    ports: ["8086:8086"]
+    volumes:
+      - influx_data:/var/lib/influxdb2
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+
+  # ── LAYER 4-5: SERVICES ───────────────────────────────
+
+  orchestrator:
+    build: ./orchestrator
+    container_name: quantex-orchestrator
+    restart: unless-stopped
+    # Not exposed directly to host — accessed through nginx reverse proxy
+    ports: []
+    expose:
+      - "8001"
+    environment:
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-placeholder}
+      DATABASE_URL: postgresql://quantex:secret@postgres:5432/quantex
+      REDIS_HOST: redis
+      INITIAL_BALANCE: ${INITIAL_BALANCE:-1000.0}
+      FORWARDED_ALLOW_IPS: "*"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 4G }
+
+  realtime:
+    build: ./realtime
+    container_name: quantex-realtime
+    restart: unless-stopped
+    # Not exposed directly to host — accessed through nginx reverse proxy
+    ports: []
+    expose:
+      - "8082"
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+
+  frontend:
+    build: ./frontend
+    container_name: quantex-frontend
+    restart: unless-stopped
+    # Not exposed directly to host — accessed through nginx reverse proxy
+    ports: []
+    expose:
+      - "3000"
+    environment:
+      API_TARGET: http://orchestrator:8001
+      WS_TARGET: http://realtime:8082
+    depends_on:
+      orchestrator:
+        condition: service_started
+      realtime:
+        condition: service_started
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 1G }
+
+  # ── LAYER 6: REVERSE PROXY ────────────────────────────
+
+  nginx:
+    build: ./deployment/nginx
+    container_name: quantex-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - nginx_logs:/var/log/nginx
+      - certbot_www:/var/www/certbot:ro
+      # Entrypoint writes fallback certs if LE certs don't exist yet
+      - certbot_certs:/etc/letsencrypt
+    environment:
+      CERTBOT_DOMAIN: ${CERTBOT_DOMAIN:-quantex.local}
+    depends_on:
+      frontend:
+        condition: service_started
+      orchestrator:
+        condition: service_started
+      realtime:
+        condition: service_started
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+
+  # ── LAYER: CERTBOT — Let's Encrypt SSL Certificate Management ──
+  #
+  # NOTE: This service uses `profiles: [certbot]`. All certbot commands
+  # MUST include --profile certbot to reference this service:
+  #
+  # ── One-time certificate issuance:
+  #   docker compose --profile certbot run --rm certbot certonly --webroot \
+  #     --webroot-path /var/www/certbot -d ${CERTBOT_DOMAIN:-quantex.local}
+  #
+  # ── Run renewal daemon:
+  #   docker compose --profile certbot up -d
+  #
+  # ── Manual renewal check:
+  #   docker compose --profile certbot run --rm certbot renew --dry-run
+  #
+  # ── Certificate status:
+  #   docker compose --profile certbot run --rm certbot certificates
+  #
+  # After obtaining or renewing certificates, nginx auto-detects them
+  # via periodic reload (every 12h).
+
+  certbot:
+    image: certbot/certbot:v2.2.0
+    container_name: quantex-certbot
+    profiles:
+      - certbot
+    volumes:
+      - certbot_www:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+    environment:
+      CERTBOT_DOMAIN: ${CERTBOT_DOMAIN:-quantex.local}
+      CERTBOT_EMAIL: ${CERTBOT_EMAIL:-admin@quantex.local}
+    # Renewal daemon — checks every 12 hours (43200s)
+    # nginx auto-reloads every 12h via its entrypoint to pick up renewed certs
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - "trap 'exit 0' TERM; while true; do certbot renew --webroot-path=/var/www/certbot --non-interactive 2>&1; echo 'Next certbot check in 12 hours...'; sleep 43200; done"
+    depends_on:
+      - nginx
+
+  # ── LAYER 7-8: MONITORING ────────────────────────────
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: quantex-prometheus
+    restart: unless-stopped
+    ports: ["9090:9090"]
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml
+      - prometheus_data:/prometheus
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=30d"]
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: quantex-grafana
+    restart: unless-stopped
+    ports: ["3001:3000"]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: quantex123
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      prometheus:
+        condition: service_started
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+  nats_data:
+  influx_data:
+  nginx_logs:
+  certbot_www:
+  certbot_certs:
+  prometheus_data:
+  grafana_data:
