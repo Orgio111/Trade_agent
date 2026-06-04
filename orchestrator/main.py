@@ -100,26 +100,30 @@ async def _compute_signal(
     symbol: str = "BTCUSDT",
     source: str = "strategy",
 ) -> dict:
-    """Generate mock price data and compute a trading signal.
+    """Fetch real Binance data and compute a trading signal.
 
     Shared helper used by both the REST /api/v1/signal endpoint
     and the WebSocket signal broadcast task.
+    Falls back to mock data if Binance API is unavailable.
     """
     import numpy as np
     import pandas as pd
-    rng = np.random.RandomState()
-    periods = 100
-    dates = pd.date_range(end=datetime.now(), periods=periods, freq="1min")
-    base = 50000 + rng.normal(0, 200)
-    df = pd.DataFrame({
-        "open": rng.normal(base, 100, periods),
-        "high": rng.normal(base + 200, 100, periods),
-        "low": rng.normal(base - 200, 100, periods),
-        "close": rng.normal(base, 100, periods),
-        "volume": rng.normal(100, 20, periods),
-    }, index=dates)
-    df["high"] = df[["open", "close"]].max(axis=1) + abs(rng.normal(0, 50, periods))
-    df["low"] = df[["open", "close"]].min(axis=1) - abs(rng.normal(0, 50, periods))
+
+    # Try real Binance data first, fallback to mock
+    interval = "1h"
+    end = datetime.now()
+    start = end - timedelta(hours=100)  # ~100 hourly candles
+    try:
+        df = await DataLoader.from_binance_api(
+            symbol=symbol, interval=interval, start_time=start, end_time=end
+        )
+        source_label = "Binance API"
+    except Exception:
+        df = DataLoader.generate_mock_data(periods=100, start_price=50000.0)
+        source_label = "Mock (Binance unavailable)"
+    if df.empty:
+        df = DataLoader.generate_mock_data(periods=100, start_price=50000.0)
+        source_label = "Mock (empty response from Binance)"
 
     if source == "ml" and ml_engine:
         signal = ml_engine.predict_signal(df)
@@ -131,7 +135,7 @@ async def _compute_signal(
         }
         decision = await swarm.run_swarm_debate(context)
         return {
-            "symbol": symbol, "source": "swarm",
+            "symbol": symbol, "source": "swarm", "data_source": source_label,
             "signal": decision.direction, "confidence": decision.confidence,
             "entry_price": df["close"].iloc[-1], "reason": decision.reasoning[:200],
             "debate_log": decision.debate_log[:10],
@@ -142,7 +146,7 @@ async def _compute_signal(
         return {"error": "No signal source available"}
 
     return {
-        "symbol": symbol, "source": source,
+        "symbol": symbol, "source": source, "data_source": source_label,
         "signal": signal.direction, "confidence": signal.confidence,
         "entry_price": signal.entry_price, "stop_loss": signal.stop_loss,
         "take_profits": signal.take_profits, "reason": signal.reason,
@@ -957,23 +961,34 @@ async def get_market_structure(symbol: str = "BTCUSDT"):
         return {"error": "Not initialized"}
     import numpy as np
     import pandas as pd
-    rng = np.random.RandomState()
-    periods = 200
-    dates = pd.date_range(end=datetime.now(), periods=periods, freq="1h")
-    base = 50000 + rng.normal(0, 200, periods)
-    df = pd.DataFrame({
-        "open": base + rng.normal(0, 100, periods),
-        "high": base + 200 + abs(rng.normal(0, 100, periods)),
-        "low": base - 200 - abs(rng.normal(0, 100, periods)),
-        "close": base,
-        "volume": np.random.exponential(100, periods),
-    }, index=dates)
+
+    # Try real Binance data first, fallback to mock
+    end = datetime.now()
+    start = end - timedelta(hours=200)
+    try:
+        df = await DataLoader.from_binance_api(
+            symbol=symbol, interval="1h", start_time=start, end_time=end
+        )
+        data_source = "Binance API"
+    except Exception:
+        periods = 200
+        dates = pd.date_range(end=datetime.now(), periods=periods, freq="1h")
+        base = 50000 + np.random.normal(0, 200, periods)
+        df = pd.DataFrame({
+            "open": base + np.random.normal(0, 100, periods),
+            "high": base + 200 + abs(np.random.normal(0, 100, periods)),
+            "low": base - 200 - abs(np.random.normal(0, 100, periods)),
+            "close": base,
+            "volume": np.random.exponential(100, periods),
+        }, index=dates)
+        data_source = "Mock (Binance unavailable)"
 
     result = market_structure.compute_all(df)
     signal = market_structure.get_market_structure_signal(df, df.iloc[-1])
 
     return {
         "symbol": symbol,
+        "data_source": data_source,
         "signal": signal,
         "structure": {
             "swing_highs": int(result["swing_high"].sum()),
@@ -995,19 +1010,36 @@ async def check_fake_breakout(data: dict):
         return {"error": "Not initialized"}
     import numpy as np
     import pandas as pd
-    periods = 20
-    dates = pd.date_range(end=datetime.now(), periods=periods, freq="1h")
-    rng = np.random.RandomState()
+    days = data.get("days", 1)
+    symbol = data.get("symbol", "BTCUSDT")
     base = data.get("price", 50000)
-    df = pd.DataFrame({
-        "open": base + rng.normal(0, 50, periods),
-        "high": base + 100 + abs(rng.normal(0, 80, periods)),
-        "low": base - 50 - abs(rng.normal(0, 50, periods)),
-        "close": base + rng.normal(0, 60, periods),
-        "volume": np.random.exponential(100, periods),
-    }, index=dates)
+    level = data.get("level", base)
+    direction = data.get("direction", "up")
 
-    result = fake_breakout.detect(df, data.get("level", base), data.get("direction", "up"))
+    # Try real Binance data first, fallback to mock
+    end = datetime.now()
+    start = end - timedelta(days=days)
+    try:
+        df = await DataLoader.from_binance_api(
+            symbol=symbol, interval="1h", start_time=start, end_time=end
+        )
+        data_source = "Binance API"
+    except Exception:
+        periods = max(days * 24, 20)
+        dates = pd.date_range(end=datetime.now(), periods=periods, freq="1h")
+        rng = np.random.RandomState()
+        df = pd.DataFrame({
+            "open": base + rng.normal(0, 50, periods),
+            "high": base + 100 + abs(rng.normal(0, 80, periods)),
+            "low": base - 50 - abs(rng.normal(0, 50, periods)),
+            "close": base + rng.normal(0, 60, periods),
+            "volume": np.random.exponential(100, periods),
+        }, index=dates)
+        data_source = "Mock (Binance unavailable)"
+
+    result = fake_breakout.detect(df, level, direction)
+    result["data_source"] = data_source
+    result["candles_analyzed"] = len(df)
     return result
 
 
@@ -1121,15 +1153,36 @@ async def estimate_slippage(data: dict):
 async def analyze_delta(data: dict):
     if not delta_tracker:
         return {"error": "Not initialized"}
-    # Simulate delta ticks
     import numpy as np
+    import pandas as pd
+    symbol = data.get("symbol", "BTCUSDT")
     price = data.get("price", 50000)
-    for _ in range(data.get("ticks", 100)):
-        delta_tracker.record_tick(
-            price + np.random.normal(0, 10),
-            np.random.normal(0, 0.5),
+    lookback = data.get("lookback", 100)
+
+    # Try to load real price ticks from Binance klines
+    try:
+        end = datetime.now()
+        start = end - timedelta(hours=24)
+        df = await DataLoader.from_binance_api(
+            symbol=symbol, interval="1m", start_time=start, end_time=end, limit=lookback
         )
-    div = delta_tracker.analyze_divergence(lookback=data.get("lookback", 100))
+        if not df.empty:
+            for idx in range(len(df)):
+                candle = df.iloc[idx]
+                # Approximate delta as close-open difference normalized
+                delta = (candle["close"] - candle["open"]) / candle["close"] * candle["volume"]
+                delta_tracker.record_tick(float(candle["close"]), float(delta))
+        else:
+            raise ValueError("Empty DataFrame")
+    except Exception:
+        # Fallback to simulated delta ticks
+        for _ in range(lookback):
+            delta_tracker.record_tick(
+                price + np.random.normal(0, 10),
+                np.random.normal(0, 0.5),
+            )
+
+    div = delta_tracker.analyze_divergence(lookback=lookback)
     signal = delta_tracker.get_delta_signal()
     return {
         "cvd": delta_tracker.get_cvd(),
@@ -1143,14 +1196,31 @@ async def check_spoofing(data: dict):
     if not spoofing_detector:
         return {"error": "Not initialized"}
     import numpy as np
-    # Simulate order book snapshots
+    symbol = data.get("symbol", "BTCUSDT")
     base_price = data.get("price", 50000)
-    for _ in range(20):
-        bids = [[base_price - i*10, np.random.exponential(5)] for i in range(10)]
-        asks = [[base_price + i*10, np.random.exponential(5)] for i in range(10)]
-        spoofing_detector.record_snapshot(bids, asks)
+
+    # Try to fetch real order book from Binance
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"https://api.binance.com/api/v3/depth?symbol={symbol}&limit=20"
+            )
+            resp.raise_for_status()
+            depth = resp.json()
+            bids = [[float(p), float(q)] for p, q in depth.get("bids", [])[:10]]
+            asks = [[float(p), float(q)] for p, q in depth.get("asks", [])[:10]]
+            for _ in range(5):
+                spoofing_detector.record_snapshot(bids, asks)
+    except Exception:
+        # Fallback: simulate order book snapshots
+        for _ in range(20):
+            bids = [[base_price - i*10, np.random.exponential(5)] for i in range(10)]
+            asks = [[base_price + i*10, np.random.exponential(5)] for i in range(10)]
+            spoofing_detector.record_snapshot(bids, asks)
 
     result = spoofing_detector.analyze()
+    result["symbol"] = symbol
     return result
 
 
@@ -1159,13 +1229,34 @@ async def predict_cascade(data: dict):
     if not liq_cascade:
         return {"error": "Not initialized"}
     import numpy as np
-    # Simulate recent liquidations
+    import pandas as pd
+    symbol = data.get("symbol", "BTCUSDT")
+    price = data.get("price", 50000)
+
+    # Try to fetch real Binance klines for price acceleration detection
+    fetched_price = price
+    price_1h_ago = data.get("price_1h_ago", price * 0.99)
+    price_4h_ago = data.get("price_4h_ago", price * 1.01)
+    try:
+        end = datetime.now()
+        start = end - timedelta(hours=48)
+        df = await DataLoader.from_binance_api(
+            symbol=symbol, interval="1h", start_time=start, end_time=end
+        )
+        if not df.empty and len(df) >= 5:
+            fetched_price = float(df["close"].iloc[-1])
+            price_1h_ago = float(df["close"].iloc[-2]) if len(df) >= 2 else fetched_price
+            price_4h_ago = float(df["close"].iloc[-5]) if len(df) >= 5 else fetched_price
+    except Exception:
+        pass  # Keep the defaults from data params
+
+    # Simulate recent liquidations (no real public API for this)
     for _ in range(np.random.randint(5, 30)):
         liq_cascade.record_liquidation(
-            symbol=data.get("symbol", "BTCUSDT"),
+            symbol=symbol,
             side=np.random.choice(["buy", "sell"]),
             quantity=np.random.exponential(5),
-            price=data.get("price", 50000) + np.random.normal(0, 100),
+            price=price + np.random.normal(0, 100),
             usd_value=np.random.exponential(500_000),
         )
 
@@ -1173,23 +1264,42 @@ async def predict_cascade(data: dict):
         "funding_rate": data.get("funding_rate", 0.0001),
         "open_interest": data.get("open_interest", 10_000_000_000),
         "open_interest_24h_ago": data.get("oi_24h_ago", 10_500_000_000),
-        "price": data.get("price", 50000),
-        "price_1h_ago": data.get("price_1h_ago", 50500),
-        "price_4h_ago": data.get("price_4h_ago", 51000),
+        "price": price,
+        "price_1h_ago": price_1h_ago,
+        "price_4h_ago": price_4h_ago,
     }
     result = liq_cascade.predict(market_data)
+    result["market_price"] = round(price, 2)
+    result["symbol"] = symbol
     return result
 
 
 @app.post("/api/v2/microstructure/orderbook")
 async def analyze_orderbook(data: dict):
     import numpy as np
+    symbol = data.get("symbol", "BTCUSDT")
     base_price = data.get("price", 50000)
     depth = data.get("depth", 10)
-    bids = [[base_price - i*5, np.random.exponential(5)] for i in range(depth)]
-    asks = [[base_price + i*5, np.random.exponential(5)] for i in range(depth)]
+
+    # Try to fetch real order book from Binance
+    try:
+        import httpx
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                f"https://api.binance.com/api/v3/depth?symbol={symbol}&limit={min(depth, 100)}"
+            )
+            resp.raise_for_status()
+            depth_data = resp.json()
+            bids = [[float(p), float(q)] for p, q in depth_data.get("bids", [])[:depth]]
+            asks = [[float(p), float(q)] for p, q in depth_data.get("asks", [])[:depth]]
+    except Exception:
+        # Fallback: simulated order book
+        bids = [[base_price - i*5, np.random.exponential(5)] for i in range(depth)]
+        asks = [[base_price + i*5, np.random.exponential(5)] for i in range(depth)]
 
     result = OrderBookImbalanceAnalyzer.analyze(bids, asks, depth_levels=depth)
+    result["symbol"] = symbol
+    result["current_price"] = (bids[0][0] + asks[0][0]) / 2 if bids and asks else base_price
     return result
 
 

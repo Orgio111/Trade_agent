@@ -1,0 +1,49 @@
+[
+  {
+    "run": 1,
+    "timestamp": "2026-06-04T20:43:10.767553",
+    "data_range": "2025-06-04 -> 2026-06-04",
+    "data_candles": 6120,
+    "ml": {
+      "train_samples": 2384,
+      "train_accuracy": 0.9652,
+      "test_accuracy": 0.4807,
+      "features": 26,
+      "train_count": 2,
+      "train_time_s": 2.36
+    },
+    "results": {
+      "ML": {
+        "pnl": -13496.8177,
+        "trades": 100,
+        "win_rate": 0.35,
+        "profit_factor": 0.615,
+        "sharpe": -2.6578,
+        "max_dd": 25.3682,
+        "avg_trade": -134.9682
+      },
+      "PPO": {
+        "pnl": -0.9373,
+        "trades": 587,
+        "win_rate": 0.4344,
+        "profit_factor": 0.7971,
+        "sharpe": -1.2141,
+        "max_dd": 0.0114,
+        "avg_trade": -0.0016
+      },
+      "Combined": {
+        "pnl": -0.4662,
+        "trades": 318,
+        "win_rate": 0.4686,
+        "profit_factor": 0.8682,
+        "sharpe": -0.6043,
+        "max_dd": 0.0094,
+        "avg_trade": -0.0015
+      },
+      "BH": {
+        "pnl": -5.35,
+        "trades": 1
+      }
+    }
+  }
+]

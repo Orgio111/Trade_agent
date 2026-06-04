@@ -3,7 +3,7 @@ QUANTEX Gymnasium Trading Environment — Proper gym.Env wrapper for Stable-Base
 
 Wraps the existing TradingEnvironment into a Gymnasium v1-compatible interface:
   - observation_space: gym.spaces.Box(shape=(64,), dtype=float32)
-  - action_space: gym.spaces.Discrete(6)
+  - action_space: gym.spaces.Discrete(4)
   - step() returns (obs, reward, terminated, truncated, info)
   - reset() returns (obs, info)
 
@@ -12,8 +12,11 @@ Actions:
   1 = LONG        — open long position (only if flat)
   2 = SHORT       — open short position (only if flat)
   3 = CLOSE       — close existing position
-  4 = SCALE_IN    — add to existing position
-  5 = SCALE_OUT   — reduce existing position
+
+ML Signal Integration:
+  - Optional ml_engine injects ML predictions into observation[38:40]
+  - Agent sees ML direction + confidence as features, learns when to trust them
+  - Replaces the old override approach (which hurt performance)
 """
 
 import numpy as np
@@ -44,8 +47,13 @@ class GymTradingEnv(gym.Env):
         taker_fee: float = 0.0004,
         lookback: int = 50,
         render_mode: Optional[str] = None,
+        ml_engine: Optional[object] = None,  # MLSignalEngine for observation feature
     ):
         super().__init__()
+
+        # Validate ml_engine at init time, not silently at runtime
+        if ml_engine is not None and not hasattr(ml_engine, "predict"):
+            raise TypeError("ml_engine must have a predict(df) method")
 
         self._env = TradingEnvironment(
             data=data,
@@ -57,6 +65,7 @@ class GymTradingEnv(gym.Env):
         )
 
         self.render_mode = render_mode
+        self.ml_engine = ml_engine
 
         # ── Spaces ──────────────────────────────────────────
         self.observation_space = spaces.Box(
@@ -66,11 +75,50 @@ class GymTradingEnv(gym.Env):
             dtype=np.float32,
         )
 
-        # 6 discrete actions: hold, long, short, close, scale_in, scale_out
+        # 4 discrete actions: hold, long, short, close
         self.action_space = spaces.Discrete(self._env.action_space_n)
 
         # Action masking helper
         self._valid_actions = np.ones(self._env.action_space_n, dtype=np.int8)
+
+    # ── ML Signal Injection ────────────────────────────────
+
+    def _inject_ml_signal(self):
+        """
+        Compute ML signal for current step and inject into observation[38:40].
+
+        Uses the ML engine to predict direction + confidence from current
+        data window, then calls set_ml_signal() on the underlying env.
+        The observation is NOT rebuilt here — caller patches obs[38:40] directly.
+        """
+        if self.ml_engine is None:
+            self._env.set_ml_signal(0.0, 0.0)
+            return
+
+        step = self._env.current_step
+        if step >= len(self._env.data):
+            self._env.set_ml_signal(0.0, 0.0)
+            return
+
+        # Build current data window for ML prediction
+        current_df = self._env.data.iloc[:min(step + 1, len(self._env.data))]
+        if len(current_df) < 50:
+            self._env.set_ml_signal(0.0, 0.0)
+            return
+
+        ml_result = self.ml_engine.predict(current_df)
+        direction_str = ml_result.get("direction", "hold")
+        confidence = float(ml_result.get("confidence", 0.0))
+
+        # Map direction to numeric: 1=long, -1=short, 0=hold
+        if direction_str == "long":
+            direction_num = 1.0
+        elif direction_str == "short":
+            direction_num = -1.0
+        else:
+            direction_num = 0.0
+
+        self._env.set_ml_signal(direction_num, confidence)
 
     # ── Gymnasium API ────────────────────────────────────────
 
@@ -79,6 +127,10 @@ class GymTradingEnv(gym.Env):
         super().reset(seed=seed)
         obs = self._env.reset()
         self._update_valid_actions()
+        self._inject_ml_signal()
+        # Patch ML slots directly instead of rebuilding full observation
+        obs[38] = self._env._ml_signal[0]
+        obs[39] = self._env._ml_signal[1]
         info = self._get_info()
         return obs.astype(np.float32), info
 
@@ -92,12 +144,17 @@ class GymTradingEnv(gym.Env):
         # Clamp invalid actions to HOLD with a small penalty
         if self._valid_actions[action] == 0:
             action = 0  # HOLD
-            penalty = -0.01
+            penalty = -0.005
         else:
             penalty = 0.0
 
         obs, reward, done, info = self._env.step(action)
         reward += penalty
+
+        # Inject ML signal and patch obs[38:40] directly (avoids full rebuild)
+        self._inject_ml_signal()
+        obs[38] = self._env._ml_signal[0]
+        obs[39] = self._env._ml_signal[1]
 
         # Gymnasium v1: separate terminated (absorbing state) from truncated (time limit)
         terminated = done and self._env.current_step < len(self._env.data) - 1
@@ -128,10 +185,8 @@ class GymTradingEnv(gym.Env):
             self._valid_actions[1] = 0  # LONG
             self._valid_actions[2] = 0  # SHORT
         else:
-            # Can't close, scale_in, scale_out when flat
+            # Can't close when flat
             self._valid_actions[3] = 0  # CLOSE
-            self._valid_actions[4] = 0  # SCALE_IN
-            self._valid_actions[5] = 0  # SCALE_OUT
 
     def _get_info(self) -> dict:
         """Return current info dict."""
@@ -174,11 +229,13 @@ def make_gym_env(
     initial_balance: float = 10.0,
     leverage: int = 3,
     lookback: int = 50,
+    ml_engine: Optional[object] = None,
 ) -> GymTradingEnv:
-    """Convenience factory for creating a GymTradingEnv."""
+    """Convenience factory for creating a GymTradingEnv with optional ML engine."""
     return GymTradingEnv(
         data=data,
         initial_balance=initial_balance,
         leverage=leverage,
         lookback=lookback,
+        ml_engine=ml_engine,
     )

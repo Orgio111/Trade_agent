@@ -144,6 +144,7 @@ class RouterConfig:
         "groq": 15.0,
         "nvidia_nim": 30.0,
         "openrouter": 60.0,
+        "local_ollama": 30.0,
     })
 
     enable_cache: bool = True
@@ -157,11 +158,21 @@ class RouterConfig:
 
 def _create_providers() -> dict[str, BaseProvider]:
     """Initialize all available providers. Unconfigured providers are still registered (is_available will return False)."""
-    return {
+    try:
+        from .providers.local_ollama import LocalOllamaProvider
+        ollama_provider = LocalOllamaProvider()
+    except ImportError:
+        ollama_provider = None
+        logger.debug("LocalOllamaProvider not available (install aiohttp)")
+
+    providers = {
         "groq": GroqProvider(),
         "nvidia_nim": NvidiaNIMProvider(),
         "openrouter": OpenRouterProvider(),
     }
+    if ollama_provider:
+        providers["local_ollama"] = ollama_provider
+    return providers
 
 
 # ── Inference Router ─────────────────────────────────────────────────────────

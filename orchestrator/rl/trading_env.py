@@ -2,9 +2,10 @@
 QUANTEX Reinforcement Learning Trading Environment.
 Gymnasium-compatible environment for training PPO, SAC, and other RL agents.
 
-Observation Space: 64 features [OHLCV + 20 indicators + position info + portfolio state]
-Action Space: Discrete(6) [hold, long, short, close, scale_in, scale_out]
-Reward: Sharpe-adjusted with drawdown penalty
+Observation Space: 64 features [OHLCV(5) + returns(2) + position(4) + portfolio(4) + ML signal(2)]
+Action Space: Discrete(4) [hold, long, short, close]
+Reward: Hold penalty + PnL-based + position size penalty
+ML Signal: Injected via set_ml_signal() → obs[38]=direction, obs[39]=confidence
 """
 import numpy as np
 import pandas as pd
@@ -37,8 +38,8 @@ class TradingEnvironment:
         # Padded to 64 for flexibility
         self.observation_space_shape = 64
 
-        # Actions: 0=hold, 1=long, 2=short, 3=close, 4=scale_in, 5=scale_out
-        self.action_space_n = 6
+        # Actions: 0=hold, 1=long, 2=short, 3=close
+        self.action_space_n = 4
 
         # State
         self.current_step = lookback
@@ -49,6 +50,11 @@ class TradingEnvironment:
         self.peak_balance = initial_balance
         self.trades: list[dict] = []
         self._total_steps = 0
+        self._consecutive_hold_steps = 0  # Track consecutive holds for penalty
+
+        # ML signal feature (optional - injected by GymTradingEnv.set_ml_signal())
+        # [ml_direction, ml_confidence] → obs[38], obs[39]
+        self._ml_signal = np.array([0.0, 0.0], dtype=np.float32)
 
     def reset(self) -> np.ndarray:
         """Reset environment to initial state. Returns observation."""
@@ -61,6 +67,7 @@ class TradingEnvironment:
         self.peak_balance = self.initial_balance
         self.trades = []
         self._total_steps = 0
+        self._consecutive_hold_steps = 0
         return self._get_observation()
 
     def step(self, action: int) -> tuple:
@@ -85,35 +92,34 @@ class TradingEnvironment:
         if action == 1 and self.position == 0:  # Long
             self.position = 1
             self.entry_price = current_price
-            self.position_qty = (self.balance * 0.05) / current_price
+            self.position_qty = (self.balance * 0.50) / current_price
 
         elif action == 2 and self.position == 0:  # Short
             self.position = -1
             self.entry_price = current_price
-            self.position_qty = (self.balance * 0.05) / current_price
+            self.position_qty = (self.balance * 0.50) / current_price
 
         elif action == 3 and self.position != 0:  # Close
+            self._close_position(current_price)        # Note: actions 4 (scale_in) and 5 (scale_out) removed —
+        # the 4-action space (hold/long/short/close) prevents degenerate SCALE_IN spam
+
+        # ── Auto-close check (BEFORE unrealized PnL to prevent double-count) ──
+        # Check done first (based on balance BEFORE this step's unrealized PnL)
+        self.peak_balance = max(self.peak_balance, self.balance)
+        dd = (self.peak_balance - self.balance) / self.peak_balance if self.peak_balance > 0 else 0
+        done = (self.balance < self.initial_balance * 0.3) or (self.current_step >= len(self.data) - 1)
+
+        auto_close_penalty = 0.0
+        if done and self.position != 0 and self.position_qty > 0:
+            # Close at current_price — PnL added ONCE here
             self._close_position(current_price)
+            auto_close_penalty = -1.0  # penalty for holding open at end
 
-        elif action == 4 and self.position != 0:  # Scale in
-            additional = (self.balance * 0.03) / current_price
-            self.position_qty += additional
-            # Recalc entry price (weighted average)
-            self.entry_price = ((self.entry_price * self.position_qty) +
-                                (current_price * additional)) / (self.position_qty + 1e-10)
-
-        elif action == 5 and self.position_qty > 0:  # Scale out
-            reduce_qty = self.position_qty * 0.25
-            pnl = self._calculate_pnl(current_price, reduce_qty)
-            self.balance += pnl
-            self.position_qty -= reduce_qty
-            if self.position_qty < 0.0001:
-                self.position = 0
-
-        # Update PnL for open position
+        # Update unrealized PnL for positions that remain open (not auto-closed)
         if self.position != 0 and self.position_qty > 0:
             unrealized_pnl = self._calculate_pnl(current_price, self.position_qty)
-            self.balance = max(self.balance + unrealized_pnl * 0.01, 0.0)
+            # 10% unrealized PnL — strong signal without noise collapse
+            self.balance = max(self.balance + unrealized_pnl * 0.10, 0.0)
 
         self.current_step += 1
 
@@ -121,10 +127,25 @@ class TradingEnvironment:
         pnl_change = self.balance - prev_balance
         reward = self._calculate_reward(pnl_change)
 
-        # Check if done (70% drawdown)
-        self.peak_balance = max(self.peak_balance, self.balance)
-        dd = (self.peak_balance - self.balance) / self.peak_balance if self.peak_balance > 0 else 0
-        done = (self.balance < self.initial_balance * 0.3) or (self.current_step >= len(self.data) - 1)
+        # ── Action-based reward shaping ────────────────────────────
+        # Penalise consecutive holds (agent must trade to avoid this)
+        if action == 0:  # HOLD
+            self._consecutive_hold_steps += 1
+            # Penalty grows: -0.02, -0.04, -0.06, ... capped at -0.30
+            hold_penalty = -0.02 * min(self._consecutive_hold_steps, 15)
+            reward += hold_penalty
+        else:
+            self._consecutive_hold_steps = 0
+            # No artificial trade bonuses — agent must trade based on PnL alone
+
+        reward += auto_close_penalty
+
+        # Position size penalty — prevent degenerate SCALE_IN spam
+        # Cost grows quadratically with leverage exposure
+        position_exposure = abs(self.position_qty * self.entry_price) / max(self.balance, 1e-10)
+        if position_exposure > 0.8:  # more than 80% of balance exposed
+            excess = position_exposure - 0.8
+            reward -= excess * 2.0  # linear penalty 2x
 
         return self._get_observation(), reward, done, {
             "balance": round(self.balance, 4),
@@ -132,6 +153,16 @@ class TradingEnvironment:
             "drawdown": round(dd, 4),
             "trades": len(self.trades),
         }
+
+    def set_ml_signal(self, direction: float, confidence: float):
+        """
+        Set ML signal for observation[38:40].
+
+        Args:
+            direction: 1.0=long, -1.0=short, 0.0=hold
+            confidence: 0.0-1.0 confidence score
+        """
+        self._ml_signal = np.array([float(direction), float(confidence)], dtype=np.float32)
 
     def _calculate_pnl(self, current_price: float, qty: float) -> float:
         """Calculate PnL for a position."""
@@ -207,6 +238,10 @@ class TradingEnvironment:
         obs[35] = self.peak_balance / self.initial_balance
         obs[36] = len(self.trades) / 100.0
         obs[37] = (self.peak_balance - self.balance) / (self.peak_balance + 1e-10)
+
+        # ML signal features (injected by GymTradingEnv wrapper)
+        obs[38] = self._ml_signal[0]  # ml_direction: 1=long, -1=short, 0=hold
+        obs[39] = self._ml_signal[1]  # ml_confidence: 0.0-1.0
 
         return obs
 

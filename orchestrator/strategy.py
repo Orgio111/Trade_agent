@@ -27,14 +27,14 @@ class StrategyEngine:
 
     def __init__(
         self,
-        ema_fast: int = 9,
-        ema_slow: int = 21,
+        ema_fast: int = 11,
+        ema_slow: int = 92,
         rsi_period: int = 14,
-        rsi_overbought: float = 70.0,
-        rsi_oversold: float = 30.0,
-        atr_multiplier_sl: float = 1.5,
-        atr_multiplier_tp1: float = 2.0,
-        atr_multiplier_tp2: float = 3.5,
+        rsi_overbought: float = 62.0,
+        rsi_oversold: float = 37.0,
+        atr_multiplier_sl: float = 1.63,
+        atr_multiplier_tp1: float = 1.90,
+        atr_multiplier_tp2: float = 2.84,
     ):
         self.ema_fast = ema_fast
         self.ema_slow = ema_slow

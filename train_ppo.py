@@ -174,6 +174,16 @@ def train_ppo(args):
     print(f"   Train: {len(train_df):,} candles ({train_df.index[0].strftime('%Y-%m-%d')} -> {train_df.index[-1].strftime('%Y-%m-%d')})")
     print(f"   Val:   {len(val_df):,} candles ({val_df.index[0].strftime('%Y-%m-%d')} -> {val_df.index[-1].strftime('%Y-%m-%d')})")
 
+    # ── ML Engine (for observation feature) ────────────────
+    from orchestrator.ml_signals import MLSignalEngine
+    ml_engine = MLSignalEngine(min_training_samples=100, lookahead_periods=12)
+    ml_loaded = ml_engine.load_model()
+    if not ml_loaded:
+        print("   Training ML model for observation features...")
+        ml_engine.train(train_df, force=True)
+    else:
+        print(f"   ML engine loaded (trained {ml_engine._train_count}x)")
+
     # ── Create environment ─────────────────────────────────
     from orchestrator.rl.gym_env import GymTradingEnv
 
@@ -182,6 +192,7 @@ def train_ppo(args):
         initial_balance=args.initial_balance,
         leverage=args.leverage,
         lookback=50,
+        ml_engine=ml_engine,
     )
 
     # ── Callbacks ──────────────────────────────────────────
@@ -196,6 +207,7 @@ def train_ppo(args):
         initial_balance=args.initial_balance,
         leverage=args.leverage,
         lookback=50,
+        ml_engine=ml_engine,
     )
 
     # Stop if mean reward threshold is met
@@ -339,21 +351,38 @@ def evaluate_ppo(
     final_balances = []
 
     for ep in range(episodes):
+        from orchestrator.ml_signals import MLSignalEngine
+        _ml_eval = MLSignalEngine()
+        _ml_eval.load_model()
         env = GymTradingEnv(
             data=eval_data,
             initial_balance=10.0,
             leverage=3,
             lookback=50,
+            ml_engine=_ml_eval,
         )
 
         obs, _ = env.reset()
         done = False
         total_reward = 0.0
+        step_count = 0
+        action_hist = {i: 0 for i in range(6)}
+        first_30_actions = []
 
         while not done:
-            action, _ = model.predict(obs, deterministic=True)
-            obs, reward, terminated, truncated, info = env.step(action)
+            action_raw, _ = model.predict(obs, deterministic=True)
+            # Normalise action to plain int (handles 0-d numpy arrays)
+            if isinstance(action_raw, np.ndarray) and action_raw.ndim >= 1:
+                action_val = int(action_raw[0])
+            else:
+                action_val = int(action_raw)
+
+            obs, reward, terminated, truncated, info = env.step(action_val)
             total_reward += reward
+            action_hist[action_val] = action_hist.get(action_val, 0) + 1
+            if step_count < 30:
+                first_30_actions.append(action_val)
+            step_count += 1
             done = terminated or truncated
 
             if render and ep == 0:
@@ -363,10 +392,19 @@ def evaluate_ppo(
         final_balances.append(env.balance)
         all_trades.append(env.trades)
 
-        env.close()
+        pos = env._env.position
+        qty = env._env.position_qty
+        entry_p = env._env.entry_price
 
         print(f"   Episode {ep + 1}: Reward={total_reward:+.4f}  "
-              f"Final Balance=${env.balance:.4f}  Trades={len(env.trades)}")
+              f"Final Bal=${env.balance:.4f}  Trades={len(env.trades)}")
+        if ep == 0:
+            print(f"     Actions: H={action_hist.get(0,0)} L={action_hist.get(1,0)} S={action_hist.get(2,0)}"
+                  f" C={action_hist.get(3,0)} SI={action_hist.get(4,0)} SO={action_hist.get(5,0)}")
+            print(f"     First 30 actions: {first_30_actions}")
+            print(f"     End state: pos={pos} qty={qty:.8f} entry=${entry_p:.2f}")
+
+        env.close()
 
     # ── Summary stats ──────────────────────────────────────
     rewards = np.array(all_episode_rewards)
