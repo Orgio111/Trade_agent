@@ -20,11 +20,13 @@ Usage:
 
 import json
 import time
-import shutil
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass, asdict
+
+logger = logging.getLogger("quantex.model_registry")
 
 
 @dataclass
@@ -267,6 +269,4 @@ class ModelRegistry:
         return summary
 
 
-# Helper logger for promote_model
-import logging
-logger = logging.getLogger("quantex.model_registry")
+

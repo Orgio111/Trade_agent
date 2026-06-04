@@ -26,6 +26,7 @@ Usage:
 import os
 import json
 import time
+import asyncio
 import logging
 from typing import Optional, AsyncGenerator
 
@@ -43,8 +44,8 @@ class LocalOllamaProvider(BaseProvider):
     Falls back automatically when cloud providers are unavailable.
 
     Models:
-      - phi-3.5:mini  → 2.5 GB VRAM, 45 t/s, good for fast/classification tasks
-      - qwen2.5:7b-q4_K_M → 4.5 GB VRAM, 25 t/s, good for reasoning/analysis
+      - phi3:mini  → 2.5 GB VRAM, 45 t/s, good for fast/classification tasks
+      - qwen2.5:7b   → 4.5 GB VRAM, 25 t/s, good for reasoning/analysis
 
     Requires Ollama to be installed and running.
     """
@@ -53,13 +54,13 @@ class LocalOllamaProvider(BaseProvider):
 
     # Model mapping: task_type -> Ollama model name
     MODEL_MAP = {
-        "fast": "phi-3.5:mini",
-        "urgent": "phi-3.5:mini",
-        "classification": "phi-3.5:mini",
-        "reasoning": "qwen2.5:7b-q4_K_M",
-        "analysis": "qwen2.5:7b-q4_K_M",
-        "coding": "qwen2.5:7b-q4_K_M",
-        "embedding": "phi-3.5:mini",  # Fallback, not ideal for embeddings
+        "fast": "phi3:mini",
+        "urgent": "phi3:mini",
+        "classification": "phi3:mini",
+        "reasoning": "qwen2.5:7b",
+        "analysis": "qwen2.5:7b",
+        "coding": "qwen2.5:7b",
+        "embedding": "phi3:mini",  # Fallback, not ideal for embeddings
     }
 
     def __init__(self, base_url: str = None):

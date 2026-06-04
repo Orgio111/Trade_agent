@@ -295,7 +295,9 @@ export default function Dashboard() {
     // WebSocket connection
     const connectWs = () => {
       try {
-        const ws = new WebSocket("ws://localhost:8001/ws");
+        // Use dynamic WebSocket URL through nginx proxy
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws`);
         ws.onopen = () => setWsStatus("connected");
         ws.onclose = () => {
           setWsStatus("disconnected");

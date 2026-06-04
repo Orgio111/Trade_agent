@@ -2,7 +2,7 @@
 QUANTEX Gymnasium Trading Environment — Proper gym.Env wrapper for Stable-Baselines3.
 
 Wraps the existing TradingEnvironment into a Gymnasium v1-compatible interface:
-  - observation_space: gym.spaces.Box(shape=(64,), dtype=float32)
+  - observation_space: gym.spaces.Box(shape=(128,), dtype=float32)
   - action_space: gym.spaces.Discrete(4)
   - step() returns (obs, reward, terminated, truncated, info)
   - reset() returns (obs, info)
@@ -13,19 +13,23 @@ Actions:
   2 = SHORT       — open short position (only if flat)
   3 = CLOSE       — close existing position
 
-ML Signal Integration:
-  - Optional ml_engine injects ML predictions into observation[38:40]
-  - Agent sees ML direction + confidence as features, learns when to trust them
-  - Replaces the old override approach (which hurt performance)
+Optional features (injected into observation):
+  - obs[38:40]: ML signal (direction + confidence) from Random Forest
+  - obs[64:96]: Multi-Timeframe features (1H, 4H, 1D context)
+  - obs[96:128]: Deep Market Encoder (GPU LSTM+Transformer embedding)
 """
 
 import numpy as np
 import pandas as pd
 import gymnasium as gym
 from gymnasium import spaces
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from .trading_env import TradingEnvironment
+
+if TYPE_CHECKING:
+    from ..multi_tf import MultiTimeframeEngine
+    from ..deep_encoder import DeepMarketEncoder
 
 
 class GymTradingEnv(gym.Env):
@@ -34,6 +38,7 @@ class GymTradingEnv(gym.Env):
 
     Masks invalid actions so the agent can't scale-in when flat
     or open a new position while one is already open.
+    Supports optional ML-in-obs, Multi-Timeframe, and Deep Encoder features.
     """
 
     metadata = {"render_modes": ["human"], "render_fps": 4}
@@ -48,6 +53,8 @@ class GymTradingEnv(gym.Env):
         lookback: int = 50,
         render_mode: Optional[str] = None,
         ml_engine: Optional[object] = None,  # MLSignalEngine for observation feature
+        mtf_engine: Optional["MultiTimeframeEngine"] = None,  # Multi-Timeframe features
+        deep_encoder: Optional["DeepMarketEncoder"] = None,   # GPU LSTM+Transformer encoder
     ):
         super().__init__()
 
@@ -66,6 +73,14 @@ class GymTradingEnv(gym.Env):
 
         self.render_mode = render_mode
         self.ml_engine = ml_engine
+
+        # Attach MTF engine to underlying env
+        if mtf_engine is not None:
+            self._env.set_mtf_engine(mtf_engine)
+
+        # Attach Deep Market Encoder (GPU) to underlying env
+        if deep_encoder is not None:
+            self._env.set_deep_encoder(deep_encoder)
 
         # ── Spaces ──────────────────────────────────────────
         self.observation_space = spaces.Box(
@@ -230,12 +245,16 @@ def make_gym_env(
     leverage: int = 3,
     lookback: int = 50,
     ml_engine: Optional[object] = None,
+    mtf_engine: Optional["MultiTimeframeEngine"] = None,
+    deep_encoder: Optional["DeepMarketEncoder"] = None,
 ) -> GymTradingEnv:
-    """Convenience factory for creating a GymTradingEnv with optional ML engine."""
+    """Convenience factory for creating a GymTradingEnv with optional ML, MTF, and Deep Encoder."""
     return GymTradingEnv(
         data=data,
         initial_balance=initial_balance,
         leverage=leverage,
         lookback=lookback,
         ml_engine=ml_engine,
+        mtf_engine=mtf_engine,
+        deep_encoder=deep_encoder,
     )

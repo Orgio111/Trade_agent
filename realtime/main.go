@@ -11,7 +11,43 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+// ── Prometheus Metrics ─────────────────────────────────────
+
+var (
+	wsClientsGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "realtime_ws_clients",
+		Help: "Current number of connected WebSocket clients.",
+	})
+	eventsPublishedCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "realtime_events_published_total",
+			Help: "Total number of events published, by type.",
+		},
+		[]string{"type"},
+	)
+	signalsReceivedCounter = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "realtime_signals_received_total",
+		Help: "Total number of trading signals received via HTTP.",
+	})
+	ticksGeneratedCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "realtime_market_ticks_total",
+			Help: "Total number of market ticks generated, by symbol.",
+		},
+		[]string{"symbol"},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(wsClientsGauge)
+	prometheus.MustRegister(eventsPublishedCounter)
+	prometheus.MustRegister(signalsReceivedCounter)
+	prometheus.MustRegister(ticksGeneratedCounter)
+}
 
 // ── Event Types ──────────────────────────────────────────────
 
@@ -67,6 +103,8 @@ func (eb *EventBus) Publish(event Event) {
 	eb.mu.RLock()
 	defer eb.mu.RUnlock()
 
+	eventsPublishedCounter.WithLabelValues(event.Type).Inc()
+
 	if chans, ok := eb.subscribers[event.Type]; ok {
 		for _, ch := range chans {
 			select {
@@ -112,6 +150,7 @@ func (h *WSHub) Add(conn *websocket.Conn) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.clients[conn] = true
+	wsClientsGauge.Set(float64(len(h.clients)))
 }
 
 func (h *WSHub) Remove(conn *websocket.Conn) {
@@ -119,6 +158,7 @@ func (h *WSHub) Remove(conn *websocket.Conn) {
 	defer h.mu.Unlock()
 	delete(h.clients, conn)
 	conn.Close()
+	wsClientsGauge.Set(float64(len(h.clients)))
 }
 
 func (h *WSHub) Broadcast(msg []byte) {
@@ -196,6 +236,8 @@ func (ms *MarketSimulator) Start() {
 				Timestamp: time.Now().UnixMilli(),
 			}
 
+			ticksGeneratedCounter.WithLabelValues(symbol).Inc()
+
 			data, _ := json.Marshal(tick)
 			var eventData map[string]interface{}
 			json.Unmarshal(data, &eventData)
@@ -229,6 +271,8 @@ func (rs *RealtimeService) handleSignal(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	signal.Timestamp = time.Now().UnixMilli()
+
+	signalsReceivedCounter.Inc()
 
 	eventData, _ := json.Marshal(signal)
 	var data map[string]interface{}
@@ -288,6 +332,7 @@ func main() {
 	mux.HandleFunc("/ws", hub.HandleWS)
 	mux.HandleFunc("/api/v1/signal", svc.handleSignal)
 	mux.HandleFunc("/health", svc.handleHealth)
+	mux.Handle("/metrics", promhttp.Handler())
 
 	server := &http.Server{
 		Addr:         ":8082",

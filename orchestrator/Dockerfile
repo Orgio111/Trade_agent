@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=ghcr.io/astral-sh/uv:0.4.23 /uv /usr/local/bin/uv
 
 # Copy and install dependencies
-COPY requirements.txt .
+COPY orchestrator/requirements.txt .
 RUN uv pip install --system --no-cache -r requirements.txt
 
 # ── Stage 2: Runner ─────────────────────────────────────
@@ -25,19 +25,18 @@ FROM python:3.12-slim AS runner
 
 WORKDIR /app
 
-# Create non-root user
-RUN groupadd -r quantex && useradd -r -g quantex -u 1001 quantex
-
 # Copy installed packages from builder
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy all Python package files into the orchestrator/ subdirectory
-# (build context is ./orchestrator, so . contains all the package files)
-COPY . ./orchestrator/
+# Copy orchestrator package + inference package from project root
+# (build context is project root, configured in docker-compose.yml)
+COPY orchestrator/ ./orchestrator/
+COPY inference/ ./inference/
+COPY pyproject.toml ./
 
-# Switch to non-root user
-USER quantex
+# Create writable directories for runtime (ML model storage, etc.)
+RUN mkdir -p /app/models /app/logs
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1

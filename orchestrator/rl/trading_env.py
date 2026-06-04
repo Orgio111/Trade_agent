@@ -2,13 +2,24 @@
 QUANTEX Reinforcement Learning Trading Environment.
 Gymnasium-compatible environment for training PPO, SAC, and other RL agents.
 
-Observation Space: 64 features [OHLCV(5) + returns(2) + position(4) + portfolio(4) + ML signal(2)]
+Observation Space: 128 features
+  [0:6]    OHLCV + returns
+  [30:38]  Position + Portfolio
+  [38:40]  ML signal (direction, confidence)
+  [64:96]  MTF features (32-dim, optional)
+  [96:128] Deep encoder (32-dim, GPU LSTM+Transformer, optional)
+
 Action Space: Discrete(4) [hold, long, short, close]
 Reward: Hold penalty + PnL-based + position size penalty
-ML Signal: Injected via set_ml_signal() → obs[38]=direction, obs[39]=confidence
 """
+from typing import Optional, TYPE_CHECKING
+
 import numpy as np
 import pandas as pd
+
+if TYPE_CHECKING:
+    from ..multi_tf import MultiTimeframeEngine
+    from ..deep_encoder import DeepMarketEncoder, MarketSequenceBuffer
 
 
 class TradingEnvironment:
@@ -16,8 +27,8 @@ class TradingEnvironment:
     Custom trading environment compatible with Gymnasium/Stable-Baselines3.
 
     Features:
-      - 64-dimensional observation space
-      - 6 discrete actions
+      - 128-dimensional observation space (40 used + 32 MTF + 32 deep encoder + padding)
+      - 4 discrete actions (hold, long, short, close)
       - Sharpe-adjusted rewards with asymmetric loss penalty
       - Drawdown tracking and penalty
       - Configurable initial balance, leverage, fees
@@ -34,9 +45,14 @@ class TradingEnvironment:
         self.taker_fee = taker_fee
         self.lookback = lookback
 
-        # Observation: [OHLCV(5) + 20 indicators + position_state(5) + portfolio(4)] = 34
-        # Padded to 64 for flexibility
-        self.observation_space_shape = 64
+        # Observation:
+        #   [0:6]    OHLCV + returns
+        #   [30:38]  Position + Portfolio
+        #   [38:40]  ML signal
+        #   [64:96]  MTF features (32 dim)
+        #   [96:128] Deep encoder features (32 dim)
+        # Total = 128 for flexibility
+        self.observation_space_shape = 128
 
         # Actions: 0=hold, 1=long, 2=short, 3=close
         self.action_space_n = 4
@@ -56,6 +72,13 @@ class TradingEnvironment:
         # [ml_direction, ml_confidence] → obs[38], obs[39]
         self._ml_signal = np.array([0.0, 0.0], dtype=np.float32)
 
+        # Multi-Timeframe engine (optional)
+        self._mtf_engine: Optional["MultiTimeframeEngine"] = None
+
+        # Deep Market Encoder (optional, GPU-accelerated)
+        self._deep_encoder: Optional["DeepMarketEncoder"] = None
+        self._seq_buffer: Optional["MarketSequenceBuffer"] = None
+
     def reset(self) -> np.ndarray:
         """Reset environment to initial state. Returns observation."""
         self.balance = self.initial_balance
@@ -68,6 +91,13 @@ class TradingEnvironment:
         self.trades = []
         self._total_steps = 0
         self._consecutive_hold_steps = 0
+
+        # Reset deep encoder sequence buffer
+        if self._deep_encoder is not None:
+            from ..deep_encoder import MarketSequenceBuffer
+            self._seq_buffer = MarketSequenceBuffer(lookback=self._deep_encoder.seq_len)
+            self._seq_buffer.reset(self.data, self.current_step)
+
         return self._get_observation()
 
     def step(self, action: int) -> tuple:
@@ -86,7 +116,6 @@ class TradingEnvironment:
 
         prev_balance = self.balance
         current_price = float(self.data.iloc[self.current_step]["close"])
-        prev_price = float(self.data.iloc[self.current_step - 1]["close"])
 
         # Execute action
         if action == 1 and self.position == 0:  # Long
@@ -100,8 +129,7 @@ class TradingEnvironment:
             self.position_qty = (self.balance * 0.50) / current_price
 
         elif action == 3 and self.position != 0:  # Close
-            self._close_position(current_price)        # Note: actions 4 (scale_in) and 5 (scale_out) removed —
-        # the 4-action space (hold/long/short/close) prevents degenerate SCALE_IN spam
+            self._close_position(current_price)
 
         # ── Auto-close check (BEFORE unrealized PnL to prevent double-count) ──
         # Check done first (based on balance BEFORE this step's unrealized PnL)
@@ -205,7 +233,7 @@ class TradingEnvironment:
         return float(reward)
 
     def _get_observation(self) -> np.ndarray:
-        """Build 64-feature observation vector."""
+        """Build 128-dim observation vector."""
         if self.current_step >= len(self.data):
             return np.zeros(self.observation_space_shape, dtype=np.float32)
 
@@ -243,6 +271,23 @@ class TradingEnvironment:
         obs[38] = self._ml_signal[0]  # ml_direction: 1=long, -1=short, 0=hold
         obs[39] = self._ml_signal[1]  # ml_confidence: 0.0-1.0
 
+        # Multi-Timeframe features (from higher TFs: 1H, 4H, 1D etc.)
+        # Injected at obs[64:96] — up to 32 features from 4 timeframes × 8 each
+        if self._mtf_engine is not None:
+            mtf_vec = self._mtf_engine.get_observation_vector(self.current_step)
+            mtf_len = min(len(mtf_vec), 32)
+            obs[64:64 + mtf_len] = mtf_vec[:mtf_len]
+
+        # Deep Market Encoder features (GPU-accelerated LSTM + Transformer)
+        # Injected at obs[96:128] — 32-dim market embedding
+        if self._deep_encoder is not None and self._seq_buffer is not None:
+            # Update sequence buffer with current candle
+            self._seq_buffer.update(self.data, self.current_step)
+            if self._seq_buffer.is_ready:
+                seq = self._seq_buffer.get_sequence()
+                deep_enc = self._deep_encoder.encode(seq)
+                obs[96:128] = deep_enc[:32]
+
         return obs
 
     def render(self):
@@ -250,6 +295,17 @@ class TradingEnvironment:
         dd = (self.peak_balance - self.balance) / self.peak_balance if self.peak_balance > 0 else 0
         print(f"Step {self.current_step}: Bal=${self.balance:.2f} Pos={self.position} "
               f"DD={dd:.2%} Trades={len(self.trades)}")
+
+    def set_mtf_engine(self, mtf_engine: "MultiTimeframeEngine"):
+        """Attach a multi-timeframe engine for richer observations."""
+        self._mtf_engine = mtf_engine
+
+    def set_deep_encoder(self, encoder: "DeepMarketEncoder"):
+        """Attach a deep market encoder (GPU LSTM+Transformer) for obs[96:128]."""
+        from ..deep_encoder import MarketSequenceBuffer
+        self._deep_encoder = encoder
+        self._seq_buffer = MarketSequenceBuffer(lookback=encoder.seq_len)
+
 
 
 def make_env(data: pd.DataFrame, initial_balance: float = 10.0):

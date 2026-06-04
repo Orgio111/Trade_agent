@@ -208,7 +208,7 @@ async def lifespan(app: FastAPI):
         print(f"⚠️  PostgreSQL unavailable: {e}")
 
     # v1.0: Swarm Intelligence
-    memory = TradingMemorySystem(use_stub=True)
+    memory = TradingMemorySystem()
     credibility_tracker = AgentCredibilityTracker(memory)
     swarm = AgentSwarm(nim_integration)
     risk_engine = RiskEngine()

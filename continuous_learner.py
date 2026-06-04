@@ -44,12 +44,12 @@ class Config:
     ml_retrain_hours = 24
 
     # PPO
-    ppo_steps = 50000
+    ppo_steps = 10000
     ppo_ent_coef = 0.05
     ppo_clip_range = 0.1
 
     # Backtest
-    initial_balance = 100.0
+    initial_balance = 10.0
     test_split = 0.2  # 20% for validation
 
     # History tracking

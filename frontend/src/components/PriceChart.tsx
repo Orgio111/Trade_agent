@@ -20,14 +20,27 @@ interface PriceChartProps {
   data: Candle[];
 }
 
+/**
+ * Check if a value is valid (not null, undefined, NaN, or Infinity).
+ * lightweight-charts throws "Value is null" for any of these.
+ */
+function isValidNum(v: unknown): v is number {
+  return v != null && typeof v === 'number' && isFinite(v);
+}
+
+/**
+ * Compute EMA from closes array. Filters out NaN/Infinity values first.
+ */
 function computeEMA(closes: number[], period: number): number[] {
-  if (closes.length < period) return [];
+  // Filter to valid numbers only
+  const valid = closes.filter((c) => isValidNum(c));
+  if (valid.length < period) return [];
   const k = 2 / (period + 1);
   const result: number[] = [];
-  let ema = closes.slice(0, period).reduce((a, b) => a + b, 0) / period;
-  for (let i = period - 1; i < closes.length; i++) {
+  let ema = valid.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period - 1; i < valid.length; i++) {
     if (i > period - 1) {
-      ema = closes[i] * k + ema * (1 - k);
+      ema = valid[i] * k + ema * (1 - k);
     }
     result.push(ema);
   }
@@ -36,16 +49,16 @@ function computeEMA(closes: number[], period: number): number[] {
 
 /**
  * Safe helper to convert candle data to CandlestickData[].
- * Filters out any items with null/NaN values to avoid lightweight-charts
- * "Value is null" errors during rendering.
+ * Filters out any items with null/NaN/Infinity values to avoid
+ * lightweight-charts "Value is null" errors during rendering.
  */
 function toCandleData(candles: Candle[]): CandlestickData[] {
   return candles
     .filter((d) => {
-      if (d.open == null || isNaN(d.open)) return false;
-      if (d.high == null || isNaN(d.high)) return false;
-      if (d.low == null || isNaN(d.low)) return false;
-      if (d.close == null || isNaN(d.close)) return false;
+      if (!isValidNum(d.open)) return false;
+      if (!isValidNum(d.high)) return false;
+      if (!isValidNum(d.low)) return false;
+      if (!isValidNum(d.close)) return false;
       if (d.time == null) return false;
       return true;
     })
@@ -60,7 +73,7 @@ function toCandleData(candles: Candle[]): CandlestickData[] {
 
 function toVolumeData(candles: Candle[]): HistogramData[] {
   return candles
-    .filter((d) => d.volume != null && !isNaN(d.volume) && d.time != null)
+    .filter((d) => isValidNum(d.volume) && d.time != null)
     .map((d) => ({
       time: d.time as Time,
       value: d.volume,
@@ -73,13 +86,18 @@ function toEmaData(
   values: number[]
 ): LineData[] {
   if (values.length === 0 || candles.length < values.length) return [];
-  return candles
-    .slice(candles.length - values.length)
-    .filter((d) => d.time != null)
-    .map((d, i) => ({
-      time: d.time as Time,
+  // Align candles to EMA values, filter out any invalid entries
+  const aligned = candles.slice(candles.length - values.length);
+  const result: LineData[] = [];
+  for (let i = 0; i < values.length; i++) {
+    if (aligned[i]?.time == null) continue;
+    if (!isValidNum(values[i])) continue;
+    result.push({
+      time: aligned[i].time as Time,
       value: values[i],
-    }));
+    });
+  }
+  return result;
 }
 
 export default function PriceChart({ data }: PriceChartProps) {

@@ -7,6 +7,9 @@ FROM node:22-alpine AS deps
 
 WORKDIR /app
 
+# Switch to root for npm install (node:22-alpine defaults to 'node' user)
+USER root
+
 COPY package.json package-lock.json ./
 
 RUN npm ci --production=false
@@ -15,6 +18,9 @@ RUN npm ci --production=false
 FROM node:22-alpine AS builder
 
 WORKDIR /app
+
+# Switch to root for build (node:22-alpine defaults to 'node' user)
+USER root
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -32,15 +38,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Create non-root user
-RUN addgroup -g 1001 -S appgroup && adduser -S appuser -u 1001
-
 # Copy standalone build output (includes public/ if it exists)
-COPY --from=builder --chown=appuser:appgroup /app/.next/standalone ./
+COPY --from=builder /app/.next/standalone ./
 # Copy static assets separately (Next.js requirement)
-COPY --from=builder --chown=appuser:appgroup /app/.next/static ./.next/static
-
-USER appuser
+COPY --from=builder /app/.next/static ./.next/static
 
 EXPOSE 3000
 

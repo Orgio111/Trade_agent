@@ -43,13 +43,17 @@ class MLSignalEngine:
 
     def __init__(
         self,
-        model_dir: str = "/tmp/models",
+        model_dir: str = None,
         retrain_interval_hours: int = 24,
         min_training_samples: int = 500,
         lookahead_periods: int = 12,
         threshold_buy: float = 0.005,
         threshold_sell: float = -0.005,
     ):
+        if model_dir is None:
+            # Default to project's models/ directory
+            script_dir = Path(__file__).parent.parent
+            model_dir = str(script_dir / "models")
         self.model_dir = Path(model_dir)
         self.model_dir.mkdir(parents=True, exist_ok=True)
         self.retrain_interval = timedelta(hours=retrain_interval_hours)
@@ -108,7 +112,9 @@ class MLSignalEngine:
                 result["bb_lower"] = bb.iloc[:, 2]
 
             # ATR
-            result["atr"] = ta.atr(result["high"], result["low"], result["close"], length=14)
+            atr_vals = ta.atr(result["high"], result["low"], result["close"], length=14)
+            if atr_vals is not None:
+                result["atr"] = atr_vals
 
             # Volume indicators
             result["obv"] = ta.obv(result["close"], result["volume"])
@@ -119,14 +125,17 @@ class MLSignalEngine:
                 # adx_df returns multiple columns (ADX, DMP, DMN) - extract just ADX
                 result["adx"] = adx_df.iloc[:, 0] if isinstance(adx_df, pd.DataFrame) else adx_df
 
-        except ImportError:
-            # Fallback to manual computation
+        except Exception:
+            # Fallback to manual computation if pandas_ta fails (e.g. NaN data)
             result = self._compute_features_fallback(result)
 
-        # Derived features (model-agnostic)
+        # Derived features (model-agnostic) — guard against missing columns
         result["price_vs_ema50"] = (result["close"] - result["ema_50"]) / result["ema_50"].replace(0, np.nan)
         result["price_vs_ema200"] = (result["close"] - result["ema_200"]) / result["ema_200"].replace(0, np.nan)
-        result["atr_pct"] = result["atr"] / result["close"]
+        if "atr" in result.columns:
+            result["atr_pct"] = result["atr"] / result["close"]
+        else:
+            result["atr_pct"] = np.nan
         result["vol_ratio"] = result["volume"] / result["volume"].rolling(20).mean().replace(0, np.nan)
         result["returns_1"] = result["close"].pct_change(1)
         result["returns_5"] = result["close"].pct_change(5)
@@ -374,13 +383,13 @@ class MLSignalEngine:
 
         # Compute ATR from dataframe for SL/TP sizing
         featured = self.compute_features(df)
-        atr = float(featured["atr"].iloc[-1]) if "atr" in featured.columns and not pd.isna(featured["atr"].iloc[-1]) else None
+        if "atr_pct" in featured.columns:
+            atr_pct_val = float(featured["atr_pct"].iloc[-1]) if not pd.isna(featured["atr_pct"].iloc[-1]) else 0.02
+        else:
+            atr_pct_val = 0.02
+        atr = float(featured["close"].iloc[-1]) * atr_pct_val if "close" in featured.columns else 0
 
-        if atr is None or atr <= 0:
-            # Fallback: estimate ATR as 2% of price
-            atr = featured["close"].iloc[-1] * 0.02
-
-        entry_price = float(featured["close"].iloc[-1])
+        entry_price = float(featured["close"].iloc[-1]) if "close" in featured.columns else 0.0
 
         if direction == "long":
             stop_loss = entry_price - (atr * 1.5)

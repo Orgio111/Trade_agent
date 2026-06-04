@@ -47,3 +47,9 @@ data/
 # Logs
 logs/
 *.log
+
+# Models
+models/
+*.rl
+*hmm_vs_adk_comprarison.json
+*training_history.json

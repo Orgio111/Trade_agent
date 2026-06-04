@@ -91,7 +91,9 @@ services:
   # ── LAYER 4-5: SERVICES ───────────────────────────────
 
   orchestrator:
-    build: ./orchestrator
+    build:
+      context: .
+      dockerfile: orchestrator/Dockerfile
     container_name: quantex-orchestrator
     restart: unless-stopped
     # Not exposed directly to host — accessed through nginx reverse proxy
@@ -108,6 +110,9 @@ services:
       REDIS_HOST: redis
       INITIAL_BALANCE: ${INITIAL_BALANCE:-1000.0}
       FORWARDED_ALLOW_IPS: "*"
+    volumes:
+      - ./inference:/app/inference
+      - ./models:/app/models
     depends_on:
       postgres:
         condition: service_healthy
@@ -230,9 +235,29 @@ services:
       - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml
       - prometheus_data:/prometheus
     command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=30d"]
+    depends_on:
+      nats-exporter:
+        condition: service_started
     deploy:
       resources:
         limits: { cpus: "0.5", memory: 512M }
+
+  nats-exporter:
+    image: natsio/prometheus-nats-exporter:latest
+    container_name: quantex-nats-exporter
+    restart: unless-stopped
+    entrypoint: ["/prometheus-nats-exporter"]
+    command:
+      - "-connz"
+      - "-routez"
+      - "-subz"
+      - "-varz"
+      - "http://nats:8222"
+    expose:
+      - "7777"
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 128M }
 
   grafana:
     image: grafana/grafana:latest

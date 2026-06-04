@@ -43,68 +43,27 @@ class QdrantClientWrapper:
     """
     Real Qdrant client with proper connection handling.
     Connects to Qdrant running at host:port (configurable via env vars).
-    Falls back to PostgreSQL-based storage if Qdrant is unavailable.
+    Falls back to in-memory dict if Qdrant is unavailable.
     """
 
     def __init__(self, host: str = None, port: int = None):
         self.host = host or "localhost"
         self.port = port or 6333
         self._client = None
-        self._use_postgres_fallback = False
-        self._postgres_conn = None
         self._init_client()
 
     def _init_client(self):
         """Initialize Qdrant client with proper error handling."""
         try:
             from qdrant_client import QdrantClient
-            from qdrant_client.http.models import (
-                Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue,
-            )
-            self._qdrant_models = {
-                "Distance": Distance,
-                "VectorParams": VectorParams,
-                "PointStruct": PointStruct,
-                "Filter": Filter,
-                "FieldCondition": FieldCondition,
-                "MatchValue": MatchValue,
-            }
             self._client = QdrantClient(host=self.host, port=self.port, timeout=5.0)
             # Test connection
             self._client.get_collections()
             logger.info(f"Qdrant connected at {self.host}:{self.port}")
         except Exception as e:
-            logger.warning(f"Qdrant unavailable ({e}), using PostgreSQL fallback")
+            logger.warning(f"Qdrant unavailable ({e}), using in-memory fallback")
             self._client = None
-            self._use_postgres_fallback = True
-            self._init_postgres_fallback()
-
-    def _init_postgres_fallback(self):
-        """Initialize PostgreSQL-based fallback storage."""
-        try:
-            import asyncpg
-            dsn = "postgresql://quantex:secret@localhost:5432/quantex"
-            import os
-            dsn = os.getenv("DATABASE_URL", dsn)
-            # Store for lazy init (async)
-            self._postgres_dsn = dsn
-            self._postgres_pool = None
-            logger.info("PostgreSQL fallback storage ready")
-        except ImportError:
-            logger.warning("asyncpg not installed, using in-memory dict")
-            self._use_postgres_fallback = False
             self._memory_store = {"trade_patterns": [], "market_regimes": [], "agent_decisions": []}
-
-    async def _get_pool(self):
-        if self._postgres_pool is None and hasattr(self, '_postgres_dsn'):
-            try:
-                import asyncpg
-                self._postgres_pool = await asyncpg.create_pool(
-                    dsn=self._postgres_dsn, min_size=1, max_size=5
-                )
-            except Exception as e:
-                logger.error(f"PostgreSQL pool error: {e}")
-        return self._postgres_pool
 
     def recreate_collection(self, name: str, vector_size: int = 1536):
         """Create or recreate a collection."""
@@ -118,11 +77,7 @@ class QdrantClientWrapper:
                 logger.debug(f"Qdrant collection '{name}' ready (dim={vector_size})")
             except Exception as e:
                 logger.warning(f"Qdrant recreate_collection error: {e}")
-        elif self._use_postgres_fallback:
-            # PostgreSQL: table already exists via database.py migrations
-            pass
         else:
-            # In-memory fallback
             if name not in self._memory_store:
                 self._memory_store[name] = []
 

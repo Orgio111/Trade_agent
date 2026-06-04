@@ -184,6 +184,40 @@ def train_ppo(args):
     else:
         print(f"   ML engine loaded (trained {ml_engine._train_count}x)")
 
+    # ── Multi-Timeframe Engine (optional) ──────────────────
+    mtf_engine = None
+    if args.mtf:
+        print("\n   Initializing Multi-Timeframe engine...")
+        higher_tfs = [tf.strip() for tf in args.mtf_intervals.split(",")]
+        from orchestrator.multi_tf import fetch_mtf_data
+        import asyncio
+        mtf_engine = asyncio.run(
+            fetch_mtf_data(
+                symbol="BTCUSDT",
+                base_interval="5m",
+                higher_intervals=higher_tfs,
+                days=args.real_data_days if args.real_data else 90,
+            )
+        )
+        print(f"   MTF features: {mtf_engine.intervals} -> {mtf_engine.total_mtf_features} features")
+
+    # ── Deep Market Encoder (GPU, optional) ────────────────
+    deep_encoder = None
+    if args.gpu_encoder:
+        print("\n   Initializing Deep Market Encoder (GPU)...")
+        from orchestrator.deep_encoder import DeepMarketEncoder
+        deep_encoder = DeepMarketEncoder(
+            encoding_dim=args.gpu_encoder_dim,
+            device="auto",  # auto-detect CUDA
+        )
+        # Quick warm-up: run one forward pass with dummy data to init CUDA
+        import numpy as np
+        dummy_seq = np.random.randn(1, deep_encoder.seq_len, 8).astype(np.float32)
+        deep_encoder.encode_batch(dummy_seq)
+        device_name = deep_encoder.device.type
+        print(f"   DeepEncoder on {device_name.upper()}: seq_len={deep_encoder.seq_len}, "
+              f"lstm=128x2, transformer=128x4x2 -> encoding={args.gpu_encoder_dim}")
+
     # ── Create environment ─────────────────────────────────
     from orchestrator.rl.gym_env import GymTradingEnv
 
@@ -193,6 +227,8 @@ def train_ppo(args):
         leverage=args.leverage,
         lookback=50,
         ml_engine=ml_engine,
+        mtf_engine=mtf_engine,
+        deep_encoder=deep_encoder,
     )
 
     # ── Callbacks ──────────────────────────────────────────
@@ -208,6 +244,7 @@ def train_ppo(args):
         leverage=args.leverage,
         lookback=50,
         ml_engine=ml_engine,
+        mtf_engine=mtf_engine,
     )
 
     # Stop if mean reward threshold is met
@@ -360,6 +397,7 @@ def evaluate_ppo(
             leverage=3,
             lookback=50,
             ml_engine=_ml_eval,
+            mtf_engine=None,  # Eval uses same obs dim as training — MTF slots stay 0 if not used
         )
 
         obs, _ = env.reset()
@@ -535,6 +573,14 @@ def parse_args():
                         help="Fetch real Binance historical data instead of synthetic")
     parser.add_argument("--real-data-days", type=int, default=180,
                         help="Days of Binance data to fetch when --real-data is set")
+    parser.add_argument("--mtf", action="store_true",
+                        help="Enable Multi-Timeframe features (5m + 1H + 4H + 1D) in observation")
+    parser.add_argument("--mtf-intervals", type=str, default="1h,4h,1d",
+                        help="Comma-separated higher timeframes for MTF (default: 1h,4h,1d)")
+    parser.add_argument("--gpu-encoder", action="store_true",
+                        help="Enable GPU Deep Market Encoder (LSTM + Transformer) in observation[96:128]")
+    parser.add_argument("--gpu-encoder-dim", type=int, default=32,
+                        help="Encoding dimension for deep market encoder")
 
     # Evaluation
     parser.add_argument("--eval-only", action="store_true",

@@ -143,15 +143,8 @@ class EnsembleMetaModel:
             action_map = {0: "hold", 1: "long", 2: "short", 3: "hold"}  # 3=close maps to hold for voting
             direction = action_map.get(action, "hold")
 
-            # Get action probability distribution if possible
-            try:
-                import torch
-                obs_tensor = torch.FloatTensor(obs).unsqueeze(0)
-                dist = self.ppo_model.policy.get_distribution(obs_tensor)
-                probs = dist.distribution.probs.detach().numpy()[0]
-                confidence = float(probs[action])
-            except Exception:
-                confidence = 0.6  # Default if probability unavailable
+            # Default confidence (action probability from SB3 is complex to extract)
+            confidence = 0.6
 
             return {
                 "direction": direction,
