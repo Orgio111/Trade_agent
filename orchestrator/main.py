@@ -439,7 +439,7 @@ async def health():
         "mode": "paper",
         "swarm": swarm is not None,
         "memory": memory is not None,
-        "data_feeds": len(data_orchestrator.feeds) if data_orchestrator else 0,
+        "data_feeds": len(data_orchestrator._tasks) if data_orchestrator else 0,
         "ml": {"trained": ml_engine._model is not None if ml_engine else False},
         "database": db_status,
         "balance": paper_account.balance if paper_account else 0,
@@ -634,7 +634,11 @@ async def risk_check_all(trade: dict):
 async def check_panic():
     if not panic_mode or not paper_account:
         return {"error": "Not initialized"}
-    market_conditions = data_orchestrator.get_latest_sentiment() if data_orchestrator else {}
+    market_conditions: dict = {}
+    if data_orchestrator:
+        funding = data_orchestrator.get_current_funding("BTCUSDT")
+        if funding:
+            market_conditions["funding_rate"] = funding.get("funding_rate", 0)
     portfolio = paper_account.get_portfolio()
     return panic_mode.assess(market_conditions, portfolio)
 
