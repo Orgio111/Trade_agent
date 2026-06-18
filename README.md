@@ -68,6 +68,7 @@ Cloud-first inference with adaptive provider routing (Groq → NVIDIA NIM → Op
 - Walk-forward validation
 
 ### 🧠 ML & RL Integration
+- **TimesFM forecasting**: Google Research's pretrained time-series foundation model for zero-shot price forecasting (point + quantile bands), exposed as a signal source (`/api/v1/signal?source=timesfm`) and a dedicated endpoint. Loaded lazily; optional `timesfm[torch]` dependency.
 - FreqAI-style ML signal generation (Random Forest classifier on 64+ features)
 - Gymnasium-compatible RL trading environment (6 actions, 64-feature obs)
 - Genetic strategy evolution (tournament selection, crossover, mutation)
@@ -136,6 +137,8 @@ The orchestrator starts on port 8001. Open `http://localhost:3001` for Grafana o
 | `POST /api/v2/risk/check` | Enhanced risk v2 check |
 | `POST /api/v2/risk/kelly` | Kelly position sizing |
 | `POST /api/v2/execution/plan` | Execution plan with slicing |
+| `POST /api/v2/forecast/timesfm` | Price forecast via Google TimesFM |
+| `GET /api/v2/forecast/timesfm/status` | TimesFM model load status |
 
 ### WebSocket (`/ws`)
 

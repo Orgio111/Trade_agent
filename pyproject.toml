@@ -24,5 +24,16 @@ dependencies = [
     "aiohttp>=3.9",
 ]
 
+[project.optional-dependencies]
+# Heavyweight, optional time-series forecasting backend (Google TimesFM).
+# Loaded lazily by orchestrator.timesfm_forecaster; not required for core use.
+forecasting = [
+    "timesfm[torch]>=2.0,<3",
+]
+
 [project.scripts]
 quantex = "main:cli"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

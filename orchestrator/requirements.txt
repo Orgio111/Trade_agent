@@ -24,3 +24,7 @@ stable-baselines3>=2.3  # PPO/SAC RL agents
 qdrant-client>=1.9  # Vector database
 python-multipart>=0.0.9  # Form data support
 
+# Optional: TimesFM time-series forecasting (heavyweight, loaded lazily).
+# Not installed by default. Enable with: pip install "timesfm[torch]>=2.0,<3"
+# timesfm[torch]>=2.0,<3
+
