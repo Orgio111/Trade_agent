@@ -28,6 +28,12 @@ build/
 .env
 .env.local
 
+# Secrets / TLS material (generated at build/runtime, never committed)
+*.key
+*.pem
+deployment/nginx/ssl/*.crt
+deployment/nginx/ssl/*.cnf
+
 # IDE
 .idea/
 .vscode/

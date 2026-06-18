@@ -40,7 +40,8 @@ from .risk.risk_engine import RiskEngine, PanicMode, AntiOvertradeSystem, RiskPa
 from .risk.risk_engine_v2 import EnhancedRiskEngine, EnhancedRiskParams, KillSwitch, KellySizer
 from .rl.trading_env import TradingEnvironment
 from .rl.strategy_evolver import StrategyEvolver, OptunaOptimizer
-from .data.pipeline import MarketDataOrchestrator
+from .data_pipeline import DataPipeline
+from .timesfm_forecaster import TimesFMForecaster
 from .market_structure import MarketStructureEngine, FakeBreakoutDetector
 from .microstructure import SpoofingDetector, HiddenLiquidityDetector, DeltaCVDTracker, LiquidationCascadePredictor, OrderBookImbalanceAnalyzer
 from .execution import ExecutionOrchestrator, TWAPExecutor, VWAPExecutor, IcebergExecutor, SmartOrderRouter, SlippageEstimator, get_execution_plan, ExecutionPlan
@@ -71,7 +72,7 @@ credibility_tracker: AgentCredibilityTracker | None = None
 risk_engine: RiskEngine | None = None
 panic_mode: PanicMode | None = None
 anti_overtrade: AntiOvertradeSystem | None = None
-data_orchestrator: MarketDataOrchestrator | None = None
+data_orchestrator: DataPipeline | None = None
 nemo_distiller: NeMoDistiller | None = None
 
 # Scalping & Swing agents (used directly)
@@ -92,6 +93,7 @@ ob_imbalance: OrderBookImbalanceAnalyzer | None = None
 execution_orch: ExecutionOrchestrator | None = None
 agent_router: AgentModelRouter | None = None
 task_router: TaskRouter | None = None
+timesfm_forecaster: TimesFMForecaster | None = None
 
 active_connections: list[WebSocket] = []
 
@@ -125,6 +127,20 @@ async def _compute_signal(
         df = DataLoader.generate_mock_data(periods=100, start_price=50000.0)
         source_label = "Mock (empty response from Binance)"
 
+    if source == "timesfm" and timesfm_forecaster:
+        fc = timesfm_forecaster.forecast_dataframe(df, horizon=24)
+        return {
+            "symbol": symbol, "source": "timesfm", "data_source": source_label,
+            "signal": fc.direction, "confidence": fc.confidence,
+            "entry_price": fc.last_price,
+            "reason": (fc.error or f"TimesFM expected return {fc.expected_return:+.4%} over {fc.horizon} steps"),
+            "metadata": {
+                "expected_return": fc.expected_return,
+                "point_forecast": fc.point_forecast[:24],
+                "model": fc.model,
+                "available": fc.available,
+            },
+        }
     if source == "ml" and ml_engine:
         signal = ml_engine.predict_signal(df)
     elif source == "swarm" and swarm:
@@ -166,6 +182,7 @@ async def lifespan(app: FastAPI):
     global enhanced_risk, market_structure, fake_breakout
     global spoofing_detector, hidden_liquidity, delta_tracker, liq_cascade, ob_imbalance
     global execution_orch, agent_router, task_router
+    global timesfm_forecaster
 
     # Phase 1-3 components (nim_enhanced kept for NeMoDistiller backward compat)
     nim = InferenceIntegration(budget_tier=os.getenv("INFERENCE_BUDGET_TIER", "free"))
@@ -214,7 +231,7 @@ async def lifespan(app: FastAPI):
     risk_engine = RiskEngine()
     panic_mode = PanicMode()
     anti_overtrade = AntiOvertradeSystem()
-    data_orchestrator = MarketDataOrchestrator()
+    data_orchestrator = DataPipeline()
     nemo_distiller = NeMoDistiller()
 
     # Institutional v2 components
@@ -230,10 +247,13 @@ async def lifespan(app: FastAPI):
     agent_router = AgentModelRouter()
     task_router = TaskRouter()
 
+    # TimesFM forecaster (model weights load lazily on first forecast)
+    timesfm_forecaster = TimesFMForecaster()
+
     print("  Institutional v2: EnhancedRisk, MarketStructure, Execution, Microstructure, AgentRouting")
 
     # Start data feeds
-    asyncio.create_task(data_orchestrator.start_all_feeds())
+    asyncio.create_task(data_orchestrator.start())
 
     #    # WebSocket broadcast: inference routing data
     async def _ws_routing_broadcast():
@@ -347,7 +367,7 @@ async def lifespan(app: FastAPI):
     print(f"   Paper balance: ${paper_account.balance:.2f}")
     print(f"   ML model: {'loaded' if ml_engine._model else 'not trained'}")
     print(f"   Memory: {'Qdrant stub' if memory else 'unavailable'}")
-    print(f"   Data feeds: running {len(data_orchestrator.feeds)} feeds")
+    print("   Data feeds: BinanceWS + Funding + OpenInterest")
     print(f"   Inference: multi-provider router (Groq + NVIDIA NIM + OpenRouter)")
     print(f"   Budget tier: {os.getenv('INFERENCE_BUDGET_TIER', 'free')}")
     yield
@@ -355,7 +375,8 @@ async def lifespan(app: FastAPI):
     # Cleanup
     if database:
         await database.disconnect()
-    await data_orchestrator.stop_all_feeds()
+    if data_orchestrator:
+        await data_orchestrator.stop()
 
 
 app = FastAPI(
@@ -418,7 +439,7 @@ async def health():
         "mode": "paper",
         "swarm": swarm is not None,
         "memory": memory is not None,
-        "data_feeds": len(data_orchestrator.feeds) if data_orchestrator else 0,
+        "data_feeds": len(data_orchestrator._tasks) if data_orchestrator else 0,
         "ml": {"trained": ml_engine._model is not None if ml_engine else False},
         "database": db_status,
         "balance": paper_account.balance if paper_account else 0,
@@ -613,7 +634,11 @@ async def risk_check_all(trade: dict):
 async def check_panic():
     if not panic_mode or not paper_account:
         return {"error": "Not initialized"}
-    market_conditions = data_orchestrator.get_latest_sentiment() if data_orchestrator else {}
+    market_conditions: dict = {}
+    if data_orchestrator:
+        funding = data_orchestrator.get_current_funding("BTCUSDT")
+        if funding:
+            market_conditions["funding_rate"] = funding.get("funding_rate", 0)
     portfolio = paper_account.get_portfolio()
     return panic_mode.assess(market_conditions, portfolio)
 
@@ -830,6 +855,60 @@ async def ml_status():
         "train_count": ml_engine._train_count,
         "last_train_time": ml_engine._last_train_time.isoformat() if ml_engine._last_train_time else None,
         "model_age_hours": round((datetime.now() - ml_engine._last_train_time).total_seconds() / 3600, 1) if ml_engine._last_train_time else None,
+    }
+
+
+# ── API: TimesFM Forecasting ────────────────────────────────────────
+
+@app.post("/api/v2/forecast/timesfm")
+async def timesfm_forecast(params: dict = {}):
+    """Forecast future price with Google's TimesFM foundation model.
+
+    Body params:
+      - prices: optional list[float] of historical closes (overrides fetch)
+      - symbol: market symbol when fetching data (default BTCUSDT)
+      - interval: candle interval (default 1h)
+      - days: lookback window in days (default 30)
+      - horizon: number of steps to forecast (default 24)
+    """
+    if not timesfm_forecaster:
+        return {"error": "Not initialized"}
+
+    horizon = int(params.get("horizon", 24))
+    prices = params.get("prices")
+
+    if prices:
+        result = timesfm_forecaster.forecast(prices, horizon=horizon)
+        return {"data_source": "client-provided", **result.to_dict()}
+
+    symbol = params.get("symbol", "BTCUSDT")
+    interval = params.get("interval", "1h")
+    days = int(params.get("days", 30))
+    end = datetime.now()
+    start = end - timedelta(days=days)
+    try:
+        df = await DataLoader.from_binance_api(symbol=symbol, interval=interval, start_time=start, end_time=end)
+        source = "Binance API"
+    except Exception:
+        df = DataLoader.generate_mock_data(periods=days * 24, start_price=50000.0)
+        source = "Mock (Binance unavailable)"
+    if df.empty:
+        return {"error": "No data available"}
+
+    result = timesfm_forecaster.forecast_dataframe(df, horizon=horizon)
+    return {"symbol": symbol, "data_source": source, "candles": len(df), **result.to_dict()}
+
+
+@app.get("/api/v2/forecast/timesfm/status")
+async def timesfm_status():
+    if not timesfm_forecaster:
+        return {"error": "Not initialized"}
+    return {
+        "checkpoint": timesfm_forecaster.checkpoint,
+        "max_context": timesfm_forecaster.max_context,
+        "max_horizon": timesfm_forecaster.max_horizon,
+        "loaded": timesfm_forecaster._model is not None,
+        "load_error": timesfm_forecaster._load_error,
     }
 
 
