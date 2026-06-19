@@ -1,0 +1,50 @@
+app:
+  name: quantex
+  mode: paper
+  environment: development
+
+exchange:
+  name: binance_spot
+  # Use CCXT-style uppercase symbols
+  symbols:
+    - BTC/USDT
+    - ETH/USDT
+    - SOL/USDT
+  # Use Binance INTERVAL codes; normalized timestamps kept UTC in app
+  timeframes:
+    - 1h
+    - 4h
+    - 15m
+  default_symbol: BTC/USDT
+  default_timeframe: 1h
+  rest_base: https://api.binance.com/api/v3
+  ws_base: wss://stream.binance.com:9443/stream
+
+inference:
+  # Primary: nvidia_nim | fallback: local_ollama
+  primary_provider: nvidia_nim
+  fallback_providers:
+    - local_ollama
+  budget_tier: free
+  cache_enabled: true
+  cache_similarity_threshold: 0.92
+
+risk:
+  initial_balance: 1000.0
+  max_leverage: 10
+  maker_fee: 0.0002
+  taker_fee: 0.0004
+  slippage_bps: 0.3
+  hard_cap_daily_loss_pct: 0.05
+  hard_cap_max_drawdown_pct: 0.20
+  max_open_positions: 5
+  max_consecutive_losses: 5
+
+storage:
+  duckdb_path: ./storage/duckdb/quantex.duckdb
+  postgres_url: postgresql://quantex:secret@localhost:5432/quantex
+  backups_dir: ./storage/backups
+
+logging:
+  level: INFO
+  dir: ./monitoring/logs

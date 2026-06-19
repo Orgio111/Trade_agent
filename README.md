@@ -1,107 +1,150 @@
-# QUANTEX — Autonomous AI Trading System
+# Trading AI System
 
-**Multi-language, multi-agent, multi-provider AI trading ecosystem.**  
-Built with Rust (execution), Python (AI/ML + inference routing), Go (realtime), and TypeScript (frontend).  
-Cloud-first inference with adaptive provider routing (Groq → NVIDIA NIM → OpenRouter).
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      QUANTEX TRADING SYSTEM                          │
-├─────────────────┬──────────────────┬───────────────────┬────────────┤
-│   INFERENCE      │   PYTHON AI/ML   │   RUST EXECUTION   │   GO WS    │
-│   ─────────      │   ───────────    │   ─────────────    │  ─────    │
-│   • Groq LPU     │   • 7 AI Agents  │   • Order engine   │  Events   │
-│   • NVIDIA NIM   │   • Swarm debate │   • Risk core      │  Pub/sub  │
-│   • OpenRouter   │   • RL training  │   • CCXT exchange  │  WS bcast │
-│   • Semantic     │   • Backtesting  │   • WS engine      │           │
-│     cache        │   • Feature eng  │                    │           │
-│   • Adaptive     │   • Market str.  │                    │           │
-│     routing      │   • Microstruct. │                    │           │
-│   • Cost tracker │   • Vector mem   │                    │           │
-│   • Circuit      │   • Enhanced     │                    │           │
-│     breaker      │     risk v2      │                    │           │
-├─────────────────┴──────────────────┴───────────────────┴────────────┤
-│                    TYPESCRIPT FRONTEND (Next.js 15)                   │
-│                    ────────────────────────────                       │
-│                    • Live dashboard with 5 tabs                       │
-│                    • Price charts (lightweight-charts)                │
-│                    • Agent swarm visor                                │
-│                    • Microstructure & market structure panels         │
-│                    • Inference routing panel (provider health,        │
-│                      adaptive chains, cost usage)                    │
-└─────────────────────────────────────────────────────────────────────┘
-```
+A modular AI-assisted algorithmic trading system focused on:
+- market data ingestion,
+- strategy research,
+- backtesting,
+- risk management,
+- paper/live execution,
+- AI research agents,
+- monitoring and observability.
 
 ---
 
-## Key Features
+# Core Goals
 
-### 🤖 Multi-Agent Swarm Intelligence
-- **7 agents** in parallel debate (Market Analyst, DeepSeek Analyst, Risk Guardian, Sentiment, Regime, Scalping, Swing)
-- **4-round debate cycle**: Independent analysis → Cross-examination → Weighted voting → Risk veto
-- Credibility-weighted voting with agent performance tracking
-- Streaming deep reasoning via DeepSeek R1
+- Fast research iteration
+- Reliable execution
+- Strict risk control
+- Open-source-first architecture
+- Modular agent-based design
+- Production-ready engineering practices
 
-### 🔄 Adaptive Inference Routing
-- **3 providers**: Groq (ultra-fast LPU, 800+ tok/s), NVIDIA NIM (high-quality reasoning), OpenRouter (200+ model fallback)
-- **Per-agent provider chains**: Each agent has an optimal provider order (e.g., scalping uses Groq first, deep reasoning uses NVIDIA NIM first)
-- **EMA-based latency tracking**: Automatically reorders provider chains based on observed P50/P99 latency
-- **Circuit breaker**: Skips failing providers after N consecutive failures
-- **Semantic caching**: 40-60% cost reduction via Qdrant vector similarity cache
-- **Budget tiers**: Free ($0), Low ($0.50/day), Medium ($2.00/day)
+---
 
-### 🏦 Institutional-Grade Trading Components
-- **Market Structure Engine**: Liquidity sweeps, order blocks, FVG, BOS/CHOCH, Wyckoff phases
-- **Microstructure Engine**: Spoofing detection, hidden liquidity, CVD/divergence, liquidation cascade prediction, order book imbalance
-- **Enhanced Risk Engine v2**: Kelly sizing, kill switches, anti-martingale, volatility expansion limits, correlation management, time-based decay
-- **Execution Engine**: TWAP/VWAP/Iceberg slicing, smart order routing, slippage estimation
-- **Position Manager**: Multi-level TP, trailing stops, DCA entry ladders, break-even triggers
+# Main Stack
 
-### 📊 Comprehensive Backtesting
-- Binance REST API and CSV data sources
-- Realistic fill simulation with configurable slippage
-- Sharpe, Sortino, Calmar, profit factor, expectancy
-- Walk-forward validation
+## Trading / Exchange
+- CCXT
+- Exchange native SDKs (optional)
 
+## Backtesting
+- vectorbt
+- backtrader
+
+## Data
+- DuckDB
+- Parquet
+- PostgreSQL
+
+## AI / ML
+- PyTorch
+- LightGBM
+- XGBoost
+- Transformers
+- NVIDIA NIM APIs
+
+<<<<<<< Updated upstream
 ### 🧠 ML & RL Integration
 - **TimesFM forecasting**: Google Research's pretrained time-series foundation model for zero-shot price forecasting (point + quantile bands), exposed as a signal source (`/api/v1/signal?source=timesfm`) and a dedicated endpoint. Loaded lazily; optional `timesfm[torch]` dependency.
 - FreqAI-style ML signal generation (Random Forest classifier on 64+ features)
 - Gymnasium-compatible RL trading environment (6 actions, 64-feature obs)
 - Genetic strategy evolution (tournament selection, crossover, mutation)
 - Optuna Bayesian hyperparameter optimization
+=======
+## API / Backend
+- FastAPI
+- Redis
+- WebSockets
+
+## Monitoring
+- Prometheus
+- Grafana
+- Loki
+
+## UI
+- Next.js
+- TailwindCSS
+- shadcn/ui
+>>>>>>> Stashed changes
 
 ---
 
-## Quick Start
+# Recommended Development Flow
+
+## Phase 1
+- Data ingestion
+- Historical storage
+- Backtesting engine
+- Baseline strategies
+
+## Phase 2
+- Risk engine
+- Paper trading
+- Dashboard
+- Monitoring
+
+## Phase 3
+- Live trading
+- AI agent integration
+- Portfolio allocation
+- Strategy optimization
+
+## Phase 4
+- Multi-agent orchestration
+- Automated research loops
+- Adaptive strategy switching
+
+---
+
+# High-Level Architecture
+
+Market Data
+    ↓
+Data Pipeline
+    ↓
+Feature Engineering
+    ↓
+Strategy Engine
+    ↓
+Risk Engine
+    ↓
+Execution Engine
+    ↓
+Exchange
+
+AI Agents observe:
+- market state
+- strategy health
+- portfolio risk
+- performance metrics
+
+---
+
+# Safety Rules
+
+- Never let AI bypass risk limits.
+- Never trade without monitoring.
+- Always test on paper trading first.
+- Keep execution deterministic.
+- Log every decision.
+- Assume APIs can fail.
+
+---
+
+# Quick Start
 
 ```bash
-# Prerequisites
-rustc 1.93+, Python 3.12+, Go 1.26+, Node.js 18+
+git clone <repo>
+cd trading-ai
 
-# Clone and enter
-git clone <repo> && cd Trade_agent
+python -m venv .venv
+source .venv/bin/activate
 
-# Copy environment variables
-cp .env.example .env
-# Edit .env with your API keys (NVIDIA_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY)
-# Set INFERENCE_BUDGET_TIER=free (default) | low | medium
-
-# Start infrastructure
-docker compose up -d
-
-# Install dependencies
-cd execution && cargo build
-cd ../orchestrator && pip install -r requirements.txt
-cd ../frontend && npm install
-
-# Run
-cd .. && python -m orchestrator.main
+pip install -r requirements.txt
 ```
 
+<<<<<<< Updated upstream
 The orchestrator starts on port 8001. Open `http://localhost:3001` for Grafana or access the frontend via nginx on port 80/443.
 
 ---
@@ -189,77 +232,38 @@ Each agent has an optimal provider chain, automatically adapted based on real la
 ---
 
 ## Project Structure
+=======
+Run services:
+>>>>>>> Stashed changes
 
+```bash
+docker compose up
 ```
-Trade_agent/
-├── inference/                 # Cloud inference layer
-│   ├── router.py              #   Multi-provider intelligent router
-│   ├── cache.py               #   Semantic caching (Qdrant)
-│   ├── cost_tracker.py        #   Token usage & cost monitoring
-│   └── providers/             #   Provider implementations
-│       ├── base.py            #     Abstract provider interface
-│       ├── groq.py            #     Groq LPU inference
-│       ├── nim.py             #     NVIDIA NIM API client
-│       └── openrouter.py      #     OpenRouter aggregator
-│
-├── orchestrator/              # Python AI/ML orchestrator
-│   ├── main.py                #   FastAPI app with 50+ endpoints
-│   ├── agents.py              #   7 AI agent implementations
-│   ├── agent_routing.py       #   Agent→model routing + adaptive chains
-│   ├── inference_integration.py # Bridge between agents and InferenceRouter
-│   ├── strategy.py            #   Rule-based strategy engine
-│   ├── ml_signals.py          #   FreqAI-style ML signal generator
-│   ├── backtest.py            #   Backtesting engine
-│   ├── paper_account.py       #   Paper trading simulator
-│   ├── position_manager.py    #   SL/TP management
-│   ├── feature_engine.py      #   64+ technical indicators
-│   ├── market_structure.py    #   SMC/Wyckoff analysis
-│   ├── microstructure.py      #   Order flow analysis
-│   ├── execution.py           #   TWAP/VWAP/Iceberg execution
-│   ├── metrics.py             #   Prometheus metrics
-│   ├── swarm/debate_system.py #   Multi-agent debate system
-│   ├── memory/vector_memory.py#   Qdrant vector memory
-│   ├── risk/risk_engine.py    #   10-gate risk management
-│   ├── risk/risk_engine_v2.py #   Enhanced institutional risk
-│   ├── rl/trading_env.py      #   Gymnasium trading environment
-│   └── rl/strategy_evolver.py #   Genetic strategy evolution
-│
-├── execution/                 # Rust execution engine
-├── realtime/                  # Go realtime services
-├── frontend/                  # Next.js dashboard
-├── deployment/                # K8s, Terraform, Nginx configs
-├── monitoring/                # Prometheus + Grafana
-├── db/                        # SQL migrations
-└── docker-compose.yml         # 12+ service stack
+
+Start backend:
+
+```bash
+uvicorn api.main:app --reload
 ```
 
 ---
 
-## API Keys
+# Suggested Initial Strategy Types
 
-Set these in `.env`:
-
-| Variable | Required | Source |
-|----------|----------|--------|
-| `NVIDIA_API_KEY` | Recommended | [NVIDIA NGC](https://ngc.nvidia.com/) |
-| `OPENROUTER_API_KEY` | Recommended | [OpenRouter](https://openrouter.ai/) |
-| `GROQ_API_KEY` | Recommended | [Groq Console](https://console.groq.com/) |
-| `INFERENCE_BUDGET_TIER` | No (default: `free`) | `free` / `low` / `medium` |
-
-At least one API key is needed for inference. The router will work with any subset of configured providers.
+- Trend following
+- Mean reversion
+- Breakout
+- Volatility expansion
+- Regime switching
 
 ---
 
-## Inference Budget Tiers
+# Long-Term Vision
 
-| Tier | Daily Budget | Behavior |
-|------|-------------|----------|
-| `free` | $0.00 | Uses only free-tier models (Groq free, OpenRouter free) |
-| `low` | $0.50 | Mixes free and low-cost paid models |
-| `medium` | $2.00 | Full access to all models including premium |
-
----
-
-## License
-
-MIT
+Build a scalable autonomous trading research and execution platform capable of:
+- multi-strategy orchestration,
+- portfolio optimization,
+- adaptive market regime analysis,
+- AI-assisted research,
+- low-latency execution,
+- continuous monitoring.

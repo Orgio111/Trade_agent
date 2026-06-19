@@ -58,4 +58,4 @@ logs/
 models/
 *.rl
 *hmm_vs_adk_comprarison.json
-*training_history.json
+training_history.json

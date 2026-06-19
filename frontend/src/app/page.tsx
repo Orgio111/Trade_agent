@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import "./globals.css";
 import dynamic from "next/dynamic";
+import { apiUrl, wsBase } from "../lib/env";
 
 // Dynamic imports for client-side only components
 const AgentSwarmVisor = dynamic(() => import("../components/AgentSwarmVisor"), { ssr: false });
@@ -208,7 +209,7 @@ export default function Dashboard() {
 
   const fetchPortfolio = useCallback(async () => {
     try {
-      const res = await fetch("/api/portfolio");
+      const res = await fetch(apiUrl("/api/v1/portfolio"));
       if (res.ok) {
         const data = await res.json();
         setPortfolio(data);
@@ -219,7 +220,7 @@ export default function Dashboard() {
 
   const fetchSignal = useCallback(async () => {
     try {
-      const res = await fetch("/api/signal?symbol=BTCUSDT&source=ml");
+      const res = await fetch(apiUrl("/api/v1/signal?symbol=BTCUSDT&source=ml"));
       if (res.ok) {
         const data = await res.json();
         setSignal(data);
@@ -237,7 +238,7 @@ export default function Dashboard() {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await fetch("/api/status");
+      const res = await fetch(apiUrl("/api/v1/status"));
       if (res.ok) {
         const data = await res.json();
         const p = data.portfolio;
@@ -295,9 +296,7 @@ export default function Dashboard() {
     // WebSocket connection
     const connectWs = () => {
       try {
-        // Use dynamic WebSocket URL through nginx proxy
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws`);
+        const ws = new WebSocket(wsBase());
         ws.onopen = () => setWsStatus("connected");
         ws.onclose = () => {
           setWsStatus("disconnected");
@@ -306,7 +305,6 @@ export default function Dashboard() {
         ws.onmessage = (msg) => {
           try {
             const data = JSON.parse(msg.data);
-            // Handle typed WebSocket events
             if (data.type === "inference_routing") {
               setInferenceRouting(data);
             } else if (data.type === "portfolio") {
