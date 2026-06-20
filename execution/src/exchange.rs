@@ -8,6 +8,11 @@ use reqwest::Client;
 
 use crate::order::{Order, OrderSide, OrderType, Position};
 
+/// Format f64 with fixed decimal precision (replaces Python's {:.8f}).
+fn format_f64_prec(val: f64, prec: usize) -> String {
+    format!("{:.prec$e}", val, prec = prec).parse::<f64>().unwrap_or(0.0).to_string()
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountInfo {
@@ -95,6 +100,15 @@ pub trait ExchangeConnector: Send + Sync {
 
     /// Get exchange info (trading pairs, min notional, etc.)
     async fn get_exchange_info(&self) -> Result<HashMap<String, ExchangeSymbol>>;
+
+    /// Place OCO (One-Cancels-Other) bracket order with stop-loss and take-profit.
+    async fn place_oco_order(
+        &self,
+        symbol: &str,
+        stop_loss_price: f64,
+        take_profit_price: f64,
+        quantity: f64,
+    ) -> Result<String>;
 }
 
 #[allow(dead_code)]
@@ -468,6 +482,8 @@ impl ExchangeConnector for BinanceConnector {
             exchange_order_id: Some(order_id.to_string()),
             reduce_only: false,
             post_only: false,
+            stop_loss: None,
+            take_profit: None,
         })
     }
 
@@ -505,6 +521,8 @@ impl ExchangeConnector for BinanceConnector {
                     exchange_order_id: order_id,
                     reduce_only: false,
                     post_only: false,
+                    stop_loss: None,
+                    take_profit: None,
                 }
             })
             .collect())
@@ -657,6 +675,60 @@ impl ExchangeConnector for BinanceConnector {
 
         tracing::info!("📋 Exchange info: {} trading pairs loaded", map.len());
         Ok(map)
+    }
+
+    /// Place OCO (One-Cancels-Other) bracket order on Binance Testnet.
+    /// Uses the /v3/order/oco endpoint with STOP_LOSS_LIMIT + LIMIT_MAKER.
+    async fn place_oco_order(
+        &self,
+        symbol: &str,
+        stop_loss_price: f64,
+        take_profit_price: f64,
+        quantity: f64,
+    ) -> Result<String> {
+        let url = format!("{}/v3/order/oco", self.base_url);
+
+        let params = format!(
+            "symbol={}&side=SELL&quantity={}&price={}&stopPrice={}&stopLimitPrice={}&stopLimitTimeInForce=GTC&type=OCO&timestamp={}",
+            symbol.replace("/", ""),
+            format_f64_prec(quantity, 8),
+            format_f64_prec(take_profit_price, 8),
+            format_f64_prec(stop_loss_price, 8),
+            format_f64_prec(stop_loss_price, 8),
+            chrono::Utc::now().timestamp_millis()
+        );
+
+        let signature = self.signature(&params);
+        let body = format!("{}&signature={}", params, signature);
+
+        let resp = self
+            .client
+            .post(&url)
+            .header("X-MBX-APIKEY", &self.api_key)
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .body(body)
+            .send()
+            .await
+            .context("OCO order request failed")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("OCO order rejected ({}): {}", status, text);
+        }
+
+        let result: serde_json::Value = resp.json().await?;
+        let order_list_id = result["orderListId"]
+            .as_i64()
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+
+        tracing::info!(
+            "🎯 OCO order placed: {} SL={:.2} TP={:.2} listId={}",
+            symbol, stop_loss_price, take_profit_price, order_list_id
+        );
+
+        Ok(order_list_id)
     }
 }
 

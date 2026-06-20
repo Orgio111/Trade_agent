@@ -12,6 +12,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 nats = "0.26"
+async-nats = "0.39"
 chrono = { version = "0.4", features = ["serde"] }
 hmac = "0.12"
 sha2 = "0.10"

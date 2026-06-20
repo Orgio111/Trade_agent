@@ -6,8 +6,10 @@ mod risk;
 mod exchange;
 mod engine;
 mod ws;
+mod nats_subscriber;
 
 use engine::TradingEngine;
+use nats_subscriber::NATSSubscriber;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -16,26 +18,34 @@ async fn main() -> Result<()> {
             .add_directive("quantex_execution=info".parse()?))
         .init();
 
-    tracing::info!("🚀 QUANTEX Execution Engine starting...");
+    tracing::info!("🚀 QUANTEX Execution Engine (Trinity Layer C) starting...");
 
     let engine = TradingEngine::new().await?;
 
-    // Start NATS event listener
-    let engine_clone = engine.clone();
+    // Start NATS subscriber (signals.aggregated → execute trades)
+    let subscriber = NATSSubscriber::new(engine.clone());
     tokio::spawn(async move {
-        engine_clone.start_event_loop().await;
+        if let Err(e) = subscriber.run().await {
+            tracing::error!("NATS subscriber error: {}", e);
+        }
     });
 
-    // Start order book feed
-    let ws_engine = ws::WebSocketEngine::new(
-        "wss://testnet.binance.vision/ws".to_string(),
-        vec!["btcusdt".to_string()],
-    );
+    // Start WebSocket order book feed
+    let symbols: Vec<String> = std::env::var("TRADE_SYMBOLS")
+        .unwrap_or_else(|_| "BTC/USDT".to_string())
+        .split(',')
+        .map(|s| s.trim().replace("/", "").to_lowercase())
+        .collect();
+
+    let ws_url = std::env::var("BINANCE_WS_URL")
+        .unwrap_or_else(|_| "wss://testnet.binance.vision/ws".to_string());
+
+    let ws_engine = ws::WebSocketEngine::new(ws_url, symbols);
     tokio::spawn(async move {
         ws_engine.run().await;
     });
 
-    tracing::info!("✅ QUANTEX Execution Engine ready");
+    tracing::info!("✅ QUANTEX Execution Engine ready — awaiting signals on NATS");
     tokio::signal::ctrl_c().await?;
     tracing::info!("Shutting down...");
     Ok(())

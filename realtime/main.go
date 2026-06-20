@@ -314,25 +314,54 @@ func bridgeEvents(bus *EventBus, hub *WSHub) {
 // ── Main ─────────────────────────────────────────────────────
 
 func main() {
-	log.Println("🚀 QUANTEX Realtime Service starting...")
+	log.Println("🚀 QUANTEX Trinity Orchestrator (Go Layer B) starting...")
 
 	bus := NewEventBus()
 	hub := NewWSHub()
 	svc := &RealtimeService{bus: bus, hub: hub}
 
-	// Start market simulator
+	// ── NATS JetStream Orchestrator (Trinity Architecture Layer B) ──
+	orchCfg := LoadOrchestratorConfig()
+	orch, err := NewNATSOrchestrator(orchCfg)
+	if err != nil {
+		log.Printf("⚠️  NATS orchestrator init failed (running without NATS): %v", err)
+	} else {
+		if err := orch.SetupStream(); err != nil {
+			log.Printf("⚠️  NATS stream setup failed: %v", err)
+		}
+		if err := orch.SubscribeRawSignals(); err != nil {
+			log.Printf("⚠️  NATS subscribe failed: %v", err)
+		}
+		go orch.StartAggregationLoop()
+		log.Println("✅ NATS orchestrator running")
+	}
+
+	// Start market simulator (kept for dev/testing without real exchange)
 	sim := NewMarketSimulator(bus)
 	go sim.Start()
 
 	// Bridge events to WebSocket
 	go bridgeEvents(bus, hub)
 
-	// HTTP routes
+	// ── HTTP routes ──────────────────────────────────────────────
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", hub.HandleWS)
 	mux.HandleFunc("/api/v1/signal", svc.handleSignal)
 	mux.HandleFunc("/health", svc.handleHealth)
 	mux.Handle("/metrics", promhttp.Handler())
+
+	// NATS orchestrator status endpoint
+	mux.HandleFunc("/api/v1/orchestrator/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if orch != nil {
+			result := orch.GetLastResult()
+			if result != nil {
+				json.NewEncoder(w).Encode(result)
+				return
+			}
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "no_signals_yet"})
+	})
 
 	server := &http.Server{
 		Addr:         ":8082",
@@ -346,11 +375,14 @@ func main() {
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 		<-sigChan
-		log.Println("Shutting down...")
+		log.Println("🛑 Shutting down...")
+		if orch != nil {
+			orch.Close()
+		}
 		server.Close()
 	}()
 
-	log.Println("✅ QUANTEX Realtime Service ready on :8082")
+	log.Println("✅ QUANTEX Trinity Orchestrator ready on :8082")
 	if err := server.ListenAndServe(); err != http.ErrServerClosed {
 		log.Fatalf("Server error: %v", err)
 	}

@@ -42,6 +42,8 @@ pub struct Order {
     pub status: OrderStatus,
     pub reduce_only: bool,
     pub post_only: bool,
+    pub stop_loss: Option<f64>,
+    pub take_profit: Option<f64>,
 }
 
 impl Order {
@@ -69,6 +71,8 @@ impl Order {
             status: OrderStatus::Pending,
             reduce_only: false,
             post_only: false,
+            stop_loss: None,
+            take_profit: None,
         }
     }
 
@@ -104,7 +108,7 @@ pub struct Position {
 pub struct TakeProfitLevel {
     pub level: u8,
     pub price: f64,
-    pub qty_pct: f64,  // 0.0 - 1.0
+    pub qty_pct: f64, // 0.0 - 1.0
     pub filled: bool,
     pub trail: bool,
     pub trail_distance: Option<f64>,

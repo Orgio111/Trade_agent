@@ -1,48 +1,70 @@
 app:
-  name: quantex
+  name: quantex-trinity
   mode: paper
   environment: development
 
 exchange:
-  name: binance_spot
-  # Use CCXT-style uppercase symbols
+  name: binance_spot_testnet
+  # CCXT-style slash symbols (loaded dynamically from .env TRADE_SYMBOLS)
   symbols:
     - BTC/USDT
-    - ETH/USDT
-    - SOL/USDT
-  # Use Binance INTERVAL codes; normalized timestamps kept UTC in app
+  default_symbol: BTC/USDT
+  # Binance TESTNET endpoints
+  rest_base: https://testnet.binance.vision/api/v3
+  ws_base: wss://testnet.binance.vision/ws
+  # Timeframes (loaded from .env TRADE_TIMEFRAMES)
   timeframes:
     - 1h
     - 4h
     - 15m
-  default_symbol: BTC/USDT
   default_timeframe: 1h
-  rest_base: https://api.binance.com/api/v3
-  ws_base: wss://stream.binance.com:9443/stream
+
+nats:
+  url: nats://localhost:4222
+  stream: signals
+  subjects:
+    raw: signals.raw
+    aggregated: signals.aggregated
+    executed: signals.executed
 
 inference:
-  # Primary: nvidia_nim | fallback: local_ollama
-  primary_provider: nvidia_nim
-  fallback_providers:
-    - local_ollama
+  # Tier 1: Local Ollama (low latency, free)
+  local_provider: ollama
+  ollama_base_url: http://localhost:11434
+  ollama_models:
+    regime: llama3:8b
+    sentiment: phi3:mini
+  # Tier 2: Cloud fallback
+  cloud_providers:
+    - nvidia_nim
+    - openrouter
   budget_tier: free
   cache_enabled: true
   cache_similarity_threshold: 0.92
+  cloud_latency_budget_ms: 2500
 
 risk:
-  initial_balance: 1000.0
-  max_leverage: 10
+  initial_balance: 10000.0
+  risk_pct_per_trade: 0.015
+  atr_period: 14
+  sl_atr_mult: 2.0
+  tp_atr_mult: 3.0
+  max_notional_pct: 0.25
+  max_open_positions: 3
+  max_consecutive_losses: 4
+  max_leverage: 1
   maker_fee: 0.0002
   taker_fee: 0.0004
   slippage_bps: 0.3
   hard_cap_daily_loss_pct: 0.05
   hard_cap_max_drawdown_pct: 0.20
-  max_open_positions: 5
-  max_consecutive_losses: 5
+
+dead_mans_switch:
+  heartbeat_timeout_secs: 3
 
 storage:
   duckdb_path: ./storage/duckdb/quantex.duckdb
-  postgres_url: postgresql://quantex:secret@localhost:5432/quantex
+  postgres_url: postgresql://quantex:quantex@localhost:5432/quantex
   backups_dir: ./storage/backups
 
 logging:

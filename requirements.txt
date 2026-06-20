@@ -1,0 +1,37 @@
+# QUANTEX Trinity Architecture — Python Dependencies
+# Install: pip install -r requirements.txt
+
+# ── Core ──
+python-dotenv==1.1.0
+orjson==3.10.18
+pyyaml==6.0.2
+
+# ── NATS JetStream ──
+nats-py==2.9.0
+
+# ── Exchange ──
+ccxt==4.4.35
+
+# ── AI/ML ──
+numpy==2.2.6
+pandas==2.3.0
+scikit-learn==1.6.1
+torch==2.7.0
+transformers==4.52.3
+timesfm==1.2.8
+
+# ── NLP Sentiment ──
+httpx==0.28.1
+ollama==0.4.8
+
+# ── Reinforcement Learning ──
+gymnasium==1.0.0
+stable-baselines3==2.6.0
+
+# ── Web/API ──
+fastapi==0.115.12
+uvicorn==0.34.3
+websockets==15.0.1
+
+# ── Monitoring ──
+prometheus-client==0.21.1
