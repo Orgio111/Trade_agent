@@ -1,7 +1,9 @@
-"""Trinity Architecture — Layer A: 8 Parallel AI Brains.
+"""Trinity Architecture — Layer A: 9 Parallel AI Brains.
 
 Each brain publishes its signal score to NATS JetStream subject `signals.raw`.
 The Go Orchestrator (Layer B) aggregates these signals with weighted scoring.
+
+Brain 9 (orderflow_nautilus) uses NautilusTrader for L2/L3 orderbook depth.
 """
 
 from .base_brain import BaseBrain, BrainSignal
@@ -13,6 +15,7 @@ from .finbert_brain import FinBERTBrain
 from .finrl_brain import FinRLBrain
 from .onchain_brain import OnChainBrain
 from .statarb_brain import StatArbBrain
+from .orderflow_nautilus_brain import OrderFlowNautilusBrain
 
 __all__ = [
     "BaseBrain",
@@ -25,4 +28,5 @@ __all__ = [
     "FinRLBrain",
     "OnChainBrain",
     "StatArbBrain",
+    "OrderFlowNautilusBrain",
 ]
