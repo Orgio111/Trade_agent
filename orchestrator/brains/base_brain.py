@@ -29,6 +29,8 @@ class BrainSignal:
     symbol: str
     score: float          # -1.0 (strong sell) to 1.0 (strong buy)
     confidence: float     # 0.0 to 1.0
+    weight: float = 0.0   # brain weight from Go orchestrator config
+    direction: int = 0    # +1 buy, -1 sell, 0 hold
     timestamp_ms: int = field(default_factory=lambda: int(time.time() * 1000))
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -38,6 +40,8 @@ class BrainSignal:
             "symbol": self.symbol,
             "score": round(self.score, 6),
             "confidence": round(self.confidence, 4),
+            "weight": self.weight,
+            "direction": self.direction,
             "timestamp_ms": self.timestamp_ms,
             "metadata": self.metadata,
         }).encode()

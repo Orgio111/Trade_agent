@@ -8,17 +8,23 @@ pub struct WebSocketEngine {
 impl WebSocketEngine {
     pub fn new(base_url: String, symbols: Vec<String>) -> Self {
         // Build combined stream URL
+        // Binance combined streams: wss://host/stream?streams=stream1/stream2/...
+        // base_url should be "wss://demo-stream.binance.com" (no /ws suffix)
+        // Single stream: wss://demo-stream.binance.com/ws/<stream>
+        // Combined:      wss://demo-stream.binance.com/stream?streams=<s1>/<s2>/...
+        let host = base_url.trim_end_matches("/ws").trim_end_matches('/');
         let streams: Vec<String> = symbols.iter()
             .flat_map(|s| {
+                let sym = s.replace("/", "").to_lowercase();
                 vec![
-                    format!("{}@kline_1m", s.to_lowercase()),
-                    format!("{}@depth20@100ms", s.to_lowercase()),
-                    format!("{}@aggTrade", s.to_lowercase()),
+                    format!("{}@kline_1m", sym),
+                    format!("{}@aggTrade", sym),
+                    format!("{}@ticker", sym),       // depth20@100ms unavailable on testnet, use ticker instead
                 ]
             })
             .collect();
         let stream_str = streams.join("/");
-        let url = format!("{}/stream?streams={}", base_url, stream_str);
+        let url = format!("{}/stream?streams={}", host, stream_str);
 
         Self { url, symbols }
     }

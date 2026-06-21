@@ -114,12 +114,12 @@ async def run_brains_once(nc: nats.NATS, brains: list, tg: TelegramNotifier) -> 
 
         for brain, result in zip(brains, results):
             if isinstance(result, Exception):
-                log.error("Brain %s failed for %s: %s", brain.name, symbol, result)
+                log.error("Brain %s failed for %s: %s", brain.brain_id, symbol, result)
                 continue
 
             # Publish raw signal to NATS
             signal_data = {
-                "brain_name": result.brain_name,
+                "brain_name": result.brain_id,
                 "symbol": result.symbol,
                 "score": result.score,
                 "confidence": result.confidence,
@@ -138,7 +138,7 @@ async def run_brains_once(nc: nats.NATS, brains: list, tg: TelegramNotifier) -> 
                 )
                 log.debug(
                     "Published: %s %s score=%.4f dir=%s",
-                    result.brain_name, result.symbol, result.score, result.direction,
+                    result.brain_id, result.symbol, result.score, result.direction,
                 )
                 # Notify Telegram for strong signals (|score| > 0.6)
                 if abs(result.score) > 0.6:
@@ -162,7 +162,7 @@ async def run_brains_once(nc: nats.NATS, brains: list, tg: TelegramNotifier) -> 
                             take_profit=0.0,
                         )
             except Exception as e:
-                log.error("NATS publish failed for %s: %s", result.brain_name, e)
+                log.error("NATS publish failed for %s: %s", result.brain_id, e)
 
     log.info("Brain cycle complete — %d symbols processed", len(TRADE_SYMBOLS))
 
@@ -194,7 +194,7 @@ async def main_loop(run_once: bool = False, interval: int = CYCLE_INTERVAL) -> N
     log.info(
         "Initialized %d brains: %s",
         len(brains),
-        ", ".join(b.name for b in brains),
+        ", ".join(b.brain_id for b in brains),
     )
 
     # Shutdown event

@@ -38,7 +38,7 @@ async fn main() -> Result<()> {
         .collect();
 
     let ws_url = std::env::var("BINANCE_WS_URL")
-        .unwrap_or_else(|_| "wss://testnet.binance.vision/ws".to_string());
+        .unwrap_or_else(|_| "wss://demo-stream.binance.com/ws".to_string());
 
     let ws_engine = ws::WebSocketEngine::new(ws_url, symbols);
     tokio::spawn(async move {

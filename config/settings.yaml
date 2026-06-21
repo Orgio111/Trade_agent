@@ -9,9 +9,9 @@ exchange:
   symbols:
     - BTC/USDT
   default_symbol: BTC/USDT
-  # Binance TESTNET endpoints
-  rest_base: https://testnet.binance.vision/api/v3
-  ws_base: wss://testnet.binance.vision/ws
+  # Binance Demo Mode endpoints (testnet deprecated; use demo-api/demo-stream)
+  rest_base: https://demo-api.binance.com/api/v3
+  ws_base: wss://demo-stream.binance.com/ws
   # Timeframes (loaded from .env TRADE_TIMEFRAMES)
   timeframes:
     - 1h

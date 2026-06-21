@@ -232,8 +232,8 @@ impl BinanceConnector {
             api_key,
             secret,
             testnet: true,
-            base_url: "https://testnet.binance.vision/api".to_string(),
-            ws_url: "wss://testnet.binance.vision/ws".to_string(),
+            base_url: "https://demo-api.binance.com/api".to_string(),
+            ws_url: "wss://demo-stream.binance.com/ws".to_string(),
             client: Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
                 .build()
