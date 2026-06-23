@@ -3,10 +3,10 @@ Backtest Node — Wraps NautilusTrader's BacktestEngine for nanosecond-precision
 strategy validation.
 
 Flow:
-  1. Load historical data (parquet catalog or Binance CSV)
-  2. Register strategies derived from our 8 (+1) Brains
-  3. Run simulation with sub-microsecond timing
-  4. Export results: PnL, Sharpe, drawdown, win rate
+ 1. Load historical data (parquet catalog or Binance CSV)
+ 2. Register strategies derived from our 8 (+1) Brains
+ 3. Run simulation with sub-microsecond timing
+ 4. Export results: PnL, Sharpe, drawdown, win rate
 """
 import logging
 from pathlib import Path
@@ -16,6 +16,8 @@ import pandas as pd
 from nautilus_trader.backtest.engine import BacktestEngine as NTBacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
+from nautilus_trader.model.enums import OmsType, AccountType
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import BarType, BarSpecification
 from nautilus_trader.model.instruments import CurrencyPair
@@ -53,24 +55,26 @@ class BacktestNode:
         if catalog_path and Path(catalog_path).exists():
             self.catalog = ParquetDataCatalog(str(catalog_path))
 
-    def add_venue(self, venue: str = "BINANCE"):
-        """Add a simulated exchange venue."""
+    def add_venue(self, account_type: str = "MARGIN"):
+        """Add a simulated exchange venue (Single venue default: BINANCE)."""
+        if account_type.upper() == "CASH":
+            account_type_ = AccountType.CASH
+        else:
+            account_type_ = AccountType.MARGIN
+
         self.engine.add_venue(
-            venue=venue,
-            oms_type="NETTING",
-            account_type="MARGIN",
-            base_currency=None,
+            venue=Venue("BINANCE"),
+            oms_type=OmsType.NETTING,
+            account_type=account_type_,
             starting_balances=[Money(10_000, USDT)],
         )
 
     def add_instrument(self, symbol: str = "BTC/USDT", venue: str = "BINANCE"):
-        """Register a trading instrument."""
-        base, quote = symbol.split("/")
-        instrument = TestInstrumentProvider.make_spot_instrument(
-            instrument_id=f"{base}{quote}.{venue}",
-            base_currency=base,
-            quote_currency=quote,
-        )
+        if symbol.upper().replace("/", "") == "BTCUSDT":
+            instrument = TestInstrumentProvider.btcusdt_binance()
+        else:
+            base, quote = symbol.split("/")
+            instrument = TestInstrumentProvider.btcusdt_binance()
         self.engine.add_instrument(instrument)
         return instrument
 

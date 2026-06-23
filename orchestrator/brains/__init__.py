@@ -17,9 +17,23 @@ from .onchain_brain import OnChainBrain
 from .statarb_brain import StatArbBrain
 from .orderflow_nautilus_brain import OrderFlowNautilusBrain
 
+# ── BRAIN_REGISTRY: name → class mapping ──────────────────────────────────
+BRAIN_REGISTRY: dict[str, type[BaseBrain]] = {
+    "timesfm":              TimesFMBrain,
+    "freqai":               FreqAIBrain,
+    "llm_regime":           LLMRegimeBrain,
+    "microstructure":       MicrostructureBrain,
+    "finbert":              FinBERTBrain,
+    "finrl":                FinRLBrain,
+    "onchain":              OnChainBrain,
+    "statarb":              StatArbBrain,
+    "orderflow_nautilus":   OrderFlowNautilusBrain,
+}
+
 __all__ = [
     "BaseBrain",
     "BrainSignal",
+    "BRAIN_REGISTRY",
     "TimesFMBrain",
     "FreqAIBrain",
     "LLMRegimeBrain",

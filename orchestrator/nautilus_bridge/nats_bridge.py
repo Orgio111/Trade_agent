@@ -73,8 +73,6 @@ class NATSBridge:
         self.nc = await nats.connect(
             self.nats_url,
             name="quantex-nautilus-bridge",
-            reconnect_wait=2,
-            max_reconnect=60,
         )
         self.js = self.nc.jetstream()
 
