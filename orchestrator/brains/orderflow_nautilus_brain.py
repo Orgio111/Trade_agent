@@ -180,7 +180,7 @@ class OrderFlowNautilusBrain(BaseBrain):
                 metadata={"reason": "insufficient_trades"},
             )
 
-        ofi_values = list(self._cum_ofi[-self._lookback:]) if self._cum_ofi else []
+        ofi_values = list(self._cum_ofi)[-self._lookback:] if self._cum_ofi else []
         if not ofi_values:
             return BrainSignal(
                 brain_id=self.brain_id,

@@ -25,7 +25,7 @@ Headlines:
 {headlines}
 
 Return ONLY a JSON object:
-{"sentiment": "very_bullish"|"bullish"|"neutral"|"bearish"|"very_bearish", "confidence": 0.0-1.0, "key_signal": "brief explanation"}
+{{"sentiment": "very_bullish"|"bullish"|"neutral"|"bearish"|"very_bearish", "confidence": 0.0-1.0, "key_signal": "brief explanation"}}
 """
 
 

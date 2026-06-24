@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 REGIME_PROMPT = """You are a market regime classifier. Given the following market data, classify the current regime.
 
 Return ONLY a JSON object:
-{"regime": "trending_up"|"trending_down"|"ranging"|"volatile"|"crisis", "confidence": 0.0-1.0, "rationale": "brief explanation"}
+{{"regime": "trending_up"|"trending_down"|"ranging"|"volatile"|"crisis", "confidence": 0.0-1.0, "rationale": "brief explanation"}}
 
 Market context:
 - Symbol: {symbol}
