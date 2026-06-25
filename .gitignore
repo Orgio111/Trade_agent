@@ -59,3 +59,14 @@ models/
 *.rl
 *hmm_vs_adk_comprarison.json
 training_history.json
+
+# ── Second brain (wiki/) ──────────────────────────────────────────────
+# Ignore Obsidian's per-user workspace state (machine-specific).
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+
+# Raw knowledge is committed (papers, articles, notes = the source of truth).
+# But large datasets/backtest dumps that are *inputs* to study should not bloat the repo.
+wiki/raw/data/*.parquet
+wiki/raw/data/*.csv
+wiki/raw/data/*.h5
