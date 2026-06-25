@@ -60,10 +60,14 @@ class LLMRegimeBrain(BaseBrain):
 
     def __init__(self) -> None:
         self.ollama_url = os.getenv("OLLAMA_URL", os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
-        self.ollama_model = os.getenv("OLLAMA_REGIME_MODEL", "llama3:8b")
-        self.nim_url = os.getenv("NIM_URL", "")
-        self.nim_model = os.getenv("NIM_REGIME_MODEL", "meta/llama3-8b-instruct")
+        self.ollama_model = os.getenv("OLLAMA_REGIME_MODEL", "qwen2.5:3b")
+        # Tier 2: NIM — free credits, 2nd priority after local Ollama
+        self.nim_key = os.getenv("NIM_API_KEY", os.getenv("NVIDIA_API_KEY", ""))
+        self.nim_url = os.getenv("NIM_URL", "https://integrate.api.nvidia.com")
+        self.nim_model = os.getenv("NIM_REGIME_MODEL", "meta/llama-3.1-8b-instruct")
+        # Tier 3: OpenRouter — free model fallback (gemma-4-31b-it:free, no paid models)
         self.openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+        self.openrouter_model = os.getenv("OPENROUTER_REGIME_MODEL", "google/gemma-4-31b-it:free")
         self.timeout = float(os.getenv("LLM_REGIME_TIMEOUT", "8.0"))
         self._http = httpx.AsyncClient(timeout=self.timeout)
         # Cache for Binance market data
@@ -72,28 +76,33 @@ class LLMRegimeBrain(BaseBrain):
         self._cache_ts: dict[str, float] = {}
 
     async def warmup(self) -> None:
-        """Verify LLM tiers are reachable."""
-        # Tier 1: Ollama
+        """Verify LLM tiers are reachable. Auto-discover available Ollama models."""
+        # Tier 1: Ollama — auto-discover if default model missing
         try:
             resp = await self._http.get(f"{self.ollama_url}/api/tags")
             if resp.status_code == 200:
                 models = [m["name"] for m in resp.json().get("models", [])]
-                if self.ollama_model not in models:
-                    logger.warning(f"[llm_regime] Model {self.ollama_model} not found in Ollama")
-                else:
+                if self.ollama_model not in models and models:
+                    # Auto-switch to first available model
+                    old = self.ollama_model
+                    self.ollama_model = models[0]
+                    logger.warning(f"[llm_regime] Model {old} not found, auto-selected {self.ollama_model}")
+                if self.ollama_model in models:
                     logger.info(f"[llm_regime] Ollama ready, model={self.ollama_model}")
+                elif not models:
+                    logger.warning("[llm_regime] Ollama has no models installed")
             else:
                 logger.warning(f"[llm_regime] Ollama returned HTTP {resp.status_code}")
         except Exception as e:
             logger.warning(f"[llm_regime] Ollama unreachable: {e}")
 
         # Tier 2: Report cloud availability
-        if self.nim_url:
-            logger.info(f"[llm_regime] NIM configured: {self.nim_url}")
+        if self.nim_key:
+            logger.info(f"[llm_regime] NIM configured: {self.nim_url} model={self.nim_model}")
         if self.openrouter_key:
-            logger.info("[llm_regime] OpenRouter key available")
-        if not self.nim_url and not self.openrouter_key:
-            logger.warning("[llm_regime] No cloud LLM configured (NIM_URL, OPENROUTER_API_KEY)")
+            logger.info(f"[llm_regime] OpenRouter key available, model={self.openrouter_model}")
+        if not self.nim_key and not self.openrouter_key:
+            logger.warning("[llm_regime] No cloud LLM configured (NIM_API_KEY / NVIDIA_API_KEY, OPENROUTER_API_KEY)")
 
     async def compute_score(self, symbol: str) -> BrainSignal:
         """Classify market regime and map to directional score."""
@@ -103,7 +112,7 @@ class LLMRegimeBrain(BaseBrain):
         regime, confidence = await self._query_ollama(context)
 
         # Tier 2: Cloud fallback if local fails or low confidence
-        if regime is None and (self.nim_url or self.openrouter_key):
+        if regime is None and (self.nim_key or self.openrouter_key):
             regime, confidence = await self._query_cloud(context)
 
         if regime is None:
@@ -218,11 +227,11 @@ class LLMRegimeBrain(BaseBrain):
         return None, 0.0
 
     async def _query_cloud(self, context: dict) -> tuple[str | None, float]:
-        """Query NVIDIA NIM or OpenRouter as cloud fallback."""
+        """Query NIM (tier 2) or OpenRouter free (tier 3) as cloud fallback."""
         prompt = REGIME_PROMPT.format(**context)
 
-        # Try NIM first
-        if self.nim_url:
+        # Tier 2: NIM (free NVIDIA credits)
+        if self.nim_key:
             try:
                 resp = await self._http.post(
                     f"{self.nim_url}/v1/chat/completions",
@@ -232,21 +241,24 @@ class LLMRegimeBrain(BaseBrain):
                         "temperature": 0.1,
                         "max_tokens": 200,
                     },
-                    headers={"Authorization": f"Bearer {os.getenv('NIM_API_KEY', '')}"},
+                    headers={"Authorization": f"Bearer {self.nim_key}", "Content-Type": "application/json"},
                 )
                 if resp.status_code == 200:
                     text = resp.json()["choices"][0]["message"]["content"]
+                    logger.info("[llm_regime] NIM tier OK")
                     return self._parse_regime_response(text)
+                else:
+                    logger.debug(f"[llm_regime] NIM HTTP {resp.status_code}")
             except Exception as e:
                 logger.debug(f"[llm_regime] NIM error: {e}")
 
-        # Try OpenRouter
+        # Tier 3: OpenRouter free model
         if self.openrouter_key:
             try:
                 resp = await self._http.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     json={
-                        "model": "meta-llama/llama-3-8b-instruct",
+                        "model": self.openrouter_model,
                         "messages": [{"role": "user", "content": prompt}],
                         "temperature": 0.1,
                         "max_tokens": 200,
@@ -255,7 +267,10 @@ class LLMRegimeBrain(BaseBrain):
                 )
                 if resp.status_code == 200:
                     text = resp.json()["choices"][0]["message"]["content"]
+                    logger.info("[llm_regime] OpenRouter free tier OK")
                     return self._parse_regime_response(text)
+                else:
+                    logger.debug(f"[llm_regime] OpenRouter HTTP {resp.status_code}")
             except Exception as e:
                 logger.debug(f"[llm_regime] OpenRouter error: {e}")
 

@@ -61,6 +61,89 @@ class FinRLBrain(BaseBrain):
         self._trade_log_path = Path(self._model_dir) / "trade_history.json"
         self._trained = False
 
+    def _try_load_ppo(self, path: str) -> None:
+        """Load PPO model with SB3/torch compat workaround.
+
+        SB3 2.9 + torch 2.12 has a PyTorchFileReader bug that prevents
+        PPO.load() from reading .pth inside the zip. Workaround: extract
+        the policy state dict manually and inject it into a fresh model.
+        """
+        try:
+            from stable_baselines3 import PPO
+            import zipfile, io
+
+            # Step 1: Try normal PPO.load (works on older torch/SB3)
+            try:
+                self._ppo_agent = PPO.load(path)
+                self._trained = True
+                logger.info("[finrl_kelly] PPO agent loaded (standard path) from %s", path)
+                return
+            except RuntimeError:
+                pass  # Fall through to workaround
+
+            # Step 2: Extract policy state dict from zip manually
+            with zipfile.ZipFile(path, "r") as zf:
+                if "policy.pth" not in zf.namelist():
+                    logger.warning("[finrl_kelly] No policy.pth in zip: %s", path)
+                    return
+                with zf.open("policy.pth") as f:
+                    import torch
+                    policy_sd = torch.load(
+                        io.BytesIO(f.read()),
+                        map_location="cpu",
+                        weights_only=False,
+                    )
+
+            # Step 3: Create a fresh PPO and inject the state dict
+            # We need an env with matching obs/action spaces; use a default
+            try:
+                # Try to detect obs shape from the saved policy
+                first_key = next(iter(policy_sd))
+                obs_dim = policy_sd[first_key].shape[-1] if policy_sd[first_key].ndim > 1 else 22
+            except Exception:
+                obs_dim = 22
+
+            import gymnasium as gym
+            from gymnasium import spaces
+            class _DummyEnv(gym.Env):
+                def __init__(self, obs_dim, n_actions=3):
+                    super().__init__()
+                    self.observation_space = spaces.Box(-np.inf, np.inf, shape=(obs_dim,), dtype=np.float32)
+                    self.action_space = spaces.Discrete(n_actions)
+                def reset(self, seed=None, options=None):
+                    super().reset(seed=seed)
+                    return self.observation_space.sample(), {}
+                def step(self, action):
+                    return self.observation_space.sample(), 0.0, True, False, {}
+
+            # Detect action space shape from policy output layer
+            # MlpPolicy: last layer is action_net with shape (n_actions, hidden)
+            action_dim = 3  # default: HOLD/BUY/SELL
+            for k, v in policy_sd.items():
+                if "action_net" in k and v.ndim == 2:
+                    action_dim = v.shape[0]
+                    break
+            
+            # Find obs dim from input layer
+            for k, v in policy_sd.items():
+                if "policy_net.0.weight" in k and v.ndim == 2:
+                    obs_dim = v.shape[1]
+                    break
+
+            dummy = _DummyEnv(obs_dim, action_dim)
+            model = PPO("MlpPolicy", dummy, verbose=0)
+            model.policy.load_state_dict(policy_sd, strict=False)
+            self._ppo_agent = model
+            self._trained = True
+            logger.info(
+                "[finrl_kelly] PPO loaded (workaround: extract+inject) from %s",
+                path,
+            )
+        except ImportError:
+            logger.warning("[finrl_kelly] stable_baselines3 not installed, using Kelly only")
+        except Exception as e:
+            logger.warning("[finrl_kelly] Model load failed: %s", e)
+
     async def warmup(self) -> None:
         """Attempt to load trained PPO agent and past trade history."""
         # Load past trade history from disk
@@ -69,28 +152,15 @@ class FinRLBrain(BaseBrain):
         # Try loading existing PPO model
         model_path = os.getenv("FINRL_MODEL_PATH", "")
         if model_path and os.path.exists(model_path):
-            try:
-                from stable_baselines3 import PPO
-                self._ppo_agent = PPO.load(model_path)
-                self._trained = True
-                logger.info("[finrl_kelly] PPO agent loaded from %s", model_path)
+            self._try_load_ppo(model_path)
+            if self._trained:
                 return
-            except ImportError:
-                logger.warning("[finrl_kelly] stable_baselines3 not installed, using Kelly only")
-            except Exception as e:
-                logger.warning("[finrl_kelly] Model load failed: %s", e)
 
         # Auto-discover from model dir
         model_dir = Path(self._model_dir)
         model_file = model_dir / "ppo_finrl.zip"
         if model_file.exists():
-            try:
-                from stable_baselines3 import PPO
-                self._ppo_agent = PPO.load(str(model_file))
-                self._trained = True
-                logger.info("[finrl_kelly] Loaded cached PPO from %s", model_file)
-            except Exception as e:
-                logger.warning("[finrl_kelly] Cached model load failed: %s", e)
+            self._try_load_ppo(str(model_file))
 
         # Auto-train if enough trade history
         if len(self._trade_history) >= 50 and not self._trained:
@@ -171,7 +241,11 @@ class FinRLBrain(BaseBrain):
             logger.debug("[finrl_kelly] Trade history save failed: %s", e)
 
     def _auto_train_ppo(self) -> None:
-        """Auto-train PPO agent from accumulated trade history."""
+        """Auto-train PPO agent from accumulated trade history.
+
+        Uses Discrete(3) action space (HOLD/BUY/SELL) and 21-dim obs
+        to match retrain_finrl.py so models are interchangeable.
+        """
         try:
             from stable_baselines3 import PPO
             from stable_baselines3.common.env_util import make_vec_env
@@ -183,60 +257,72 @@ class FinRLBrain(BaseBrain):
             return
 
         try:
-            # Build simple environment from trade history
             import gymnasium as gym
             from gymnasium import spaces
 
+            WINDOW = 20  # must match retrain_finrl.py
+
             class TradeEnv(gym.Env):
-                """Minimal trading environment for PPO training from historical trades."""
+                """Trading environment from historical trades, matching
+                retrain_finrl.TradingEnv obs/action spaces."""
 
                 def __init__(self, trade_data):
                     super().__init__()
                     self.trade_data = trade_data
                     self.idx = 0
+                    self.window = WINDOW
+                    # obs: (window-1) returns + position + unrealized_pnl
                     self.observation_space = spaces.Box(
-                        low=-1, high=1, shape=(5,), dtype=np.float32
+                        low=-np.inf, high=np.inf,
+                        shape=(WINDOW - 1 + 2,), dtype=np.float32,
                     )
-                    self.action_space = spaces.Box(
-                        low=-1, high=1, shape=(1,), dtype=np.float32
-                    )
+                    self.action_space = spaces.Discrete(3)  # HOLD=0, BUY=1, SELL=2
+                    self.position = 0  # -1, 0, +1
+                    self.unrealized = 0.0
 
                 def reset(self, seed=None, options=None):
                     super().reset(seed=seed)
-                    self.idx = 0
+                    self.idx = WINDOW
+                    self.position = 0
+                    self.unrealized = 0.0
                     return self._get_obs(), {}
 
                 def step(self, action):
-                    if self.idx >= len(self.trade_data):
-                        return self._get_obs(), 0.0, True, False, {}
-                    trade = self.trade_data[self.idx]
-                    actual_pnl = trade["pnl_pct"]
-                    # Reward: high if action direction matches trade outcome
-                    action_val = float(action[0]) if hasattr(action, '__len__') else float(action)
-                    reward = actual_pnl * action_val * 10  # scale up for learning
-                    self.idx += 1
                     done = self.idx >= len(self.trade_data) - 1
-                    return self._get_obs(), reward, done, False, {}
+                    trade = self.trade_data[min(self.idx, len(self.trade_data) - 1)]
+                    pnl = trade["pnl_pct"]
+
+                    # Update position
+                    if action == 1:
+                        self.position = 1
+                    elif action == 2:
+                        self.position = -1
+                    else:
+                        self.position = 0
+
+                    reward = self.position * pnl * 10  # scale for learning
+                    self.unrealized += self.position * pnl
+                    self.idx += 1
+                    return self._get_obs(), float(reward), done, False, {}
 
                 def _get_obs(self):
-                    wins = [t for t in self.trade_data[:self.idx + 1] if t["win"]]
-                    n = max(1, self.idx + 1)
-                    wr = len(wins) / n
-                    avg_win = np.mean([t["pnl_pct"] for t in wins]) if wins else 0.0
-                    losses = [t for t in self.trade_data[:self.idx + 1] if not t["win"]]
-                    avg_loss = np.mean([abs(t["pnl_pct"]) for t in losses]) if losses else 0.01
-                    kelly = self._compute_kelly_inline(n, wr, avg_win, avg_loss)
-                    return np.array([kelly, wr, avg_win, avg_loss, min(1.0, n / 500)],
-                                    dtype=np.float32)
+                    # Recent trade returns as pseudo price series
+                    start = max(0, self.idx - self.window)
+                    recent = self.trade_data[start:self.idx]
+                    rets = np.array([t["pnl_pct"] for t in recent], dtype=np.float32)
+                    if len(rets) < self.window:
+                        rets = np.pad(rets, (self.window - len(rets), 0))
+                    returns = np.diff(rets) / (np.abs(rets[:-1]) + 1e-10)
+                    returns = np.clip(returns, -1, 1)
+                    if len(returns) < self.window - 1:
+                        returns = np.pad(returns, (self.window - 1 - len(returns), 0))
 
-                @staticmethod
-                def _compute_kelly_inline(n, wr, avg_win, avg_loss):
-                    if avg_loss == 0:
-                        return 0.0
-                    b = avg_win / avg_loss
-                    q = 1.0 - wr
-                    kelly = (wr * b - q) / b
-                    return float(np.clip(kelly * 0.5, -1, 1))
+                    obs = np.concatenate([
+                        returns,
+                        np.array([float(self.position), float(self.unrealized)],
+                                 dtype=np.float32),
+                    ])
+                    return obs.astype(np.float32)
 
             trade_data = list(self._trade_history)
             env = make_vec_env(lambda: TradeEnv(trade_data), n_envs=1)
@@ -314,13 +400,22 @@ class FinRLBrain(BaseBrain):
         return 0.8
 
     def _build_observation(self, symbol: str) -> np.ndarray:
-        """Build observation vector for PPO agent."""
-        # Simple state: [kelly_frac, win_rate, avg_win, avg_loss, trade_count_normalized]
-        kelly = self._compute_kelly()
-        wins = [t for t in self._trade_history if t["win"]]
-        win_rate = len(wins) / max(1, len(self._trade_history))
-        avg_win = float(np.mean([t["pnl_pct"] for t in wins])) if wins else 0.0
-        avg_loss = float(np.mean([abs(t["pnl_pct"]) for t in self._trade_history if not t["win"]])) if len(self._trade_history) > len(wins) else 0.01
-        count_norm = min(1.0, len(self._trade_history) / 500)
+        """Build observation vector matching PPO training environment.
 
-        return np.array([kelly, win_rate, avg_win, avg_loss, count_norm], dtype=np.float32)
+        PPO trained with TradingEnv(obs_dim=21): 19 normalized returns + position + unrealized_pnl.
+        Since we don't have a price series here, we synthesize from trade history statistics.
+        """
+        n_history = len(self._trade_history)
+        # Build a pseudo observation from trade history
+        # First 19 dims: synthetic "return series" from recent trades
+        recent = list(self._trade_history)[-19:] if n_history >= 19 else list(self._trade_history)
+        returns = np.array([t["pnl_pct"] for t in recent], dtype=np.float32)
+        if len(returns) < 19:
+            returns = np.pad(returns, (19 - len(returns), 0), constant_values=0.0)
+        returns = np.clip(returns, -0.1, 0.1) / 0.1  # normalize
+
+        # Position and unrealized PnL (from Kelly direction)
+        kelly = self._compute_kelly()
+        position = 1.0 if kelly > 0 else (-1.0 if kelly < 0 else 0.0)
+
+        return np.concatenate([returns, np.array([position, kelly], dtype=np.float32)])

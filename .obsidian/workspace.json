@@ -4,11 +4,11 @@
     "type": "split",
     "children": [
       {
-        "id": "d68edbb0a8dda131",
+        "id": "71a6e3ff688e5647",
         "type": "tabs",
         "children": [
           {
-            "id": "90342e63e66308e1",
+            "id": "d7b5b667e792efbc",
             "type": "leaf",
             "state": {
               "type": "empty",
@@ -176,8 +176,22 @@
       "bases:Create new base": false
     }
   },
-  "active": "90342e63e66308e1",
+  "active": "d7b5b667e792efbc",
   "lastOpenFiles": [
+    "wiki/ZCODE.md",
+    "wiki/log.md",
+    "wiki/index.md",
+    "wiki/README.md",
+    "wiki/content/strategies",
+    "wiki/content/sources",
+    "wiki/content/playbooks",
+    "wiki/content/overviews",
+    "wiki/content/indicators",
+    "wiki/content/entities",
+    "wiki/content/decisions",
+    "wiki/content/concepts",
+    "wiki/content/comparisons",
+    "wiki/content",
     "frontend/node_modules/next/dist/docs/01-app/03-api-reference/04-functions/userAgent.md",
     "execution/target/release/build/zerocopy-c839572cdb04c7bb/stderr.md",
     "README.md"

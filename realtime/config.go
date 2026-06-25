@@ -13,17 +13,18 @@ type BrainWeight struct {
 	Weight float64
 }
 
-// Default weights for the 8 Trinity Architecture brains.
+// Default weights for the 9 Trinity Architecture brains.
 // Total = 1.00 (timesfm gets highest as lead forecaster).
 var DefaultBrainWeights = []BrainWeight{
 	{ID: "timesfm", Weight: 0.25},
 	{ID: "freqai", Weight: 0.15},
-	{ID: "llm_regime", Weight: 0.10},
+	{ID: "llm_regime", Weight: 0.15},
 	{ID: "microstructure", Weight: 0.10},
+	{ID: "orderflow_nautilus", Weight: 0.12},
 	{ID: "finbert", Weight: 0.10},
 	{ID: "finrl", Weight: 0.10},
-	{ID: "onchain", Weight: 0.10},
 	{ID: "statarb", Weight: 0.10},
+	{ID: "onchain", Weight: 0.05},
 }
 
 // ── Orchestrator Configuration ─────────────────────────────────

@@ -62,11 +62,14 @@ class FinBERTBrain(BaseBrain):
     def __init__(self) -> None:
         self.ollama_url = os.getenv("OLLAMA_URL", os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
         self.ollama_models = os.getenv(
-            "OLLAMA_SENTIMENT_MODELS", os.getenv("OLLAMA_SENTIMENT_MODEL", "phi3:mini")
+            "OLLAMA_SENTIMENT_MODELS", os.getenv("OLLAMA_SENTIMENT_MODEL", "qwen2.5:3b,phi3:mini")
         ).split(",")
-        self.nim_url = os.getenv("NIM_URL", "")
-        self.nim_model = os.getenv("NIM_SENTIMENT_MODEL", "meta/llama3-8b-instruct")
+        self.nim_key = os.getenv("NIM_API_KEY", os.getenv("NVIDIA_API_KEY", ""))
+        self.nim_url = os.getenv("NIM_URL", "https://integrate.api.nvidia.com")
+        self.nim_model = os.getenv("NIM_SENTIMENT_MODEL", "meta/llama-3.1-8b-instruct")
+        # Tier 3: OpenRouter — free model fallback (gemma-4-31b-it:free, no paid models)
         self.openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+        self.openrouter_model = os.getenv("OPENROUTER_SENTIMENT_MODEL", "google/gemma-4-31b-it:free")
         self.timeout = float(os.getenv("SENTIMENT_TIMEOUT", "8.0"))
         self._http = httpx.AsyncClient(timeout=self.timeout)
         self._headlines: list[str] = []
@@ -75,11 +78,32 @@ class FinBERTBrain(BaseBrain):
         self._headlines_cache_ts: dict[str, float] = {}
 
     async def warmup(self) -> None:
+        # Auto-discover available Ollama models
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=5) as cx:
+                resp = await cx.get(f"{self.ollama_url}/api/tags")
+                if resp.status_code == 200:
+                    available = [m["name"] for m in resp.json().get("models", [])]
+                    resolved = []
+                    for m in self.ollama_models:
+                        if m in available:
+                            resolved.append(m)
+                        # try base name match (e.g. "phi3:mini" matches "phi3:mini")
+                    if not resolved and available:
+                        # Fallback: use first available model
+                        resolved = available[:2]  # at most 2 for concurrency
+                        logger.warning(f"[finbert_nlp] Configured models not found, auto-selected {resolved}")
+                    self.ollama_models = resolved or self.ollama_models
+        except Exception:
+            pass  # Ollama offline, cloud tiers will handle
         logger.info(f"[finbert_nlp] Ready (models={self.ollama_models})")
+        if self.nim_key:
+            logger.info(f"[finbert_nlp] NIM configured: {self.nim_url} model={self.nim_model}")
         if self.openrouter_key:
-            logger.info("[finbert_nlp] OpenRouter key available")
-        else:
-            logger.warning("[finbert_nlp] No OPENROUTER_API_KEY set, cloud tier unavailable")
+            logger.info(f"[finbert_nlp] OpenRouter key available, model={self.openrouter_model}")
+        elif not self.nim_key:
+            logger.warning("[finbert_nlp] No cloud LLM configured (NIM_API_KEY / OPENROUTER_API_KEY)")
 
     async def compute_score(self, symbol: str) -> BrainSignal:
         # Auto-fetch headlines if empty
@@ -257,14 +281,14 @@ class FinBERTBrain(BaseBrain):
         return None, 0.0
 
     async def _query_cloud(self, symbol: str) -> tuple[float | None, float]:
-        """Query cloud API for consensus sentiment."""
+        """Query NIM (tier 2) or OpenRouter free (tier 3) for consensus sentiment."""
         prompt = SENTIMENT_PROMPT.format(
             symbol=symbol,
             headlines="\n".join(f"- {h}" for h in self._headlines[:10]),
         )
 
-        # Try NIM
-        if self.nim_url:
+        # Tier 2: NIM (free NVIDIA credits)
+        if self.nim_key:
             try:
                 resp = await self._http.post(
                     f"{self.nim_url}/v1/chat/completions",
@@ -274,23 +298,26 @@ class FinBERTBrain(BaseBrain):
                         "temperature": 0.1,
                         "max_tokens": 150,
                     },
-                    headers={"Authorization": f"Bearer {os.getenv('NIM_API_KEY', '')}"},
+                    headers={"Authorization": f"Bearer {self.nim_key}", "Content-Type": "application/json"},
                 )
                 if resp.status_code == 200:
                     text = resp.json()["choices"][0]["message"]["content"]
                     sentiment, conf = self._parse_sentiment(text)
                     if sentiment:
+                        logger.info("[finbert_nlp] NIM tier OK")
                         return self._sentiment_to_score(sentiment, conf), conf
-            except Exception:
-                pass
+                else:
+                    logger.debug(f"[finbert_nlp] NIM HTTP {resp.status_code}")
+            except Exception as e:
+                logger.debug(f"[finbert_nlp] NIM error: {e}")
 
-        # Try OpenRouter free tier
+        # Tier 3: OpenRouter free model
         if self.openrouter_key:
             try:
                 resp = await self._http.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     json={
-                        "model": "meta-llama/llama-3-8b-instruct",
+                        "model": self.openrouter_model,
                         "messages": [{"role": "user", "content": prompt}],
                         "temperature": 0.1,
                         "max_tokens": 150,
@@ -301,9 +328,12 @@ class FinBERTBrain(BaseBrain):
                     text = resp.json()["choices"][0]["message"]["content"]
                     sentiment, conf = self._parse_sentiment(text)
                     if sentiment:
+                        logger.info("[finbert_nlp] OpenRouter free tier OK")
                         return self._sentiment_to_score(sentiment, conf), conf
-            except Exception:
-                pass
+                else:
+                    logger.debug(f"[finbert_nlp] OpenRouter HTTP {resp.status_code}")
+            except Exception as e:
+                logger.debug(f"[finbert_nlp] OpenRouter error: {e}")
 
         return None, 0.0
 

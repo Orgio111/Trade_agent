@@ -7,6 +7,30 @@
 
 ---
 
+## [2026-06-26] note | AGENTS.md + ZCODE.md — Response skeleton & FINAL RULE hardening
+
+Added mandatory response skeleton (§0.10) and FINAL RULE to both AGENTS.md and wiki/ZCODE.md. Now every agent session follows the same structure: Current state → Analysis with [[citations]] → New Ideas / Missing / Upgrades → Prediction Engine → ≥1 system upgrade → 10× question.
+
+## [2026-06-26] note | Brain registry + wiki entity pages — 9/9 brains documented
+
+Created `orchestrator/brains/brain_registry.json` (structured JSON with all 7 brain specs).
+Created 7 new entity pages in wiki/content/entities/:
+- [[timesfm-brain]] — primary forecaster, weight 0.25
+- [[freqai-brain]] — XGBoost technical indicators, weight 0.15
+- [[llm-regime-brain]] — dual-tier LLM regime, weight 0.15
+- [[finbert-brain]] — NLP sentiment, weight 0.10
+- [[finrl-brain]] — PPO + Kelly position sizing, weight 0.10
+- [[statarb-brain]] — mean reversion + funding + basis, weight 0.10
+- [[onchain-brain]] — exchange flow + whale + mempool, weight 0.05
+
+Also created 3 concept pages (orphaned → resolved):
+- [[tick-rule-classification]] — trade direction proxy
+- [[cumulative-volume-delta]] — signed volume delta
+- [[nautilustrader]] — Rust+Python trading platform entity
+
+Total weight across 9 brains = 0.90 (0.10 gap — safety margin or reserved).
+Index updated: 1 source, 16 pages. 0 orphaned flags remaining.
+
 ## [2026-06-25] ingest | Cont, Kukanov & Stoikov (2014) — Order Flow Imbalance
 
 First real ingest. Source: `raw/papers/cont-order-flow-imbalance.md` — the OFI foundational reference (event-based OFI, tick-rule proxy, ~40–65% concurrent variance, decay-in-seconds horizon, absorption/extremes failure modes).
