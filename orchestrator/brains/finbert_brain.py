@@ -11,6 +11,8 @@ import asyncio
 import json
 import logging
 import os
+import time
+from pathlib import Path
 
 import httpx
 import numpy as np
@@ -18,6 +20,16 @@ import numpy as np
 from .base_brain import BaseBrain, BrainSignal
 
 logger = logging.getLogger(__name__)
+
+# ── .env auto-load ─────────────────────────────────────
+try:
+    from dotenv import load_dotenv
+    _project_root = Path(__file__).resolve().parents[2]
+    _env_file = _project_root / ".env"
+    if _env_file.exists():
+        load_dotenv(_env_file, override=False)
+except ImportError:
+    pass
 
 SENTIMENT_PROMPT = """Analyze the sentiment of these crypto market headlines for {symbol}.
 
@@ -36,6 +48,11 @@ class FinBERTBrain(BaseBrain):
       Tier 1: Local Ollama models (2 concurrent) for raw scoring
       Tier 2: Cloud NIM/OpenRouter for consensus fallback
     Outputs a bounded scalar between -1.0 (panic) and +1.0 (euphoria).
+
+    Features:
+      - Auto-fetches crypto news from CryptoCompare API
+      - Auto-loads OPENROUTER_API_KEY from .env
+      - Caches headlines per symbol (5-min TTL)
     """
 
     @property
@@ -43,9 +60,9 @@ class FinBERTBrain(BaseBrain):
         return "finbert_nlp"
 
     def __init__(self) -> None:
-        self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
+        self.ollama_url = os.getenv("OLLAMA_URL", os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
         self.ollama_models = os.getenv(
-            "OLLAMA_SENTIMENT_MODELS", "llama3:8b,phi3:mini"
+            "OLLAMA_SENTIMENT_MODELS", os.getenv("OLLAMA_SENTIMENT_MODEL", "phi3:mini")
         ).split(",")
         self.nim_url = os.getenv("NIM_URL", "")
         self.nim_model = os.getenv("NIM_SENTIMENT_MODEL", "meta/llama3-8b-instruct")
@@ -53,11 +70,21 @@ class FinBERTBrain(BaseBrain):
         self.timeout = float(os.getenv("SENTIMENT_TIMEOUT", "8.0"))
         self._http = httpx.AsyncClient(timeout=self.timeout)
         self._headlines: list[str] = []
+        # Cache for auto-fetched headlines
+        self._headlines_cache: dict[str, list[str]] = {}
+        self._headlines_cache_ts: dict[str, float] = {}
 
     async def warmup(self) -> None:
         logger.info(f"[finbert_nlp] Ready (models={self.ollama_models})")
+        if self.openrouter_key:
+            logger.info("[finbert_nlp] OpenRouter key available")
+        else:
+            logger.warning("[finbert_nlp] No OPENROUTER_API_KEY set, cloud tier unavailable")
 
     async def compute_score(self, symbol: str) -> BrainSignal:
+        # Auto-fetch headlines if empty
+        self._auto_fetch_headlines(symbol)
+
         if not self._headlines:
             return BrainSignal(
                 brain_id=self.brain_id,
@@ -115,7 +142,17 @@ class FinBERTBrain(BaseBrain):
                 metadata={"tier": "cloud"},
             )
 
-        # Total failure
+        # Total failure — produce a neutral score from keyword scan
+        keyword_score = self._keyword_fallback_score()
+        if keyword_score != 0.0:
+            return BrainSignal(
+                brain_id=self.brain_id,
+                symbol=symbol,
+                score=float(np.clip(keyword_score, -1.0, 1.0)),
+                confidence=0.2,
+                metadata={"tier": "keyword_fallback"},
+            )
+
         return BrainSignal(
             brain_id=self.brain_id,
             symbol=symbol,
@@ -123,6 +160,74 @@ class FinBERTBrain(BaseBrain):
             confidence=0.05,
             metadata={"tier": "failed", "reason": "all_tiers_unavailable"},
         )
+
+    def _auto_fetch_headlines(self, symbol: str) -> None:
+        """Fetch crypto news headlines from CryptoCompare API."""
+        now = time.time()
+        cache_ts = self._headlines_cache_ts.get(symbol, 0)
+        if (now - cache_ts) < 300 and symbol in self._headlines_cache:
+            self._headlines = self._headlines_cache[symbol]
+            return
+
+        try:
+            import requests
+            # Map symbol to CryptoCompare categories
+            base = symbol.split("/")[0].upper() if "/" in symbol else symbol.upper()
+            resp = requests.get(
+                f"https://min-api.cryptocompare.com/data/v2/news/?categories={base}",
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                articles = resp.json().get("Data", [])[:20]
+                headlines = [a.get("title", "") for a in articles if a.get("title")]
+                if headlines:
+                    self._headlines = headlines
+                    self._headlines_cache[symbol] = headlines
+                    self._headlines_cache_ts[symbol] = now
+                    logger.info("[finbert_nlp] Fetched %d headlines for %s from CryptoCompare",
+                                len(headlines), symbol)
+                    return
+        except Exception as e:
+            logger.debug(f"[finbert_nlp] CryptoCompare fetch failed: {e}")
+
+        # Fallback: CoinGecko trending
+        try:
+            import requests
+            resp = requests.get(
+                "https://api.coingecko.com/api/v3/search/trending",
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                coins = resp.json().get("coins", [])[:10]
+                headlines = [f"{c['item'].get('name', 'Crypto')} trending #{i+1}"
+                             for i, c in enumerate(coins) if c.get("item", {}).get("name")]
+                if headlines:
+                    self._headlines = headlines
+                    self._headlines_cache[symbol] = headlines
+                    self._headlines_cache_ts[symbol] = now
+                    logger.info("[finbert_nlp] Fetched %d trending from CoinGecko", len(headlines))
+                    return
+        except Exception as e:
+            logger.debug(f"[finbert_nlp] CoinGecko fetch failed: {e}")
+
+    def _keyword_fallback_score(self) -> float:
+        """Simple keyword-based sentiment when LLM is unavailable."""
+        if not self._headlines:
+            return 0.0
+        bullish_words = {"surge", "rally", "bullish", "breakout", "moon", "pump",
+                         "soar", "gain", "rise", " ATH", "all-time high", "adoption"}
+        bearish_words = {"crash", "dump", "bearish", "plunge", "fall", "drop",
+                         "sell-off", "ban", "hack", "rug", "collapse", "fear"}
+        score = 0.0
+        for h in self._headlines[:10]:
+            h_lower = h.lower()
+            for w in bullish_words:
+                if w in h_lower:
+                    score += 0.15
+            for w in bearish_words:
+                if w in h_lower:
+                    score -= 0.15
+        return float(np.clip(score, -1.0, 1.0))
 
     def push_headlines(self, headlines: list[str]) -> None:
         """Push new headlines for next analysis cycle."""
@@ -185,7 +290,7 @@ class FinBERTBrain(BaseBrain):
                 resp = await self._http.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     json={
-                        "model": "meta-llama/llama-3-8b-instruct:free",
+                        "model": "meta-llama/llama-3-8b-instruct",
                         "messages": [{"role": "user", "content": prompt}],
                         "temperature": 0.1,
                         "max_tokens": 150,
