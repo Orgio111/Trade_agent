@@ -193,5 +193,70 @@
     "tiers": [],
     "title": "OnChain Whale Brain",
     "weight": 0.05
+  },
+  {
+    "brain_id": "custom_nn",
+    "class": "CustomNNBrain",
+    "description": "Custom neural network (LSTM or Transformer) for temporal pattern recognition. Learns sequential patterns from OHLCV + technical indicators. Architecture selectable via CUSTOM_NN_ARCHITECTURE env var.",
+    "fallbacks": [
+      "rule-based RSI/MACD/Bollinger scoring"
+    ],
+    "models": [
+      "LSTM(input=12, hidden=64, layers=2) [default]",
+      "Transformer(input=12, d_model=64, heads=4, layers=2) [CUSTOM_NN_ARCHITECTURE=transformer]",
+      "auto-train from OHLCV (100+ bars)"
+    ],
+    "output": "score(-1..+1), confidence",
+    "parameters": {
+      "architecture": "lstm|transformer (env: CUSTOM_NN_ARCHITECTURE)",
+      "input_dim": 12,
+      "lstm_hidden_dim": 64,
+      "transformer_d_model": 64,
+      "transformer_nhead": 4,
+      "num_layers": 2,
+      "dropout": 0.1,
+      "lookback": 50,
+      "model_blend": "60/40 model/rules",
+      "train_epochs": 20
+    },
+    "push_methods": [
+      "push_ohlcv"
+    ],
+    "slug": "neural-network-brain",
+    "source_file": "custom_nn_brain.py",
+    "tiers": [],
+    "title": "Custom NN Brain",
+    "weight": 0.05
+  },
+  {
+    "brain_id": "polymarket_alpha",
+    "class": "PolymarketBrain",
+    "description": "Prediction-market alpha engine. 5-formula mathematical pipeline: Bayesian evidence tracking, longshot bias correction, EV/ROI filter, Quarter-Kelly sizing, Nash-equilibrium order routing. Config-driven empirical constants from 72M trade analysis.",
+    "fallbacks": [
+      "zero on no market data"
+    ],
+    "models": [
+      "Bayesian LR shortcut",
+      "longshot bias correction (57% floor, +2% boost)",
+      "Quarter-Kelly (0.25x, 5% cap)",
+      "Nash Router (70% MAKER, +1.12% edge)"
+    ],
+    "output": "score(-1..+1 YES/NO bias), confidence, direction, EV, ROI, Kelly, route",
+    "parameters": {
+      "kelly_quarter_factor": 0.25,
+      "kelly_hard_cap": 0.05,
+      "maker_default_probability": 0.70,
+      "maker_edge_pct": 0.0112,
+      "taker_threshold_pct": 0.20
+    },
+    "push_methods": [
+      "push_evidence",
+      "push_market"
+    ],
+    "slug": "polymarket-brain",
+    "source_file": "polymarket_brain.py",
+    "tiers": [],
+    "title": "Polymarket Alpha Brain",
+    "weight": 0.05
   }
 ]

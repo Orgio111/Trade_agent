@@ -1,0 +1,30 @@
+# Polymarket Alpha Engine — Empirical Constants
+# Derived from 72M trade analysis. Override these defaults without touching code.
+
+# ── Formula 1: Bayesian Evidence Tracking ──────────────────────
+# LR jump threshold: |posterior_change| > this triggers re-evaluation
+bayesian_jump_threshold: 0.20
+
+# ── Formula 2: Longshot Bias Correction ────────────────────────
+# Price < 0.10 → actual win rate = 57% of quoted (longshot_penalty)
+# Price > 0.80 → actual win rate = quoted + 2% (favorite_boost)
+longshot_low_threshold: 0.10
+longshot_high_threshold: 0.80
+longshot_low_penalty: 0.57
+longshot_high_boost: 0.02
+
+# ── Formula 4: Quarter-Kelly Position Sizing ───────────────────
+# f_safe = 0.25 × f_kelly, capped at 5% of bankroll
+kelly_quarter_factor: 0.25
+kelly_hard_cap: 0.05
+
+# ── Formula 5: Nash Equilibrium Router ─────────────────────────
+# Default 70% MAKER; switch to TAKER if ROI > 20%
+# MAKER edge from empirical analysis: +1.12%
+maker_default_probability: 0.70
+maker_edge_pct: 0.0112
+taker_threshold_pct: 0.20
+
+# ── Brain Weight ───────────────────────────────────────────────
+# Weight in Go orchestrator weighted aggregation (supplementary signal)
+brain_weight: 0.05
