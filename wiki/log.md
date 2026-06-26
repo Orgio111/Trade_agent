@@ -7,6 +7,70 @@
 
 ---
 
+## [2026-06-26] note | Custom NN Brain — Transformer architecture added
+
+Added Transformer architecture alongside LSTM in `orchestrator/brains/custom_nn_brain.py`:
+- Created `TransformerPredictor` class — multi-head self-attention (4 heads, d_model=64, 2 layers), sinusoidal positional encoding
+- Added `forward_with_attention()` — manually runs last encoder layer with `need_weights=True` for reliable attention capture
+- Architecture selection via `CUSTOM_NN_ARCHITECTURE` env var (default: `lstm`, options: `lstm` / `transformer`)
+- Attention weight averaging across heads → `attention_top_positions` and `attention_entropy` in metadata
+- Model checkpoint format with config dict for Transformer, raw state_dict for LSTM
+- Removed dead code, unused imports
+
+Test results:
+- Transformer: Score=-0.095, Confidence=25%, Attention weights captured successfully
+- LSTM backward compat: Score=-0.1447, Confidence=25%, Auto-train working
+- Both architectures pass all assertions
+
+Updated `brain_registry.json` — Transformer model entry added.
+Updated `wiki/content/entities/neural-network-brain.md` — status: stable, Transformer specs added.
+
+## [2026-06-26] note | Custom NN Brain — implemented, tested, benchmarked
+
+Brain #10 (custom_nn) implemented and validated:
+- Created `orchestrator/brains/custom_nn_brain.py` — LSTM brain with rule-based fallback
+- Updated `brain_registry.json` — weight 0.05, total now 0.95
+- Created `test_custom_nn_brain.py` — standalone test script
+- Created `bench_custom_nn_brain.py` — performance benchmark
+- Updated `wiki/content/entities/neural-network-brain.md` — status: stable
+- Fixed tensor dimension bug in auto_train (sequence building)
+- Fixed UnicodeEncodeError in test scripts (ASCII fallback)
+
+Benchmark results:
+- Cold call: 6,132ms (Binance data fetch)
+- Warm call: 14.5ms avg (min 14.2ms, max 14.9ms)
+- Cadence headroom: ~14,985ms per 15s tick
+- Auto-train: working (LSTM trained on 200 bars)
+- Score: -0.1675, Confidence: 25%
+
+## [2026-06-26] note | Custom NN Brain — full research documented in wiki
+
+Completed comprehensive research for proposed brain #10 (custom neural network brain). All findings documented in wiki:
+- Created [[custom-trading-brain-architecture]] (concept) — full architecture design, observation space, training pipeline, evaluation metrics
+- Created [[neural-network-brain]] (entity) — brain specifications, ecosystem fit, learning path
+- Created [[nn-brain-development-guide]] (playbook) — step-by-step development guide with code examples
+- Updated [[codecrafters-build-your-own-x]] (source) — added Karpathy course deep dive, LSTM vs Transformer analysis
+- Updated `index.md`: 2 sources, 24 pages
+
+Key decisions:
+- Start with LSTM for prototyping (1-2 days), migrate to Transformer for production
+- Weight: 0.05 (new total: 0.95)
+- Observation space: 128-dim (compatible with existing TradingEnvironment)
+- Training: 180d BTCUSDT 1h from Binance, PPO algorithm
+- Expert recommendation: LSTM overfits on market noise; Transformer attention is better for crypto
+
+**Status: Research complete, implementation pending.**
+
+## [2026-06-26] ingest | CodeCrafters Build your own X — meta-learning resource
+
+Second ingest. Source: `raw/build-your-own-x.md` — CodeCrafters' curated index of 200+ step-by-step tutorials for building core CS technologies from scratch, spanning 30+ categories.
+
+- Created [[build-your-own-x]] (source page) with category-to-component mapping for Trade_agent relevance.
+- Created [[build-your-own-x]] (concept page) documenting the Feynman learning-by-building philosophy and how it applies to our system architecture.
+- Updated `index.md`: 2 sources, 19 pages.
+- **Relevance**: neural network tutorials → inform [[finrl-brain]]/[[freqai-brain]] tuning; database internals → data pipeline design; distributed systems → Go orchestrator patterns; blockchain → [[onchain-brain]] depth.
+- **No contradictions** with existing wiki content. This is a meta-resource, not a technical claim.
+
 ## [2026-06-26] note | AGENTS.md + ZCODE.md — Response skeleton & FINAL RULE hardening
 
 Added mandatory response skeleton (§0.10) and FINAL RULE to both AGENTS.md and wiki/ZCODE.md. Now every agent session follows the same structure: Current state → Analysis with [[citations]] → New Ideas / Missing / Upgrades → Prediction Engine → ≥1 system upgrade → 10× question.
