@@ -7,6 +7,15 @@
 
 ---
 
+## [2026-06-26] note | Attention-based regime detection — research documented
+
+Researched using Transformer attention weights for automatic market regime classification:
+- Created [[attention-based-regime-detection]] (concept page) — full analysis of attention entropy, pattern shape, clustering approaches
+- Key finding: attention entropy correlates with market regime (low=trending, high=volatile)
+- Proposed 3-phase implementation: entropy filter → pattern clustering → dynamic brain weights
+- Integration point: `ensemble_meta.py` as 5th regime signal source
+- Validation plan: backtest entropy vs volatility (1 week), paper trade (1 month)
+
 ## [2026-06-26] note | Custom NN Brain — Transformer architecture added
 
 Added Transformer architecture alongside LSTM in `orchestrator/brains/custom_nn_brain.py`:

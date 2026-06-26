@@ -38,11 +38,129 @@ from .ml_signals import MLSignalEngine
 from .feature_engine import FeatureEngine
 
 
+# ── Attention Entropy-Based Regime Adjuster ──────────────────
+
+# Regime-dependent weight multipliers for each source.
+# Key: regime name, Value: dict of source_name -> multiplier.
+REGIME_WEIGHT_MULTIPLIERS = {
+    "trending": {
+        "ml_rf": 1.2,       # ML follows momentum well
+        "ppo_rl": 1.3,      # RL exploits trends
+        "regime": 0.7,      # Regime signal redundant
+        "rule_smc": 1.1,    # SMC breakout works in trends
+    },
+    "ranging": {
+        "ml_rf": 0.8,       # ML struggles in noise
+        "ppo_rl": 0.7,      # RL confused by no trend
+        "regime": 1.4,      # Regime detection critical
+        "rule_smc": 1.3,    # SMC FVG/bounce works in range
+    },
+    "volatile": {
+        "ml_rf": 0.5,       # ML unreliable in chaos
+        "ppo_rl": 0.5,      # RL too risky
+        "regime": 1.2,      # Regime detection helps
+        "rule_smc": 0.6,    # SMC patterns break down
+    },
+}
+
+# Entropy thresholds for regime classification
+ENTROPY_LOW = 2.0
+ENTROPY_HIGH = 3.5
+
+
+class AttentionEntropyAdjuster:
+    """Adjusts brain weights based on Transformer attention entropy.
+
+    Reads attention entropy from the custom_nn_brain's Transformer
+    and scales ensemble source weights to match the detected regime.
+
+    This is a pure-computation helper — no model loading, no I/O.
+    The ensemble calls adjust() before weighted voting.
+
+    Usage:
+        adjuster = AttentionEntropyAdjuster()
+        weights = adjuster.adjust(base_weights, attention_entropy=2.8)
+        # weights == {"ml_rf": 0.8, "ppo_rl": 1.05, ...}
+    """
+
+    def __init__(self, entropy_low: float = ENTROPY_LOW, entropy_high: float = ENTROPY_HIGH):
+        self.entropy_low = entropy_low
+        self.entropy_high = entropy_high
+        self._last_regime: str | None = None
+        self._last_entropy: float | None = None
+        self._regime_history: deque = deque(maxlen=50)
+
+    def classify_regime(self, entropy: float) -> str:
+        """Classify market regime from attention entropy.
+
+        Args:
+            entropy: Shannon entropy of the last attention row.
+
+        Returns:
+            One of: "trending", "ranging", "volatile"
+        """
+        if entropy < self.entropy_low:
+            return "trending"
+        elif entropy < self.entropy_high:
+            return "ranging"
+        else:
+            return "volatile"
+
+    def adjust(
+        self,
+        base_weights: dict[str, float],
+        attention_entropy: float,
+    ) -> dict[str, float]:
+        """Compute adjusted weights from base weights and attention entropy.
+
+        Args:
+            base_weights: {source_name: base_weight} from SignalSource.weight
+            attention_entropy: float from Transformer attention extraction
+
+        Returns:
+            {source_name: adjusted_weight} — values clamped to [0.1, 3.0]
+        """
+        regime = self.classify_regime(attention_entropy)
+        multipliers = REGIME_WEIGHT_MULTIPLIERS.get(regime, {})
+
+        self._last_regime = regime
+        self._last_entropy = attention_entropy
+        self._regime_history.append(regime)
+
+        adjusted = {}
+        for name, base_w in base_weights.items():
+            mult = multipliers.get(name, 1.0)
+            adjusted[name] = max(0.1, min(3.0, base_w * mult))
+
+        return adjusted
+
+    @property
+    def last_regime(self) -> str | None:
+        return self._last_regime
+
+    @property
+    def last_entropy(self) -> float | None:
+        return self._last_entropy
+
+    def get_regime_stability(self) -> float:
+        """Return fraction of recent regimes that are the same as current.
+
+        High stability = regime is persistent, weights can be trusted.
+        Low stability = regime is flickering, be cautious.
+        """
+        if not self._regime_history or self._last_regime is None:
+            return 0.0
+        same_count = sum(1 for r in self._regime_history if r == self._last_regime)
+        return same_count / len(self._regime_history)
+
+
+
 class SignalSource:
     """Represents one signal source with its adaptive weight."""
 
     def __init__(self, name: str, weight: float = 1.0):
         self.name = name
+        self.base_weight = weight
         self.weight = weight
         self._history: deque = deque(maxlen=20)  # Recent signal accuracies
 
@@ -61,6 +179,8 @@ class SignalSource:
         acc = accuracy if accuracy is not None else self.get_accuracy()
         # Weight = base * (accuracy / 0.5) — above 50% accuracy gets boosted
         self.weight = max(0.1, min(3.0, self.weight * (acc / 0.5 + 0.5)))
+
+
 
 
 class EnsembleMetaModel:
@@ -112,6 +232,9 @@ class EnsembleMetaModel:
         self._feature_engine = FeatureEngine()
         self._rng = np.random.RandomState(42)
         self._total_decisions = 0
+
+        # Attention entropy-based regime adjuster
+        self.entropy_adjuster = AttentionEntropyAdjuster()
 
     # ── Signal Collection ───────────────────────────────────────
 
@@ -231,6 +354,7 @@ class EnsembleMetaModel:
                 - obs: np.ndarray of RL observation (optional, for PPO)
                 - price: current price
                 - symbol: trading pair
+                - attention_entropy: float (optional, from Transformer)
 
         Returns:
             dict with:
@@ -238,10 +362,13 @@ class EnsembleMetaModel:
                 - confidence: 0.0-1.0
                 - sources: dict of each source's signal
                 - weights: dict of each source's current weight
+                - regime: str (trending/ranging/volatile, if entropy provided)
+                - regime_stability: float (0-1, persistence of current regime)
                 - reason: human-readable reasoning string
         """
         df = market_data.get("df")
         obs = market_data.get("obs")
+        attention_entropy = market_data.get("attention_entropy")
 
         if df is None or len(df) < 50:
             return {"direction": "hold", "confidence": 0.0, "sources": {}, "reason": "insufficient_data"}
@@ -257,6 +384,22 @@ class EnsembleMetaModel:
             signals["ppo_rl"] = self._get_ppo_signal(obs)
         else:
             signals["ppo_rl"] = {"direction": "hold", "confidence": 0.0, "reason": "no_obs"}
+
+        # ── Attention entropy-based weight adjustment ──
+        regime_info = None
+        if attention_entropy is not None:
+            # Always start from base_weight to prevent compounding across calls
+            base_weights = {name: src.base_weight for name, src in self.sources.items()}
+            adjusted_weights = self.entropy_adjuster.adjust(base_weights, attention_entropy)
+            # Apply adjusted weights
+            for name, adj_w in adjusted_weights.items():
+                if name in self.sources:
+                    self.sources[name].weight = adj_w
+            regime_info = {
+                "regime": self.entropy_adjuster.last_regime,
+                "entropy": round(attention_entropy, 4),
+                "stability": round(self.entropy_adjuster.get_regime_stability(), 4),
+            }
 
         # Weighted vote
         votes = {"long": 0.0, "short": 0.0, "hold": 0.0}
@@ -290,10 +433,12 @@ class EnsembleMetaModel:
 
         # Build reasoning
         reasons = [f"{name}: {s['direction']}({s['confidence']:.2f})" for name, s in source_details.items()]
+        if regime_info:
+            reasons.insert(0, f"regime={regime_info['regime']}(H={regime_info['entropy']:.2f})")
 
         self._total_decisions += 1
 
-        return {
+        result = {
             "direction": best_direction,
             "confidence": round(best_confidence, 4),
             "sources": source_details,
@@ -302,6 +447,12 @@ class EnsembleMetaModel:
             "reason": "Ensemble: " + " | ".join(reasons),
             "total_decisions": self._total_decisions,
         }
+        if regime_info:
+            result["regime"] = regime_info["regime"]
+            result["regime_entropy"] = regime_info["entropy"]
+            result["regime_stability"] = regime_info["stability"]
+
+        return result
 
     # ── Adaptation ──────────────────────────────────────────────
 

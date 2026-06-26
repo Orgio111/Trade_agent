@@ -11,10 +11,10 @@
             "id": "d7b5b667e792efbc",
             "type": "leaf",
             "state": {
-              "type": "empty",
+              "type": "graph",
               "state": {},
-              "icon": "lucide-file",
-              "title": "New tab"
+              "icon": "lucide-git-fork",
+              "title": "Graph view"
             }
           }
         ]
@@ -178,6 +178,11 @@
   },
   "active": "d7b5b667e792efbc",
   "lastOpenFiles": [
+    "wiki/content/concepts/dynamic-brain-weight-adjustment.md",
+    "backtest_results/nn_arch_comparison_20260627_015729.json",
+    "backtest_results",
+    "compare_nn_architectures.py",
+    "wiki/content/concepts/attention-based-regime-detection.md",
     "wiki/ZCODE.md",
     "wiki/log.md",
     "wiki/index.md",
@@ -189,9 +194,6 @@
     "wiki/content/indicators",
     "wiki/content/entities",
     "wiki/content/decisions",
-    "wiki/content/concepts",
-    "wiki/content/comparisons",
-    "wiki/content",
     "frontend/node_modules/next/dist/docs/01-app/03-api-reference/04-functions/userAgent.md",
     "execution/target/release/build/zerocopy-c839572cdb04c7bb/stderr.md",
     "README.md"
