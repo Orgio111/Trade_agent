@@ -82,38 +82,85 @@
     "weight": 0.15
   },
   {
-    "brain_id": "finbert_nlp",
-    "class": "FinBERTBrain",
-    "description": "NLP sentiment analyzer. Dual-tier LLM. 2 concurrent Ollama models. Auto-fetches CryptoCompare news.",
-    "fallbacks": [
-      "keyword_sentiment_scan"
-    ],
-    "models": [
-      "2x Ollama (qwen2.5:3b+phi3:mini)",
-      "NIM meta/llama-3.1-8b-instruct",
-      "OpenRouter google/gemma-4-31b-it:free"
-    ],
-    "output": "score(-1..+1 panic..euphoria), confidence, sentiment=very_bullish..very_bearish",
-    "parameters": {
-      "concurrent_ollama": 2,
-      "headline_cache_ttl": 300,
-      "timeout": 8.0
+      "brain_id": "finbert_nlp",
+      "class": "FinBERTBrain",
+      "description": "NLP sentiment analyzer. Dual-tier LLM. 2 concurrent Ollama models. Auto-fetches CryptoCompare news.",
+      "fallbacks": [
+        "keyword_sentiment_scan"
+      ],
+      "models": [
+        "2x Ollama (qwen2.5:3b+phi3:mini)",
+        "NIM meta/llama-3.1-8b-instruct",
+        "OpenRouter google/gemma-4-31b-it:free"
+      ],
+      "output": "score(-1..+1 panic..euphoria), confidence, sentiment=very_bullish..very_bearish",
+      "parameters": {
+        "concurrent_ollama": 2,
+        "headline_cache_ttl": 300,
+        "timeout": 8.0
+      },
+      "push_methods": [
+        "push_headlines"
+      ],
+      "slug": "finbert-brain",
+      "source_file": "finbert_brain.py",
+      "tiers": [
+        "ollama_local",
+        "nim_cloud",
+        "openrouter_free"
+      ],
+      "title": "FinBERT NLP Brain",
+      "weight": 0.1
     },
-    "push_methods": [
-      "push_headlines"
-    ],
-    "slug": "finbert-brain",
-    "source_file": "finbert_brain.py",
-    "tiers": [
-      "ollama_local",
-      "nim_cloud",
-      "openrouter_free"
-    ],
-    "title": "FinBERT NLP Brain",
-    "weight": 0.1
-  },
-  {
-    "brain_id": "finrl_kelly",
+    {
+      "brain_id": "microstructure",
+      "class": "MicrostructureBrain",
+      "description": "Tick-rule OFI brain. Signed trade volume over 100-tick lookback, z-score normalized against 50-tick rolling window, tanh-scaled with absorption inversion.",
+      "fallbacks": [
+        "zero on no data"
+      ],
+      "models": [
+        "OFI tick-rule proxy (Lee-Ready)"
+      ],
+      "output": "score(-1..+1), confidence",
+      "parameters": {
+        "OFI_LOOKBACK": 100,
+        "OFI_Z_WINDOW": 50,
+        "absorption_factor": -0.5,
+        "absorption_confidence": 0.7
+      },
+      "push_methods": [],
+      "slug": "microstructure-brain",
+      "source_file": "microstructure_brain.py",
+      "tiers": [],
+      "title": "Microstructure Brain",
+      "weight": 0.1
+    },
+    {
+      "brain_id": "orderflow_nautilus",
+      "class": "OrderFlowNautilusBrain",
+      "description": "Depth-based OFI via NautilusTrader (microprice, depth-weighted mid, spread compression, liquidity-gap detection), tick-rule fallback.",
+      "fallbacks": [
+        "tick-rule OFI when NautilusTrader unavailable"
+      ],
+      "models": [
+        "NautilusTrader L2/L3 orderbook reconstruction"
+      ],
+      "output": "score(-1..+1), confidence",
+      "parameters": {
+        "depth_weight": 0.7,
+        "tick_fallback_weight": 0.3,
+        "spread_compression_threshold": 0.015
+      },
+      "push_methods": [],
+      "slug": "orderflow-nautilus-brain",
+      "source_file": "orderflow_nautilus_brain.py",
+      "tiers": [],
+      "title": "OrderFlow Nautilus Brain",
+      "weight": 0.12
+    },
+    {
+      "brain_id": "finrl_kelly",
     "class": "FinRLBrain",
     "description": "Position sizing brain. PPO RL agent + Kelly Criterion fallback. Score=sizing conviction, not direction.",
     "fallbacks": [

@@ -1,13 +1,35 @@
-"""Trinity Architecture — Layer A: 9 Parallel AI Brains.
+"""Trinity Architecture Brains Registry.
 
-Each brain publishes its signal score to NATS JetStream subject `signals.raw`.
-The Go Orchestrator (Layer B) aggregates these signals with weighted scoring.
+Aggregates all quantitative brains:
+  - FreqAI / TimesFM forecasting
+  - LLM regime classification
+  - FinBERT sentiment
+  - FinRL RLlib PPO engine
+  - Polymarket Bayesian alpha
+  - OrderFlow (Nautilus.Backtest)
+  - Microstructure (orderbook imbalance)
 
-Brain 9 (orderflow_nautilus) uses NautilusTrader for L2/L3 orderbook depth.
+Integrates:
+  - MOSS Signal Factory (moss_engine/)
+    SkillRegistry: dynamic hot-swappable brains
+    MossCompositeEngine: 5-pillar composite signal
+    KryptCryptoCore: whale tracker, momentum scanner, contrarian fade
+    ReconciliationEngine: boot reconciliation
+    ReflectiveEvolutionLoop: self-optimizing parameters
+
+Each brain publishes raw signals to NATS JetStream subject `signals.raw`
+-> Nats Aggregator -> Go orchestrator -> execution.
+
+MOSS Engine brains:
+  moss_composite — 5-pillar composite (Trend, Momentum, Mean Reversion,
+                  Volume, Volatility)
+  krypt_core — micro-structure events (whales, 15m volume anomalies,
+              contrarian fade decisions)
+  moss_reflection — MOSS 7 Reflection Principles + adaptive parameter
+                  optimization (±30% bounds)
 """
 
-from .base_brain import BaseBrain, BrainSignal
-from .timesfm_brain import TimesFMBrain
+from .moss_signal import TimesFMBrain
 from .freqai_brain import FreqAIBrain
 from .llm_regime_brain import LLMRegimeBrain
 from .microstructure_brain import MicrostructureBrain
@@ -19,25 +41,33 @@ from .orderflow_nautilus_brain import OrderFlowNautilusBrain
 from .polymarket_brain import PolymarketBrain
 from .custom_nn_brain import CustomNNBrain
 
-# ── BRAIN_REGISTRY: name → class mapping ──────────────────────────────────
-BRAIN_REGISTRY: dict[str, type[BaseBrain]] = {
-    "timesfm":              TimesFMBrain,
-    "freqai":               FreqAIBrain,
-    "llm_regime":           LLMRegimeBrain,
-    "microstructure":       MicrostructureBrain,
-    "finbert":              FinBERTBrain,
-    "finrl":                FinRLBrain,
-    "onchain":             OnChainBrain,
-    "statarb":             StatArbBrain,
-    "orderflow_nautilus":  OrderFlowNautilusBrain,
-    "polymarket_alpha":    PolymarketBrain,
-    "custom_nn":           CustomNNBrain,
+# MOSS Signal Factory integration
+from .moss_engine.skill_registry import SkillRegistry
+from .moss_engine.composite_engine import MossCompositeEngine
+from .moss_engine.krypt_core import KryptCryptoCore
+from .moss_engine.reconciliation_engine import ReconciliationEngine
+from .moss_engine.reflection_engine import ReflectiveEvolutionLoop
+
+# -- BRAIN_REGISTRY: name -> class mapping -------------------------------------------------------
+BRAIN_REGISTRY: dict[str, type] = {
+    "timesfm": TimesFMBrain,
+    "freqai": FreqAIBrain,
+    "llm_regime": LLMRegimeBrain,
+    "microstructure": MicrostructureBrain,
+    "finbert": FinBERTBrain,
+    "finrl": FinRLBrain,
+    "onchain": OnChainBrain,
+    "statarb": StatArbBrain,
+    "orderflow_nautilus": OrderFlowNautilusBrain,
+    "polymarket_alpha": PolymarketBrain,
+    "custom_nn": CustomNNBrain,
+    # MOSS SIGNAL FACTORY
+    "moss_composite": MossCompositeEngine,      # 5-pillar composite
+    "krypt_core": KryptCryptoCore,              # microstructure
+    "moss_reflection": ReflectiveEvolutionLoop  # self-optimizing
 }
 
 __all__ = [
-    "BaseBrain",
-    "BrainSignal",
-    "BRAIN_REGISTRY",
     "TimesFMBrain",
     "FreqAIBrain",
     "LLMRegimeBrain",
@@ -49,4 +79,11 @@ __all__ = [
     "OrderFlowNautilusBrain",
     "PolymarketBrain",
     "CustomNNBrain",
+    "BRAIN_REGISTRY",
+    # MOSS Engine
+    "SkillRegistry",
+    "MossCompositeEngine",
+    "KryptCryptoCore",
+    "ReconciliationEngine",
+    "ReflectiveEvolutionLoop",
 ]

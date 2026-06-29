@@ -1,0 +1,281 @@
+# QUANTEX GPU Node Pool + vLLM Inference Deployment
+#
+# This file defines:
+#   1. GPU node pool (tolerations for GPU workloads)
+#   2. vLLM inference server Deployment + Service
+#   3. (Optional) Node affinity for GPU workloads
+#
+# Requirements:
+#   - Kubernetes cluster with GPU nodes (NVIDIA Tesla T4, A100, H100, etc.)
+#   - NVIDIA Device Plugin installed (see below)
+#   - Enough VRAM for the model (e.g., 16GB+ for 7B, 80GB+ for 70B)
+#
+# Setup NVIDIA Device Plugin (run once):
+#   kubectl create -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/v0.15.0/nvidia-device-plugin.yml
+#
+# Hardware Reference (inference latency for single request, batch=1):
+#   GPU              | 7B model   | 13B model  | 70B model
+#   -----------------|------------|------------|-----------
+#   RTX 4090 (24GB)  | 50-150ms   | 150-400ms  | N/A (OOM)
+#   A100 80GB        | 20-80ms    | 40-120ms   | 100-300ms
+#   H100 80GB        | 15-50ms    | 30-80ms    | 50-200ms
+#
+# Usage:
+#   kubectl apply -f deployment/k8s/gpu-node-pool.yaml
+
+---
+# ── GPU Node Pool ─────────────────────────────────────────────
+# If using managed K8s (GKE, EKS, AKS), create the node pool
+# through the cloud provider's CLI/console instead.
+#
+# For self-managed clusters, label GPU nodes:
+#   kubectl label node <node-name> nvidia.com/gpu=present
+#
+# This DaemonSet is not needed if you already have GPU nodes.
+# It's a template for node labeling documentation.
+
+# ── vLLM Inference Server Deployment ─────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quantex-vllm
+  namespace: quantex
+  labels:
+    app: quantex
+    component: vllm
+    tier: gpu-inference
+spec:
+  replicas: 1  # Single replica for GPU. Scale to 2+ with multiple GPUs.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0      # Don't create extra pod (GPU scarcity)
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: quantex
+      component: vllm
+  template:
+    metadata:
+      labels:
+        app: quantex
+        component: vllm
+        tier: gpu-inference
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      # ── GPU Scheduling ──────────────────────────────────────
+      # Schedule only on nodes with NVIDIA GPUs
+      nodeSelector:
+        nvidia.com/gpu: present  # Label your GPU nodes with this
+
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+
+      # ── Priority ───────────────────────────────────────────
+      # Higher priority than regular workloads
+      priorityClassName: quantex-gpu-priority  # Create if needed
+
+      # ── Init Container: Wait for GPU readiness ────────────
+      initContainers:
+        - name: init-gpu
+          image: nvidia/cuda:12.4.0-base-ubuntu22.04
+          command:
+            - nvidia-smi
+          resources:
+            limits:
+              nvidia.com/gpu: 1  # Request 1 GPU just for init check
+
+      # ── Main vLLM Container ────────────────────────────────
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          command:
+            - python3
+            - -m
+            - vllm.entrypoints.openai.api_server
+          args:
+            # ── Model Configuration ─────────────────────
+            - "--model"
+            - "Qwen/Qwen2.5-7B-Instruct"     # Fast, accurate, 7B params
+            # - "--model" "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"  # For coding
+            # - "--model" "mistralai/Mistral-7B-Instruct-v0.3"           # Alternative
+
+            # ── Serving Configuration ───────────────────
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8000"
+
+            # ── Performance Tuning ──────────────────────
+            - "--tensor-parallel-size"
+            - "1"                            # 1 GPU = 1; 2+ GPUs = N
+            - "--max-model-len"
+            - "8192"                         # Max context length
+            - "--gpu-memory-utilization"
+            - "0.90"                         # Use 90% of GPU VRAM
+            - "--max-num-seqs"
+            - "8"                            # Max concurrent requests
+            - "--max-num-batched-tokens"
+            - "4096"                         # Max tokens per batch
+            - "--enable-prefix-caching"      # Cache common prefixes (faster)
+            - "--enforce-eager"              # Disable CUDA graph (save VRAM)
+
+            # ── Trading-Specific ───────────────────────
+            - "--trust-remote-code"          # Required for some models
+            - "--api-key"
+            - "not-needed"                   # Local access
+
+          ports:
+            - containerPort: 8000
+              name: http
+            - containerPort: 8000  # vLLM metrics
+              name: metrics
+
+          # ── GPU Resources ──────────────────────────────────
+          resources:
+            requests:
+              cpu: "2"
+              memory: "8Gi"
+              nvidia.com/gpu: 1
+            limits:
+              cpu: "4"
+              memory: "16Gi"
+              nvidia.com/gpu: 1
+
+          # ── Health Checks ──────────────────────────────────
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 120  # Model loading takes 1-2 min
+            periodSeconds: 30
+            timeoutSeconds: 10
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 120
+            periodSeconds: 10
+            timeoutSeconds: 5
+
+          # ── Environment Variables ──────────────────────────
+          env:
+            - name: VLLM_URL
+              value: "http://quantex-vllm:8000/v1"
+            - name: HF_HOME
+              value: "/cache/huggingface"
+            - name: HF_HUB_ENABLE_HF_TRANSFER
+              value: "1"  # Faster model downloads
+
+          # ── Volume Mounts ──────────────────────────────────
+          volumeMounts:
+            - name: model-cache
+              mountPath: /cache/huggingface
+              readOnly: false
+            - name: dshm
+              mountPath: /dev/shm
+
+      # ── Volumes ────────────────────────────────────────────
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: quantex-model-cache  # See PVC below
+            readOnly: false
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: "2Gi"  # Shared memory for vLLM
+
+---
+# ── Model Cache Persistent Volume Claim ──────────────────────
+# Avoids re-downloading models on every pod restart.
+# Recommended: 50GB+ for multiple models.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: quantex-model-cache
+  namespace: quantex
+  labels:
+    app: quantex
+    component: vllm
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: standard  # Use fast SSD storage if available
+
+---
+# ── vLLM Service ─────────────────────────────────────────────
+# Exposes the vLLM API within the cluster.
+# Other services connect via http://quantex-vllm:8000/v1
+apiVersion: v1
+kind: Service
+metadata:
+  name: quantex-vllm
+  namespace: quantex
+  labels:
+    app: quantex
+    component: vllm
+spec:
+  selector:
+    app: quantex
+    component: vllm
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+    - name: metrics
+      port: 8000
+      targetPort: 8000
+
+---
+# ── (Optional) vLLM Metrics Scraper (Prometheus Config) ─────
+# vLLM exposes Prometheus metrics at /metrics endpoint.
+# Add this scrape config to your prometheus.yml:
+#
+#   - job_name: vllm
+#     kubernetes_sd_configs:
+#       - role: pod
+#     relabel_configs:
+#       - source_labels: [__meta_kubernetes_pod_label_app]
+#         regex: quantex-vllm
+#         action: keep
+#       - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+#         regex: "true"
+#         action: keep
+
+---
+# ── References ────────────────────────────────────────────────
+#
+# 1. vLLM Documentation:
+#    - https://docs.vllm.ai/en/latest/serving/openai_compatible_server.html
+#    - https://docs.vllm.ai/en/latest/features/automatic_prefix_caching.html
+#
+# 2. NVIDIA Device Plugin:
+#    - https://github.com/NVIDIA/k8s-device-plugin
+#
+# 3. GPU Node Setup:
+#    - Install NVIDIA drivers on node
+#    - Install nvidia-container-toolkit
+#    - Label node: kubectl label node <name> nvidia.com/gpu=present
+#
+# 4. Verify GPU is available:
+#    kubectl exec -n quantex deploy/quantex-vllm -- nvidia-smi
+#
+# 5. Test inference:
+#    curl http://quantex-vllm:8000/v1/chat/completions \
+#      -H "Content-Type: application/json" \
+#      -d '{
+#        "model": "Qwen/Qwen2.5-7B-Instruct",
+#        "messages": [{"role": "user", "content": "Analyze BTC trend"}],
+#        "temperature": 0.1,
+#        "max_tokens": 100
+#      }'

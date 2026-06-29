@@ -2,6 +2,7 @@ from .base import BaseProvider, ProviderError, ProviderUnavailable, ProviderTime
 from .groq import GroqProvider
 from .nim import NvidiaNIMProvider
 from .openrouter import OpenRouterProvider
+from .vllm import vLLMProvider
 
 __all__ = [
     "BaseProvider",
@@ -11,4 +12,5 @@ __all__ = [
     "GroqProvider",
     "NvidiaNIMProvider",
     "OpenRouterProvider",
+    "vLLMProvider",
 ]

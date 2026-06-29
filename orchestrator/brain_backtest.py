@@ -27,12 +27,14 @@ BRAIN_WEIGHTS = {
     "timesfm": 0.25,
     "freqai": 0.15,
     "llm_regime": 0.15,
-    "microstructure": 0.10,
-    "orderflow_nautilus": 0.12,
-    "finbert": 0.10,
-    "finrl": 0.10,
-    "statarb": 0.10,
+    "microstructure": 0.08,
+    "orderflow_nautilus": 0.08,
+    "finbert": 0.07,
+    "finrl": 0.07,
+    "statarb": 0.07,
     "onchain": 0.05,
+    "custom_nn": 0.05,
+    "polymarket_alpha": 0.05,
 }
 
 BUY_THRESHOLD = 0.15
@@ -194,6 +196,19 @@ class BrainBacktestEngine:
 
         # 9. OnChain proxy: deterministic micro-signal
         scores["onchain"] = float(np.sin(i * 0.01) * 0.03)
+
+        # 10. Custom NN proxy: LSTM/Transformer temporal patterns (momentum + volume)
+        if len(window) >= 50:
+            # Simple proxy: recent momentum scaled by volume trend
+            momentum_10 = (close / window["close"].iloc[-10] - 1) if len(window) >= 10 else 0
+            vol_trend = (window["volume"].iloc[-5:].mean() / window["volume"].iloc[-10:-5].mean() - 1) if len(window) >= 10 and window["volume"].iloc[-10:-5].mean() > 0 else 0
+            scores["custom_nn"] = float(np.tanh(momentum_10 * 15 + vol_trend * 5))
+
+        # 11. Polymarket Alpha proxy: prediction-market style mean-reversion signal
+        # Longshot bias proxy: extreme price moves revert
+        if len(window) >= 20:
+            recent_extreme = (close - window["close"].iloc[-20:].mean()) / (window["close"].iloc[-20:].std() + 1e-10)
+            scores["polymarket_alpha"] = float(np.tanh(-recent_extreme * 0.5))  # contrarian
 
         return scores
 

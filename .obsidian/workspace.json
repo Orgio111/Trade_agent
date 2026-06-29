@@ -178,6 +178,7 @@
   },
   "active": "d7b5b667e792efbc",
   "lastOpenFiles": [
+    "orchestrator/moss_engine/krypt_core.py",
     "wiki/content/concepts/dynamic-brain-weight-adjustment.md",
     "backtest_results/nn_arch_comparison_20260627_015729.json",
     "backtest_results",

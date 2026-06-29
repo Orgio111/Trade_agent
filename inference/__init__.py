@@ -17,7 +17,7 @@ Architecture:
 """
 
 from .router import InferenceRouter, InferenceTask, RouterConfig
-from .providers import GroqProvider, NvidiaNIMProvider, OpenRouterProvider
+from .providers import GroqProvider, NvidiaNIMProvider, OpenRouterProvider, vLLMProvider
 from .cache import SemanticCache
 from .cost_tracker import CostTracker
 
@@ -28,6 +28,7 @@ __all__ = [
     "GroqProvider",
     "NvidiaNIMProvider",
     "OpenRouterProvider",
+    "vLLMProvider",
     "SemanticCache",
     "CostTracker",
 ]

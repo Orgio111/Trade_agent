@@ -1,6 +1,6 @@
 """QUANTEX Trinity Architecture — Python Layer A Entry Point.
 
-Launches all 8 AI Brains in parallel, each publishing signals to
+Launches all 11 AI Brains in parallel, each publishing signals to
 NATS JetStream subject `signals.raw` for the Go Orchestrator (Layer B)
 to aggregate and forward to the Rust Execution Engine (Layer C).
 
@@ -76,7 +76,7 @@ async def ensure_jetstream_stream(nc: nats.NATS) -> None:
 # ── Brain Registry ─────────────────────────────────────────────
 
 def create_all_brains() -> list:
-    """Instantiate all 8 AI brains from the brains package."""
+    """Instantiate all 11 AI brains from the brains package."""
     from orchestrator.brains import (
         TimesFMBrain,
         FreqAIBrain,
@@ -86,6 +86,9 @@ def create_all_brains() -> list:
         FinRLBrain,
         OnChainBrain,
         StatArbBrain,
+        OrderFlowNautilusBrain,
+        PolymarketBrain,
+        CustomNNBrain,
     )
 
     return [
@@ -97,13 +100,16 @@ def create_all_brains() -> list:
         FinRLBrain(),
         OnChainBrain(),
         StatArbBrain(),
+        OrderFlowNautilusBrain(),
+        PolymarketBrain(),
+        CustomNNBrain(),
     ]
 
 
 # ── Main Loop ──────────────────────────────────────────────────
 
 async def run_brains_once(nc: nats.NATS, brains: list, tg: TelegramNotifier) -> None:
-    """Run all 8 brains once in parallel and publish signals to NATS."""
+    """Run all 11 brains once in parallel and publish signals to NATS."""
 
     log.info("Brain cycle started — running %d brains for %d symbols", len(brains), len(TRADE_SYMBOLS))
 

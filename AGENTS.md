@@ -105,6 +105,194 @@ Conventions: pages are `kebab-case.md`, linked `[[page-slug]]`, every page has Y
 
 ---
 
+## 🐳 DOCKER COMPOSE USAGE
+
+### Quick Start
+
+```bash
+# Start everything (NATS + PostgreSQL + Redis + Qdrant + Orchestrator + Frontend + Monitoring)
+ddocker compose up -d
+
+# Check service status
+ddocker compose ps
+
+# Follow logs from all services
+ddocker compose logs -f
+
+# Follow logs from a specific service
+ddocker compose logs -f orchestrator realtime nats
+
+# Stop everything
+ddocker compose down
+
+# Stop and delete volumes (WARNING: destroys all data)
+ddocker compose down -v
+```
+
+### Dev Mode (Hot-Reload)
+
+Enables hot-reload for orchestrator (uvicorn --reload) and frontend (Next.js dev mode):
+
+```bash
+# Start with dev overrides
+ddocker compose -f docker-compose.yml -f docker-compose.override.yml up -d
+
+# After code changes, the orchestrator reloads automatically
+# Frontend also hot-reloads on save
+
+# To rebuild a specific service after dependency changes:
+ddocker compose build orchestrator
+```
+
+Access in dev mode:
+- **Frontend**: http://localhost:3000 (hot-reload)
+- **Orchestrator API**: http://localhost:8001 (hot-reload)
+- **Grafana**: http://localhost:3001
+- **Prometheus**: http://localhost:9090
+
+> **Note:** In dev mode, `docker-compose.override.yml` disables the nginx reverse proxy. Access services directly on the mapped ports.
+
+### Trinity Architecture Data Flow
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ docker-compose.yml — Все 12 сервисов                              │
+│                                                                    │
+│ orchestrator ──signals.raw──▶ nats:4222 ──signals.raw──▶ realtime │
+│  (11 brains)   (NATS JetStream)                  (Go agg.)        │
+│       ▲                                        │                  │
+│       │                                        ▼ WebSocket        │
+│       │                                   ┌──────────┐            │
+│       │                                   │ frontend │            │
+│       │                                   │ (Next.js)│            │
+│       │                                   └──────────┘            │
+│       │                                                           │
+│  postgres ── redis ── qdrant ── influxdb ── prometheus ── grafana │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+### Service Dependencies
+
+NATS (`nats:4222`) is the backbone of the Trinity Architecture. All brain signals flow through it:
+
+| Service | Depends On | Port(s) |
+|---------|-----------|:-------:|
+| `postgres` | — | 5432 |
+| `redis` | — | 6379 |
+| `qdrant` | — | 6333, 6334 |
+| `nats` | — | 4222, 8222 |
+| `influxdb` | — | 8086 |
+| `orchestrator` | postgres, redis, qdrant, **nats** | 8001 |
+| `realtime` | **nats** | 8082 |
+| `frontend` | orchestrator, realtime | 3000 |
+| `nginx` | frontend, orchestrator, realtime | 80, 443 |
+| `prometheus` | nats-exporter | 9090 |
+| `grafana` | prometheus | 3001 (mapped) |
+
+### Health Checks
+
+```bash
+# Orchestrator (FastAPI)
+curl http://localhost:8001/health
+# Response: {"status":"ok", "service":"quantex-orchestrator", "mode":"paper", "brains":{...}}
+
+# All 11 brain runners status
+curl http://localhost:8001/api/v1/brains
+# Response: {"total_registered":11, "runners_active":11, "nats_connected":true, "brains":{...}}
+
+# Go realtime (Layer B)
+curl http://localhost:8082/health
+curl http://localhost:8082/api/v1/orchestrator/status
+
+# NATS monitoring
+curl http://localhost:8222/healthz
+curl http://localhost:8222/jsz?stream=signals
+
+# Prometheus
+curl http://localhost:9090/-/healthy
+```
+
+### Viewing Brain Signals
+
+```bash
+# Watch the orchestrator logs for brain startup
+docker compose logs -f orchestrator | grep -i "brain\|nats"
+
+# Watch the Go aggregator for aggregated signals
+docker compose logs -f realtime
+# Expected output: "📊 [BTCUSDT] BUY → score=0.4234 (9 brains)"
+
+# Watch individual brain publishing (NATS raw signals)
+docker compose logs -f orchestrator | grep "Published"
+```
+
+### Common Operations
+
+```bash
+# Restart a specific service after config change
+docker compose restart realtime
+docker compose restart orchestrator
+
+# Rebuild and restart a service
+docker compose build orchestrator
+docker compose up -d orchestrator
+
+# View resource usage
+docker compose stats
+
+# Execute a command inside a running container
+docker compose exec orchestrator python -m orchestrator.brain_backtest --symbol BTCUSDT --days 30
+docker compose exec nats -- ls /data
+
+# Run a one-off command (e.g., database migration)
+docker compose run --rm orchestrator python -m orchestrator.database
+```
+
+### Troubleshooting
+
+```bash
+# Service won't start — check logs
+docker compose logs orchestrator
+docker compose logs realtime
+docker compose logs nats
+
+# NATS connection refused
+# Make sure NATS is running:
+curl http://localhost:8222/healthz
+# If NATS is healthy but services can't connect,
+# check NATS_URL env var — should be "nats://nats:4222" inside Docker
+
+# Port already in use
+# Check what's using the port:
+netstat -ano | findstr :8001
+# Change the mapped port in docker-compose.override.yml
+
+# Brain not publishing
+# Check if NATS stream exists:
+curl http://localhost:8222/jsz
+# Check brain status:
+curl http://localhost:8001/api/v1/brains
+
+# No aggregated signals
+curl http://localhost:8082/api/v1/orchestrator/status
+# If "no_signals_yet", the Go orchestrator isn't receiving brain signals
+# Check NATS subscription:
+curl http://localhost:8222/routez?subs=1
+```
+
+### Cleanup
+
+```bash
+# Stop all services (preserves volumes)
+docker compose down
+
+# Full reset — destroys all data
+docker compose down -v
+rm -rf models/__pycache__
+```
+
+---
+
 ## 🚀 KUBERNETES DEPLOYMENT GUIDE
 
 ### Prerequisites
@@ -271,7 +459,313 @@ kubectl -n quantex delete configmap quantex-brain-weights
 
 ---
 
-## 📋 КОДБААС АУДИТ (Brain Registry Inconsistencies)
+## 🤖 BROKER ABSTRACTION LAYER
+
+Брокер abstraction layer нь 3 broker-ийн ард unified interface өгдөг — Binance (real), FIX (institutional sim), Paper (backtesting).
+
+### Architecture
+
+```
+┌──────────────────────────────┐
+│        Trading System        │
+└──────────┬───────────────────┘
+           │ place_order() / get_positions() / ...
+           ▼
+┌──────────────────────────────┐
+│       BaseBroker (ABC)       │  ← Abstract interface (orchestrator/broker/base.py)
+└──────┬──────────┬──────────┬─┘
+       │          │          │
+  BinanceBroker  FIXSim   PaperBroker
+  (real binance) (instit.) (backtest)
+```
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `orchestrator/broker/__init__.py` | Package init, all exports |
+| `orchestrator/broker/base.py` | `BaseBroker` ABC + `BrokerOrder`, `BrokerPosition`, `BrokerConfig`, enums (`OrderSide`, `OrderType`, `OrderStatus`) |
+| `orchestrator/broker/binance_broker.py` | `BinanceBroker` — async REST + WebSocket, HMAC-SHA256 signing, rate limiting, retry |
+| `orchestrator/broker/fix_simulator.py` | `FIXSimulator` — FIX 4.4 Tag=Value protocol, simulated fills, session sequence numbers |
+| `orchestrator/broker/paper_broker.py` | `PaperBroker` — market/limit/stop fills, slippage, fees, PnL tracking, reset |
+| `orchestrator/broker/factory.py` | `get_broker()` factory + convenience creators (`create_paper_broker`, `create_binance_testnet`) |
+
+### Quick Usage
+
+```python
+from orchestrator.broker import get_broker
+
+# Paper trading (no API keys needed)
+broker = get_broker("paper", initial_balance=10000.0)
+await broker.connect()
+order = await broker.place_order("BTCUSDT", "buy", 0.01)
+
+# Binance (testnet)
+broker = get_broker("binance", api_key="...", api_secret="...", testnet=True)
+await broker.connect()
+balance = await broker.get_balance()
+
+# FIX Simulator (institutional simulation)
+broker = get_broker("fix")
+await broker.connect()
+order = await broker.place_order("BTCUSDT", "buy", 0.01)
+```
+
+### BaseBroker Interface
+
+Every broker must implement:
+
+```python
+class BaseBroker(ABC):
+    async def connect(self) -> bool
+    async def disconnect(self) -> bool
+    async def place_order(self, symbol, side, qty, order_type, price, stop_price) -> BrokerOrder
+    async def cancel_order(self, order_id, symbol) -> bool
+    async def get_order(self, order_id, symbol) -> BrokerOrder | None
+    async def get_open_orders(self, symbol=None) -> list[BrokerOrder]
+    async def get_positions(self) -> list[BrokerPosition]
+    async def get_balance(self) -> dict[str, float]
+    async def get_ticker(self, symbol) -> dict
+```
+
+To add a new broker (e.g., Coinbase, Bybit, dYdX):
+1. Create `orchestrator/broker/coinbase_broker.py`
+2. Implement all `BaseBroker` abstract methods
+3. Register in `orchestrator/broker/factory.py`
+4. Export in `orchestrator/broker/__init__.py`
+
+---
+
+## ⚡ vLLM GPU INFERENCE PROVIDER
+
+Self-hosted GPU inference via vLLM — runs local LLMs (Qwen2.5, Mistral, DeepSeek) on NVIDIA GPUs with zero API cost.
+
+### Architecture
+
+```
+┌──────────────────┐     ┌──────────────────┐     ┌──────────┐
+│ InferenceRouter  │ ──→ │  vLLM Server     │ ──→ │  GPU     │
+│ (task routing)   │     │  (localhost:8000) │     │  (CUDA)  │
+└──────────────────┘     └──────────────────┘     └──────────┘
+```
+
+### File
+
+`inference/providers/vllm.py` — `vLLMProvider(BaseProvider)`
+
+### Quick Usage
+
+```python
+from inference.providers import vLLMProvider
+
+provider = vLLMProvider(base_url="http://localhost:8000/v1")
+result = await provider.infer(
+    model="Qwen/Qwen2.5-7B-Instruct",
+    messages=[{"role": "user", "content": "Analyze BTC trend"}],
+)
+print(result.content)  # "BTC is showing bullish divergence..."
+```
+
+### Setup
+
+```bash
+# Start vLLM server (one-time)
+python -m vllm.entrypoints.openai.api_server \
+    --model Qwen/Qwen2.5-7B-Instruct \
+    --port 8000 \
+    --tensor-parallel-size 1 \
+    --gpu-memory-utilization 0.90
+```
+
+### Performance (single request, batch=1)
+
+| GPU | 7B model | 13B model | 70B model |
+|-----|:--------:|:---------:|:---------:|
+| RTX 4090 (24GB) | 50-150ms | 150-400ms | N/A (OOM) |
+| A100 80GB | 20-80ms | 40-120ms | 100-300ms |
+| H100 80GB | 15-50ms | 30-80ms | 50-200ms |
+
+### Model Shortcuts
+
+```python
+models = {
+    "reasoning": "Qwen/Qwen2.5-7B-Instruct",
+    "analysis": "Qwen/Qwen2.5-7B-Instruct",
+    "fast": "Qwen/Qwen2.5-1.5B-Instruct",
+    "coding": "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct",
+    "classification": "Qwen/Qwen2.5-1.5B-Instruct",
+}
+```
+
+### K8s Deployment
+
+See `deployment/k8s/gpu-node-pool.yaml` for the full vLLM GPU Deployment, Service, and PersistentVolumeClaim.
+
+---
+
+## 📡 EVENT SYSTEM (Standardized Event Types)
+
+NATS JetStream event backbone-ийн стандарт event types. Бүх brain signals, market data, portfolio updates нь эдгээр event төрлөөр дамжина.
+
+### Event Categories & NATS Subjects
+
+| Category | Subject Pattern | Events | Stream |
+|----------|----------------|--------|--------|
+| `signals` | `signals.raw.<source>.<symbol>` | TradeSignal, AggregatedSignal, ExecutedSignal | file, 7d |
+| `market` | `market.<type>.<symbol>` | MarketCandle, Orderbook, Ticker, Trade | file, 3d |
+| `portfolio` | `portfolio.<type>` | PnL, Balance, Position, Order, Risk | file, 30d |
+| `rl` | `rl.<type>.<agent>` | Reward, Weight, Training, Evaluation | file, 14d |
+| `ws` | `ws.<type>` | Update, Signal, Portfolio | memory |
+| `system` | `system.<type>` | Health, Error, Warning, Info, Deploy | memory, 7d |
+
+### File
+
+`orchestrator/events.py` — All event types in one file.
+
+### Event Types
+
+| Class | Fields | Usage |
+|-------|--------|-------|
+| `TradeSignalEvent` | symbol, signal, confidence, price, entry/stop/tp | Brain → NATS (signals.raw) |
+| `AggregatedSignalEvent` | symbol, consensus, weights, brain_signals, regime | Go orchestrator → NATS (signals.aggregated) |
+| `ExecutedSignalEvent` | symbol, order_id, filled_qty, avg_price, status | Execution → NATS (signals.executed) |
+| `MarketDataEvent` | symbol, event_type, data (kline/ticker) | Market feed → NATS |
+| `OrderbookEvent` | bids, asks, imbalance, spread, mid_price | L2 → NATS → Frontend |
+| `PortfolioEvent` | balance, equity, total_pnl, drawdown | Portfolio → NATS → Frontend |
+| `RLEvent` | agent_id, reward, weights, metrics | RL engine → NATS |
+| `WSEvent` | event_type, payload (flexible data) | NATS → WebSocket → Frontend |
+| `SystemEvent` | level, message, component | Any component → NATS |
+
+### Quick Usage
+
+```python
+from orchestrator.events import (
+    TradeSignalEvent, OrderbookEvent, PortfolioEvent,
+    quantex_event, raw_signal_subject
+)
+
+# Create and publish a signal event
+event = TradeSignalEvent(
+    source="custom_nn",
+    symbol="BTCUSDT",
+    signal="long",
+    confidence=0.85,
+    price=50000.0,
+)
+await nc.publish(event.subject, event.to_json().encode())
+
+# Deserialize from any source
+data = json.loads(msg.data)
+event = quantex_event(data)
+print(f"{event.category}/{event.subject}: {event}")
+```
+
+### Deserialization Factory
+
+`quantex_event(data: dict)` — automatically creates the correct typed event from a dict by inspecting `category` and `event_type` fields. Handles all 9 event types.
+
+### NATS Stream Configuration
+
+Defined in `orchestrator/events.py`:
+
+```python
+NATS_STREAMS = {
+    "signals": {
+        "subjects": ["signals.raw.>", "signals.aggregated", "signals.executed"],
+        "storage": "file", "max_age_days": 7, "max_size_gb": 10,
+    },
+    "market": {"subjects": ["market.>"], "storage": "file", ...},
+    "portfolio": {"subjects": ["portfolio.>"], "storage": "file", ...},
+    "rl": {"subjects": ["rl.>"], "storage": "file", ...},
+    "ws": {"subjects": ["ws.>"], "storage": "memory", ...},
+    "system": {"subjects": ["system.>"], "storage": "memory", ...},
+}
+```
+
+---
+
+## 🧠 PPO PORTFOLIO MANAGER
+
+Reinforcement learning-based capital allocation — PPO policy that learns to distribute capital across N assets optimally.
+
+### Architecture
+
+```
+PortfolioAllocEnv (gymnasium) ──→ SB3 PPO ──→ Allocation Weights
+       │                              ↑
+       │                              │
+  Market returns               PPOPortfolioManager
+  + portfolio state            (PPO + Markowitz fallback)
+```
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `orchestrator/rl/portfolio_env.py` | `PortfolioAllocEnv` (gym.Env) — state ~30+N*6 dims, softmax-normalized actions, drawdown/turnover penalties |
+| `orchestrator/ppo_portfolio_manager.py` | `PPOPortfolioManager` — SB3 PPO wrapper with `allocate()`, `allocate_blended()`, `allocate_with_fallback()` |
+| `orchestrator/train_ppo_portfolio.py` | Training script — synthetic/CSV data, CLI interface, eval comparison |
+
+### Training
+
+```bash
+# Train with synthetic data (4 assets, 100K timesteps)
+python -m orchestrator.train_ppo_portfolio
+
+# Train with historical returns CSV
+python -m orchestrator.train_ppo_portfolio --data path/to/returns.csv --timesteps 200000 --eval
+
+# Quick benchmark (10K timesteps)
+python -m orchestrator.train_ppo_portfolio --benchmark
+```
+
+### Inference
+
+```python
+from orchestrator import PPOPortfolioManager
+
+manager = PPOPortfolioManager(n_assets=4, asset_names=["BTC", "ETH", "SOL", "USDC"])
+manager._load_model()
+
+# PPO allocation
+result = manager.allocate(returns_df, confidence=0.5)
+print(result.weights)   # {"BTC": 0.3, "ETH": 0.25, ...}
+print(result.method)    # "ppo" or "markowitz" (fallback)
+
+# Blended allocation (60% PPO + 40% Markowitz)
+result = manager.allocate_blended(returns_df, ppo_weight=0.6)
+
+# Force Markowitz fallback
+result = manager.allocate_with_fallback(returns_df, method="risk_parity")
+
+# Performance comparison
+print(manager.get_performance_summary())
+```
+
+### PortfolioAllocEnv State Space
+
+```
+State (~30+N*6 dims):
+  [asset_features × N]      : ret_1, ret_5, volatility, momentum, vol_ratio, corr
+  [portfolio_features × 7]  : drawdown, sharpe, win_rate, consec_losses, pnl%, trades, exposure
+  [current_weights × N]     : current allocation vector
+
+Action (continuous Box):
+  N_asset weights (softmax → sum ≈ 1.0)
+
+Reward:
+  port_return - turnover_penalty - concentration_penalty - drawdown_penalty
+```
+
+### Fallback Chain
+
+```
+PPO (trained) ──→ Markowitz ──→ Risk Parity ──→ Equal Weight
+```
+
+The `PPOPortfolioManager` automatically falls back through this chain if PPO is unavailable.
+
+---
 
 ### Brain Files vs Registration Cross-Reference
 

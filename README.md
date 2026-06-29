@@ -44,14 +44,6 @@ A modular AI-assisted algorithmic trading system focused on:
 - Transformers
 - NVIDIA NIM APIs
 
-<<<<<<< Updated upstream
-### 🧠 ML & RL Integration
-- **TimesFM forecasting**: Google Research's pretrained time-series foundation model for zero-shot price forecasting (point + quantile bands), exposed as a signal source (`/api/v1/signal?source=timesfm`) and a dedicated endpoint. Loaded lazily; optional `timesfm[torch]` dependency.
-- FreqAI-style ML signal generation (Random Forest classifier on 64+ features)
-- Gymnasium-compatible RL trading environment (6 actions, 64-feature obs)
-- Genetic strategy evolution (tournament selection, crossover, mutation)
-- Optuna Bayesian hyperparameter optimization
-=======
 ## API / Backend
 - FastAPI
 - Redis
@@ -66,58 +58,6 @@ A modular AI-assisted algorithmic trading system focused on:
 - Next.js
 - TailwindCSS
 - shadcn/ui
->>>>>>> Stashed changes
-
----
-
-# Recommended Development Flow
-
-## Phase 1
-- Data ingestion
-- Historical storage
-- Backtesting engine
-- Baseline strategies
-
-## Phase 2
-- Risk engine
-- Paper trading
-- Dashboard
-- Monitoring
-
-## Phase 3
-- Live trading
-- AI agent integration
-- Portfolio allocation
-- Strategy optimization
-
-## Phase 4
-- Multi-agent orchestration
-- Automated research loops
-- Adaptive strategy switching
-
----
-
-# High-Level Architecture
-
-Market Data
-    ↓
-Data Pipeline
-    ↓
-Feature Engineering
-    ↓
-Strategy Engine
-    ↓
-Risk Engine
-    ↓
-Execution Engine
-    ↓
-Exchange
-
-AI Agents observe:
-- market state
-- strategy health
-- portfolio risk
-- performance metrics
 
 ---
 
@@ -134,22 +74,210 @@ AI Agents observe:
 
 # Quick Start
 
+## Docker Compose (Local Dev)
+
 ```bash
 git clone <repo>
-cd trading-ai
+cd Trade_agent
 
-python -m venv .venv
-source .venv/bin/activate
+# Copy environment file and fill in API keys
+cp .env.example .env
 
-pip install -r requirements.txt
+# Start all services (NATS + PostgreSQL + Redis + Qdrant + Orchestrator + Frontend + Monitoring)
+docker compose up -d
+
+# With hot-reload for development:
+docker compose -f docker-compose.yml -f docker-compose.override.yml up -d
 ```
 
-<<<<<<< Updated upstream
-The orchestrator starts on port 8001. Open `http://localhost:3001` for Grafana or access the frontend via nginx on port 80/443.
+Access:
+- **Frontend**: http://localhost:3000
+- **Orchestrator API**: http://localhost:8001
+- **Grafana**: http://localhost:3001 (admin / quantex123)
+- **NATS monitoring**: http://localhost:8222
 
 ---
 
-## API Overview
+# Deployment
+
+## 1. Docker Compose (Single Server)
+
+Best for MVP / single-server deployment. All services run on one host via Docker Compose.
+
+```bash
+# Full production stack (no hot-reload)
+docker compose -f docker-compose.yml up -d
+
+# Stop everything
+docker compose down
+```
+
+**Trinity Architecture Data Flow (Docker Compose):**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Layer A: Python Orchestrator (11 AI Brains)                     │
+│  timesfm  freqai  llm_regime  microstructure  orderflow_nautilus│
+│  finbert  finrl   statarb     onchain         custom_nn         │
+│  polymarket_alpha                                               │
+│         │                                                       │
+│         ▼ publish → signals.raw (NATS JetStream)                │
+├─────────────────────────────────────────────────────────────────┤
+│ Layer B: Go Realtime (Weighted Aggregation)                     │
+│  Subscribe ← signals.raw                                        │
+│  11 brain weights × confidence → final score                    │
+│  Action: BUY / SELL / HOLD                                      │
+│  Publish → signals.aggregated (NATS JetStream)                  │
+│         │                                                       │
+│         ▼ WebSocket ──► Frontend Dashboard                      │
+├─────────────────────────────────────────────────────────────────┤
+│ Layer C: Rust Execution Engine (Paper / Live)                   │
+│  Subscribe ← signals.aggregated                                 │
+│  Pre-trade risk → Order placement → Execution confirmation      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### NATS JetStream Subjects
+
+| Subject | Publisher | Consumer | Payload |
+|---------|-----------|----------|---------|
+| `signals.raw` | Python brains (Layer A) | Go orchestrator (Layer B) | `{brain_id, score, confidence, ...}` |
+| `signals.aggregated` | Go orchestrator | Rust execution (Layer C) | `{action, final_score, active_brains, brain_scores, weights_used}` |
+| `signals.executed` | Rust execution | Monitoring | `{execution_id, filled_price, ...}` |
+
+### Brain Weights
+
+Each brain has a weight in the final aggregated score (total = 1.00):
+
+| Brain | Weight | Cadence | Role |
+|-------|:------:|:-------:|------|
+| TimesFM | 0.25 | 60s | Primary forecaster (Google foundation model) |
+| FreqAI | 0.15 | 15s | Technical indicator ML (XGBoost) |
+| LLM Regime | 0.15 | 15s | LLM regime classification |
+| Microstructure | 0.08 | 10s | Tick-level order flow |
+| OrderFlow Nautilus | 0.08 | 5s | L2/L3 orderbook depth |
+| FinBERT | 0.07 | 30s | NLP news sentiment |
+| FinRL | 0.07 | 30s | RL position sizing |
+| StatArb | 0.05 | 15s | Z-score mean reversion |
+| Custom NN | 0.04 | 30s | LSTM/Transformer temporal patterns |
+| OnChain | 0.03 | 60s | Exchange flows + whale transactions |
+| Polymarket Alpha | 0.03 | 60s | Prediction market alpha |
+
+---
+
+## 2. Kubernetes (Production Cluster)
+
+Best for multi-node, scalable production deployment with self-healing.
+
+### Architecture (25 K8s Resources)
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    quantex namespace                              │
+│                                                                  │
+│  ┌──────────────┐    ┌──────────────┐    ┌───────────────────┐  │
+│  │ orchestrator │    │   realtime   │    │    frontend       │  │
+│  │ (replicas: 2)│───▶│ (replicas: 2)│───▶│ (replicas: 2)    │  │
+│  │ 11 brains    │    │ aggregation  │    │ dashboard         │  │
+│  │ NATS_URL     │    │ WebSocket    │    │ Next.js           │  │
+│  └──────┬───────┘    └──────┬───────┘    └───────────────────┘  │
+│         │                   │                                    │
+│         ▼                   ▼                                    │
+│  ┌──────────┐       ┌──────────────┐                             │
+│  │ NATS     │       │ Prometheus   │                             │
+│  │ JetStream│       │ + Grafana    │                             │
+│  └──────────┘       └──────────────┘                             │
+│                                                                  │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────────┐  │
+│  │PostgreSQL│  │  Redis   │  │  Qdrant  │  │  NATS Exporter │  │
+│  └──────────┘  └──────────┘  └──────────┘  └────────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Deploy
+
+```bash
+# Prerequisites: Kubernetes 1.28+ cluster, kubectl configured
+
+# 1. Create namespace
+kubectl apply -f deployment/k8s/quantex-namespace.yaml
+
+# 2. Create secrets (replace with actual API keys)
+kubectl -n quantex create secret generic quantex-secrets \
+  --from-literal=nvidia-api-key="nvapi-..." \
+  --from-literal=openrouter-api-key="sk-or-v1-..." \
+  --from-literal=groq-api-key="gsk_..." \
+  --from-literal=postgres-password="secret"
+
+# 3. Deploy all services (19 resources)
+kubectl apply -f deployment/k8s/services.yaml
+
+# 4. Verify
+kubectl -n quantex get pods
+kubectl -n quantex get svc
+```
+
+### Brain Weights ConfigMap
+
+The `quantex-brain-weights` ConfigMap stores the 11 brain weights that the Go orchestrator reads via `BRAIN_WEIGHT_<ID>` env vars:
+
+```bash
+# View current weights
+kubectl -n quantex get configmap quantex-brain-weights -o yaml
+
+# Override a weight (e.g., boost Polymarket)
+kubectl -n quantex edit configmap quantex-brain-weights
+# Change: brain_weight_polymarket_alpha: "0.03" → "0.10"
+
+# Restart realtime to pick up new weights
+kubectl -n quantex rollout restart deployment quantex-realtime
+```
+
+### Scaling
+
+```bash
+kubectl -n quantex scale deployment quantex-orchestrator --replicas=3
+kubectl -n quantex scale deployment quantex-realtime --replicas=3
+kubectl -n quantex scale deployment quantex-frontend --replicas=3
+```
+
+### Monitoring
+
+```bash
+kubectl -n quantex port-forward svc/quantex-grafana 3001:3000
+# Open http://localhost:3001 (admin / quantex123)
+
+kubectl -n quantex port-forward svc/quantex-nats 8222:8222
+# Open http://localhost:8222/healthz
+```
+
+---
+
+## 3. Terraform (Hetzner Cloud)
+
+For bare-metal provisioning on Hetzner Cloud with automatic Docker setup:
+
+```bash
+cd deployment/terraform
+export TF_VAR_hcloud_token="your-token"
+export TF_VAR_deployment_tier="tier0"  # $4-5/month - cx21 (2 vCPU, 4GB RAM)
+# export TF_VAR_deployment_tier="tier1"  # $20-40/month - cx41 (4 vCPU, 16GB RAM)
+
+export TF_VAR_ssh_key_name="quantex-deploy"
+terraform init
+terraform apply
+```
+
+The firewall automatically allows:
+- `:80/:443` — Web traffic
+- `:3000` — Frontend
+- `:8001` — Orchestrator API
+- `:4222` — NATS (internal subnet only)
+- `:9090/:3001` — Prometheus/Grafana
+
+---
+
+# API Overview
 
 ### REST Endpoints
 
@@ -161,6 +289,7 @@ The orchestrator starts on port 8001. Open `http://localhost:3001` for Grafana o
 | `GET /api/v1/positions` | Open positions |
 | `GET /api/v1/trades` | Trade history |
 | `GET /api/v1/signal` | Latest trading signal |
+| `GET /api/v1/brains` | Brain runner status (11 brains) |
 | `POST /api/v1/trade` | Execute trade |
 | `POST /api/v1/backtest/run` | Run backtest |
 | `POST /api/v1/ml/train` | Train ML model |
@@ -212,7 +341,7 @@ Each agent has an optimal provider chain, automatically adapted based on real la
 
 ---
 
-## Tech Stack
+# Tech Stack
 
 | Layer | Language | Framework/Tools |
 |-------|----------|----------------|
@@ -231,39 +360,3 @@ Each agent has an optimal provider chain, automatically adapted based on real la
 
 ---
 
-## Project Structure
-=======
-Run services:
->>>>>>> Stashed changes
-
-```bash
-docker compose up
-```
-
-Start backend:
-
-```bash
-uvicorn api.main:app --reload
-```
-
----
-
-# Suggested Initial Strategy Types
-
-- Trend following
-- Mean reversion
-- Breakout
-- Volatility expansion
-- Regime switching
-
----
-
-# Long-Term Vision
-
-Build a scalable autonomous trading research and execution platform capable of:
-- multi-strategy orchestration,
-- portfolio optimization,
-- adaptive market regime analysis,
-- AI-assisted research,
-- low-latency execution,
-- continuous monitoring.
