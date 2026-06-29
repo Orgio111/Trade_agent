@@ -318,8 +318,10 @@ class FreqAIBrain(BaseBrain):
         deltas = np.diff(closes[-period - 1 :])
         gains = np.where(deltas > 0, deltas, 0)
         losses = np.where(deltas < 0, -deltas, 0)
-        avg_gain = np.mean(gains) if len(gains) > 0 else 0
-        avg_loss = np.mean(losses) if len(losses) > 0 else 1e-10
+        avg_gain = float(np.mean(gains)) if len(gains) > 0 else 0.0
+        avg_loss = float(np.mean(losses)) if len(losses) > 0 else 1e-10
+        if avg_loss < 1e-10:
+            return 100.0 if avg_gain > 0 else 50.0
         rs = avg_gain / avg_loss
         return float(100 - 100 / (1 + rs))
 
