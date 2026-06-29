@@ -214,24 +214,24 @@ def test_pipeline_demo_4_stages():
     assert results[3].route == "TAKER"  # high edge → TAKER
 
 
-def test_brain_compute_score_no_data():
+@pytest.mark.asyncio
+async def test_brain_compute_score_no_data():
     mod = importlib.import_module("orchestrator.brains.polymarket_brain")
     brain = mod.PolymarketBrain()
-    import asyncio
-    signal = asyncio.get_event_loop().run_until_complete(brain.compute_score("BTC"))
+    signal = await brain.compute_score("BTC")
     assert signal.brain_id == "polymarket_alpha"
     assert signal.score == 0.0
     assert signal.confidence == 0.1
     assert signal.metadata["status"] == "no_market_data"
 
 
-def test_brain_compute_score_with_data():
+@pytest.mark.asyncio
+async def test_brain_compute_score_with_data():
     mod = importlib.import_module("orchestrator.brains.polymarket_brain")
     brain = mod.PolymarketBrain()
     brain.push_market("Fed Rate Cut", yes_price=0.35)
     brain.push_evidence("BLS", "Weak jobs", impact=0.60, reliability=0.80)
-    import asyncio
-    signal = asyncio.get_event_loop().run_until_complete(brain.compute_score("BTC"))
+    signal = await brain.compute_score("BTC")
     assert signal.brain_id == "polymarket_alpha"
     # adjusted_prob=0.408 < 0.5, but EV=0.058 > 0 → YES edge → score > 0
     assert signal.score > 0

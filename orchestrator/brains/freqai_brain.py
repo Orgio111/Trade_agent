@@ -168,19 +168,23 @@ class FreqAIBrain(BaseBrain):
         )
 
     def _auto_fetch_ohlcv(self, symbol: str) -> None:
-        """Fetch fresh OHLCV from Binance via ccxt if buffer is empty or stale."""
+        """Fetch fresh OHLCV from Binance via ccxt if buffer is empty or stale.
+
+        Falls back to yfinance if Binance fails (e.g. API rate-limit, geo-block).
+        """
         now = time.time()
         last_fetch = self._binance_fetched.get(symbol, 0)
         # Fetch if never fetched or older than 5 minutes
         if now - last_fetch < 300 and len(self._ohlcv_buffer) >= 50:
             return
 
+        # ── Primary: Binance via ccxt ───────────────────────────────
         try:
             import ccxt
             exchange = ccxt.binance()
             ccxt_symbol = symbol.replace("/", "/")  # already in correct format
             ohlcv = exchange.fetch_ohlcv(ccxt_symbol, "1h", limit=200)
-            if ohlcv:
+            if ohlcv and len(ohlcv) >= 30:
                 # Clear and refill buffer
                 self._ohlcv_buffer.clear()
                 for row in ohlcv:
@@ -195,8 +199,57 @@ class FreqAIBrain(BaseBrain):
                 self._binance_fetched[symbol] = now
                 logger.info("[freqai] Fetched %d OHLCV bars for %s from Binance",
                             len(ohlcv), symbol)
+                return
+            logger.warning("[freqai] Binance returned insufficient data (%d bars)", len(ohlcv) if ohlcv else 0)
         except Exception as e:
             logger.warning("[freqai] Binance fetch failed: %s", e)
+
+        # ── Fallback: yfinance ─────────────────────────────────────
+        self._fetch_yfinance(symbol, now)
+
+    def _fetch_yfinance(self, symbol: str, now: float) -> None:
+        """Fetch OHLCV from yfinance as Binance fallback.
+
+        Converts ccxt-style 'BTC/USDT' to yfinance-style 'BTC-USD'.
+        Only used when Binance ccxt fetch fails.
+        """
+        try:
+            import yfinance as yf
+
+            # Map ccxt pair format → yfinance ticker format
+            # e.g. "BTC/USDT" → "BTC-USD", "ETH/USDT" → "ETH-USD"
+            base = symbol.split("/")[0] if "/" in symbol else symbol
+            quote = symbol.split("/")[1] if "/" in symbol else "USDT"
+            yf_suffix = "USD" if quote == "USDT" else quote
+            yf_ticker = f"{base}-{yf_suffix}"
+
+            # Download 200 days of daily data (yfinance doesn't give 1h reliably)
+            tk = yf.Ticker(yf_ticker)
+            hist = tk.history(period="200d", interval="1d", auto_adjust=True)
+
+            if hist.empty or len(hist) < 30:
+                logger.warning("[freqai] yfinance returned %d rows for %s (ticker=%s)",
+                              len(hist), symbol, yf_ticker)
+                return
+
+            # Convert DataFrame rows to internal dict format
+            self._ohlcv_buffer.clear()
+            for idx, row in hist.iterrows():
+                self._ohlcv_buffer.append({
+                    "timestamp": int(idx.timestamp() * 1000),
+                    "open": float(row["Open"]),
+                    "high": float(row["High"]),
+                    "low": float(row["Low"]),
+                    "close": float(row["Close"]),
+                    "volume": float(row["Volume"]),
+                })
+            self._binance_fetched[symbol] = now
+            logger.info("[freqai] Fetched %d daily bars for %s from yfinance (ticker=%s)",
+                        len(hist), symbol, yf_ticker)
+        except ImportError:
+            logger.debug("[freqai] yfinance not installed, skipping fallback")
+        except Exception as e:
+            logger.warning("[freqai] yfinance fetch failed for %s: %s", symbol, e)
 
     def _auto_train(self, closes: np.ndarray, highs: np.ndarray,
                     lows: np.ndarray, volumes: np.ndarray) -> None:

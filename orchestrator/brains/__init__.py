@@ -17,6 +17,7 @@ from .onchain_brain import OnChainBrain
 from .statarb_brain import StatArbBrain
 from .orderflow_nautilus_brain import OrderFlowNautilusBrain
 from .polymarket_brain import PolymarketBrain
+from .custom_nn_brain import CustomNNBrain
 
 # ── BRAIN_REGISTRY: name → class mapping ──────────────────────────────────
 BRAIN_REGISTRY: dict[str, type[BaseBrain]] = {
@@ -30,6 +31,7 @@ BRAIN_REGISTRY: dict[str, type[BaseBrain]] = {
     "statarb":             StatArbBrain,
     "orderflow_nautilus":  OrderFlowNautilusBrain,
     "polymarket_alpha":    PolymarketBrain,
+    "custom_nn":           CustomNNBrain,
 }
 
 __all__ = [
@@ -46,4 +48,5 @@ __all__ = [
     "StatArbBrain",
     "OrderFlowNautilusBrain",
     "PolymarketBrain",
+    "CustomNNBrain",
 ]
