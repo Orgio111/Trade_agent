@@ -80,6 +80,7 @@ Base 0.3 + 0.20 (>10 flows) + 0.15 (>5 whale txns) + 0.10 (>10 fees) → max 0.8
 
 ## Related
 
+- [[brain-ecosystem]] — full brain weight table
 - [[statarb-brain]] — funding rate + exchange flow = complementary on-chain signals
 - [[finbert-brain]] — NLP + on-chain = multi-modal conviction
 - [[tick-rule-classification]] — trade classification vs on-chain flow (micro vs macro)

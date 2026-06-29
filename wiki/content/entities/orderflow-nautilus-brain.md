@@ -12,7 +12,7 @@ status: stable
 
 ## What it is
 
-`OrderFlowNautilusBrain` is orchestrator **brain #4b** — the depth-based Order Flow Imbalance analyzer. It is the system's *preferred* OFI path: when NautilusTrader's Rust-core L2/L3 orderbook engine is available, it uses real bid/ask depth imbalance (microprice, depth-weighted mid, spread compression, liquidity gaps); otherwise it falls back to the same tick rule as [[microstructure-brain]]. Go-orchestrator ensemble weight **0.12** — the premium over the tick-only brain encodes the **depth > tick** hierarchy.
+`OrderFlowNautilusBrain` is orchestrator **brain #4b** — the depth-based Order Flow Imbalance analyzer. It is the system's *preferred* OFI path: when NautilusTrader's Rust-core L2/L3 orderbook engine is available, it uses real bid/ask depth imbalance (microprice, depth-weighted mid, spread compression, liquidity gaps); otherwise it falls back to the same tick rule as [[microstructure-brain]]. Go-orchestrator ensemble weight **0.03** — the premium over the tick-only brain encodes the **depth > tick** hierarchy.
 
 - **Code**: `orchestrator/brains/orderflow_nautilus_brain.py`
 - **brain_id**: `orderflow_nautilus`

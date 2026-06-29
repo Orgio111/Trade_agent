@@ -2,22 +2,34 @@
 
 > Content catalog for the trading & quant second brain. Organized by category. ZCode updates this on every ingest. **Read this first** when answering a query — then drill into pages.
 >
-> **State:** 2 sources · 31 pages · last updated 2026-06-30
+> **State:** 2 sources · 43 pages · last updated 2026-06-30
 
 ---
 
 ## Overviews
 _Synthesis pages — the big picture of a topic._
 
-_(none yet)_
+- [[brain-ecosystem]] — single source of truth for all 12 brain weights, tiers, registration files, and aggregation flow. (stable, updated 2026-06-30)
 
 ## Concepts
 _Methods and ideas, synthesized across all sources._
 
 - [[odoo-erp-trading-integration]] — Odoo ERP business data as trading signals: inventory, sales, revenue, CRM → directional scores. (1 source, updated 2026-06-30)
+- [[backtesting-pipeline]] — alias for [[brain-backtest-infrastructure]]; validates brain weights before deployment. (stable, updated 2026-06-30)
+- [[brain-backtest-infrastructure]] — lightweight backtest engine simulating 12-brain weighted aggregation with pandas proxies. (stable, updated 2026-06-30)
+- [[continual-learning-pipeline]] — automatic retraining pipeline: Monitor → Trigger → Train → Validate → Promote. (stable, updated 2026-06-30)
+- [[ensemble-meta-model]] — fuses ML/RL/rule-based signals with adaptive weights and attention entropy regime scaling. (stable, updated 2026-06-30)
+- [[hmm-regime]] — Hidden Markov Model for probabilistic market regime classification (4 states). (stable, updated 2026-06-30)
+- [[inference-router]] — multi-provider inference orchestration with semantic cache and circuit breaking. (stable, updated 2026-06-30)
+- [[incremental-candle-state]] — 4-level incremental state management for O(1) per-tick candle processing. (stable, updated 2026-06-30)
+- [[microstructure]] — market microstructure concepts: OFI, tick-rule, CVD. (stable, updated 2026-06-30)
+- [[model-sequential-loading]] — VRAM-aware sequential model loading for RTX 4050 6GB. (stable, updated 2026-06-30)
+- [[nats-event-system]] — NATS JetStream event backbone: 9 event types, subject-based routing, stream configuration. (stable, updated 2026-06-30)
+- [[broker-abstraction-layer]] — Unified broker interface: Binance/FIX/Paper behind BaseBroker ABC. (stable, updated 2026-06-30)
 - [[real-time-trading-dashboard]] — Next.js + WebSocket + NATS dashboard architecture for 12-brain trading cockpit. (1 source, updated 2026-06-30)
 - [[attention-based-regime-detection]] — using Transformer attention weights (entropy, pattern shape) for automatic market regime classification. (research, updated 2026-06-26)
 - [[build-your-own-x]] — meta-learning philosophy: build from scratch to understand. 200+ tutorials across 30+ CS categories. (1 source, updated 2026-06-26)
+- [[dynamic-brain-weight-adjustment]] — attention-entropy-based regime scaling for ensemble brain weights. (stable, updated 2026-06-26)
 - [[custom-trading-brain-architecture]] — proposed LSTM/Transformer brain architecture for temporal pattern recognition. (1 source, updated 2026-06-26)
 - [[local-trading-ai-architecture]] — fully autonomous trading AI optimized for RTX 4050 + Ollama with incremental candle state. (1 source, updated 2026-06-30)
 - [[order-flow-imbalance]] — signed order-book pressure; the cleanest mechanical price-formation signal. Now-pressure, not a forecast. (1 source, updated 2026-06-25)
@@ -54,6 +66,8 @@ _Instruments, venues, tools, people, firms._
 - [[finrl-brain]] — brain #6; PPO + Kelly position sizing, weight 0.10. (updated 2026-06-26)
 - [[statarb-brain]] — brain #8; z-score mean reversion + funding + basis (contrarian), weight 0.10. (updated 2026-06-26)
 - [[onchain-brain]] — brain #7; exchange flow + whale + mempool, weight 0.05. (updated 2026-06-26)
+- [[vllm-inference-provider]] — self-hosted GPU inference via vLLM, zero API cost, OpenAI-compatible API. (active, updated 2026-06-30)
+- [[ppo-portfolio-manager]] — PPO RL-based capital allocation with Markowitz fallback chain. (active, updated 2026-06-30)
 - [[odoo-erp-brain]] — brain #12; Odoo ERP business intelligence via XML-RPC, weight 0.05. (active, updated 2026-06-30)
 - [[neural-network-brain]] — brain #10; custom LSTM for temporal patterns, weight 0.05. (stable, updated 2026-06-26)
 

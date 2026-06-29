@@ -12,7 +12,7 @@ status: stable
 
 ## What it is
 
-`MicrostructureBrain` is orchestrator **brain #4** — the trade-tick Order Flow Imbalance analyzer. It is the system's noisiest-but-cheapest OFI path: it classifies executed trades as buyer- or seller-initiated (tick rule), accumulates signed volume, normalizes, saturates, and emits a directional score. Go-orchestrator ensemble weight **0.10**.
+`MicrostructureBrain` is orchestrator **brain #4** — the trade-tick Order Flow Imbalance analyzer. It is the system's noisiest-but-cheapest OFI path: it classifies executed trades as buyer- or seller-initiated (tick rule), accumulates signed volume, normalizes, saturates, and emits a directional score. Go-orchestrator ensemble weight **0.05**.
 
 - **Code**: `orchestrator/brains/microstructure_brain.py`
 - **brain_id**: `microstructure`

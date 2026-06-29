@@ -7,6 +7,41 @@
 
 ---
 
+## [2026-06-30] ingest | Fix 9 broken wikilinks — created missing concept pages
+
+Resolved 17 broken wikilinks by creating 9 new concept pages:
+
+- [[hmm-regime]] — HMM regime detection (4-state Gaussian HMM, Viterbi decoding)
+- [[ensemble-meta-model]] — ML/RL/rule-based signal fusion with attention entropy scaling
+- [[continual-learning-pipeline]] — automatic retraining pipeline (Monitor→Trigger→Train→Validate→Promote)
+- [[brain-backtest-infrastructure]] — lightweight backtest engine with 12-brain pandas proxies
+- [[backtesting-pipeline]] — alias page pointing to brain-backtest-infrastructure
+- [[incremental-candle-state]] — 4-level O(1) per-tick candle state management
+- [[model-sequential-loading]] — VRAM-aware sequential model loading for RTX 4050
+- [[inference-router]] — multi-provider inference orchestration with semantic cache
+- [[microstructure]] — market microstructure concepts (OFI, tick-rule, CVD)
+
+Also fixed `[[backtesting-pipeline]]` references in signal-aggregation-logic.md. Updated `index.md`: 2 sources, 43 pages. Wikilink count: 0 broken (down from 17).
+
+## [2026-06-30] ingest | Event System + Broker Abstraction + vLLM + PPO Portfolio — AGENTS.md sections ingested
+
+Ingested 4 AGENTS.md sections into wiki as concept/entity pages:
+
+- [[nats-event-system]] (concept) — NATS JetStream event backbone: 9 event types, 6 subject categories, stream configuration, deserialization factory. Data flow diagram (Layer A → B → C).
+- [[broker-abstraction-layer]] (concept) — Unified broker interface: BaseBroker ABC, 3 implementations (Binance/FIX/Paper), factory pattern, 4-step extension guide.
+- [[vllm-inference-provider]] (entity) — Self-hosted GPU inference: vLLM server, OpenAI-compatible API, performance table (RTX 4090/A100/H100), model shortcuts.
+- [[ppo-portfolio-manager]] (entity) — PPO RL capital allocation: PortfolioAllocEnv state space, training commands, fallback chain (PPO→Markowitz→Risk Parity→Equal Weight).
+
+Updated [[index.md]]: 2 sources, 36 pages. Cross-references added to [[brain-ecosystem]], [[real-time-trading-dashboard]], [[odoo-erp-trading-integration]].
+
+## [2026-06-30] note | Brain Ecosystem Overview — DRY consolidation + wiki lint
+
+Created [[brain-ecosystem]] (overview) — single source of truth for all 12 brain weights, tiers, registration files, and aggregation flow. Replaced duplicated brain ecosystem tables in [[neural-network-brain]] and [[odoo-erp-brain]] with links to overview. Added [[brain-ecosystem]] link to [[onchain-brain]]. Updated `index.md`: 2 sources, 32 pages. No broken wikilinks.
+
+## [2026-06-30] note | Wiki lint pass — 14 broken links, 3 orphans, 8 missing pages
+
+Full lint pass across 29 wiki pages. Findings: 14 broken wikilinks (8 missing target pages), 3 orphan pages (codecrafters, dynamic-brain-weight-adjustment, nn-brain-development-guide), 1 index drift (dynamic-brain-weight-adjustment not in index), 8 mentioned-but-not-created pages (brain-backtest-infrastructure, ensemble-meta-model, continual-learning-pipeline, hmm-regime, incremental-candle-state, model-sequential-loading, microstructure, backtesting-pipeline).
+
 ## [2026-06-30] ingest | Odoo ERP + Real-Time Dashboard — ERP-to-trading integration
 
 Ingested Odoo ERP integration and real-time dashboard architecture into wiki. Created 3 pages:

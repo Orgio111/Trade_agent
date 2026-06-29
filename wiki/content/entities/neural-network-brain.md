@@ -43,21 +43,7 @@ This brain has been implemented, tested, and benchmarked. Key results:
 
 ## How it fits in the brain ecosystem
 
-```
-Current brains (0.90 total weight):
-  timesfm (0.25)      — foundation model forecaster
-  freqai (0.15)       — XGBoost technical indicators
-  llm_regime (0.15)   — LLM regime classifier
-  finbert (0.10)      — NLP sentiment
-  finrl (0.10)        — PPO RL + Kelly
-  statarb (0.10)      — statistical arbitrage
-  onchain (0.05)      — on-chain analytics
-
-Proposed new brain:
-  custom_nn (0.05)    — learned temporal patterns ← THIS BRAIN
-
-New total: 0.95 (0.05 safety margin remaining)
-```
+See [[brain-ecosystem]] for the full weight table. This brain sits at the supplementary tier (0.05). Total ensemble: 12 brains, weight sum = 1.00.
 
 ## Key differentiators from existing brains
 
@@ -81,6 +67,8 @@ New total: 0.95 (0.05 safety margin remaining)
 - [[freqai-brain]] — complementary tabular model
 - [[timesfm-brain]] — complementary foundation model
 - [[finrl-brain]] — complementary RL model
+- [[brain-ecosystem]] — full brain weight table
+- [[nn-brain-development-guide]] — step-by-step playbook for building this brain
 - [[brain-backtest-infrastructure]] — evaluation framework
 - [[codecrafters-build-your-own-x]] — learning resources
 
