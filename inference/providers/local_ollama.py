@@ -1,131 +1,135 @@
 """
-QUANTEX Local Ollama Provider — Self-hosted LLM inference via Ollama.
+QUANTEX Local Ollama Provider — Local inference via Ollama.
 
-Provides a local fallback when cloud providers (Groq, NVIDIA NIM, OpenRouter)
-are unavailable. Runs on RTX 4050 (6GB VRAM) with:
-  - phi-3.5:mini  (2.5 GB VRAM, 45 t/s) → Fast/Urgent tasks
-  - qwen2.5:7b-q4 (4.5 GB VRAM, 25 t/s) → Reasoning/Analysis tasks
+Connects to a local Ollama server (http://localhost:11434) to run
+quantized LLMs on local GPU/CPU. Perfect for RTX 4050 (6GB VRAM)
+where 7B-8B quantized models fit comfortably.
 
-Architecture:
-  Ollama (localhost:11434) ← HTTP API
-       │
-       ├── phi-3.5:mini     → FAST, CLASSIFY, URGENT
-       └── qwen2.5:7b-q4_K_M → REASONING, ANALYSIS
+Supported models (verified on RTX 4050 6GB):
+  - qwen3:8b         ✅ ~4.5GB VRAM — best for reasoning/analysis
+  - deepseek-r1:8b   ✅ ~4.7GB VRAM — strong reasoning
+  - qwen2.5:3b       ✅ ~2GB VRAM   — very fast, low latency
+  - phi3:mini        ✅ ~2.5GB VRAM — lightweight, fast
 
-Installation:
-    # One-time setup:
-    winget install Ollama.Ollama  # or download from ollama.com
-    ollama pull phi-3.5:mini
-    ollama pull qwen2.5:7b-q4_K_M
+Requirements:
+  - Ollama installed and running (http://localhost:11434)
+  - Models pulled via `ollama pull <model>`
 
 Usage:
+    from inference.providers import LocalOllamaProvider
+
     provider = LocalOllamaProvider()
-    response = await provider.infer("fast", messages)
+    result = await provider.infer("qwen3:8b", messages=[...])
 """
 
-import os
+from __future__ import annotations
+
 import json
-import time
-import asyncio
 import logging
-from typing import Optional, AsyncGenerator
+import os
+import time
+from typing import AsyncGenerator, Optional
 
 import aiohttp
-from .base import BaseProvider, ProviderResponse, ProviderUnavailable, ProviderTimeout, ProviderError
 
-logger = logging.getLogger("quantex.inference.local_ollama")
+from .base import (
+    BaseProvider,
+    ProviderConfig,
+    ProviderResponse,
+    ProviderUnavailable,
+    ProviderTimeout,
+    ProviderError,
+)
+
+logger = logging.getLogger("quantex.inference.ollama")
+
+# ── Ollama API endpoints ────────────────────────────────────
+
+OLLAMA_DEFAULT_URL = "http://localhost:11434"
+OLLAMA_CHAT_ENDPOINT = "/api/chat"
+OLLAMA_TAGS_ENDPOINT = "/api/tags"
+OLLAMA_GENERATE_ENDPOINT = "/api/generate"
+
+# Model configs with VRAM estimates for RTX 4050 6GB
+OLLAMA_DEFAULT_MODELS: dict[str, dict] = {
+    "reasoning": {
+        "model": "qwen3:8b",
+        "vram_gb": 4.5,
+        "note": "Best overall for trading analysis on 6GB GPU",
+    },
+    "analysis": {
+        "model": "qwen3:8b",
+        "vram_gb": 4.5,
+        "note": "Strong reasoning for market structure analysis",
+    },
+    "fast": {
+        "model": "qwen2.5:3b",
+        "vram_gb": 2.0,
+        "note": "Ultra-fast, minimal latency for classifications",
+    },
+    "classification": {
+        "model": "phi3:mini",
+        "vram_gb": 2.5,
+        "note": "Lightweight, good for text classification",
+    },
+    "deep_reasoning": {
+        "model": "deepseek-r1:8b",
+        "vram_gb": 4.7,
+        "note": "Strong chain-of-thought reasoning",
+    },
+}
 
 
 class LocalOllamaProvider(BaseProvider):
     """
-    Ollama-based local LLM provider.
+    Local Ollama inference provider.
 
-    Uses local models running via Ollama server (localhost:11434).
-    Falls back automatically when cloud providers are unavailable.
+    Connects to a local Ollama server to run quantized models
+    on local GPU. Zero API cost.
 
-    Models:
-      - phi3:mini  → 2.5 GB VRAM, 45 t/s, good for fast/classification tasks
-      - qwen2.5:7b   → 4.5 GB VRAM, 25 t/s, good for reasoning/analysis
-
-    Requires Ollama to be installed and running.
+    Parameters
+    ----------
+    base_url:
+        Ollama server URL (default: http://localhost:11434)
+    models:
+        Optional model config override dict
+    timeout:
+        Request timeout in seconds (default: 120.0 for local inference)
     """
 
-    OLLAMA_BASE_URL = "http://localhost:11434"
+    def __init__(
+        self,
+        base_url: str = "",
+        models: Optional[dict] = None,
+        timeout: float = 120.0,
+    ):
+        url = base_url or os.getenv("OLLAMA_URL", "") or OLLAMA_DEFAULT_URL
 
-    # Model mapping: task_type -> Ollama model name
-    MODEL_MAP = {
-        "fast": "phi3:mini",
-        "urgent": "phi3:mini",
-        "classification": "phi3:mini",
-        "reasoning": "qwen2.5:7b",
-        "analysis": "qwen2.5:7b",
-        "coding": "qwen2.5:7b",
-        "embedding": "phi3:mini",  # Fallback, not ideal for embeddings
-    }
+        config = ProviderConfig(
+            api_key="",  # Ollama doesn't need an API key
+            base_url=url,
+            timeout=timeout,
+            max_retries=2,
+            rate_limit_rps=5.0,
+            free_tier=True,
+            cost_per_mtok=0.0,
+            models=models or {k: v["model"] for k, v in OLLAMA_DEFAULT_MODELS.items()},
+        )
+        super().__init__(config)
+        # Create session at init (consistent with other providers)
+        self._session = aiohttp.ClientSession(
+            base_url=self.config.base_url,
+            timeout=aiohttp.ClientTimeout(total=self.config.timeout),
+        )
+        self._installed_models: list[str] = []
 
-    def __init__(self, base_url: str = None):
-        super().__init__()
-        self.base_url = base_url or self.OLLAMA_BASE_URL
-        self._session: Optional[aiohttp.ClientSession] = None
-        self._available: Optional[bool] = None
-        self._available_models: list[str] = []
+    @property
+    def name(self) -> str:
+        return "local_ollama"
 
     async def _get_session(self) -> aiohttp.ClientSession:
-        if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
+        """Get the aiohttp session (always available after init)."""
         return self._session
-
-    async def is_available(self) -> bool:
-        """
-        Check if Ollama server is running and has required models.
-        Caches result for 60 seconds.
-        """
-        if self._available is not None:
-            return self._available
-
-        try:
-            session = await self._get_session()
-            async with session.get(f"{self.base_url}/api/tags", timeout=3.0) as resp:
-                if resp.status != 200:
-                    self._available = False
-                    return False
-
-                data = await resp.json()
-                models = [m["name"] for m in data.get("models", [])]
-                self._available_models = models
-
-                # Check if we have at least one required model
-                required = set(self.MODEL_MAP.values())
-                available = set(models)
-                if required & available:
-                    self._available = True
-                    logger.info(f"Ollama available: {len(models)} models loaded")
-                    return True
-
-                logger.warning(f"Ollama running but no required models. Have: {models}")
-                self._available = False
-                return False
-
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            logger.debug(f"Ollama not available: {e}")
-            self._available = False
-            return False
-
-    def _select_model(self, model_key: str) -> str:
-        """Select the best available Ollama model for the task."""
-        preferred = self.MODEL_MAP.get(model_key, "phi-3.5:mini")
-
-        # Check if preferred model is available
-        if preferred in self._available_models:
-            return preferred
-
-        # Fallback to any available model
-        for m in self.MODEL_MAP.values():
-            if m in self._available_models:
-                return m
-
-        # Default fallback
-        return preferred
 
     async def infer(
         self,
@@ -134,72 +138,88 @@ class LocalOllamaProvider(BaseProvider):
         temperature: float = 0.1,
         max_tokens: int = 4096,
     ) -> ProviderResponse:
-        """
-        Send inference request to local Ollama.
+        """Send a chat completion request to Ollama.
 
         Args:
-            model: Task type key ("fast", "reasoning", etc.) or model name
-            messages: OpenAI-format messages
-            temperature: Sampling temperature
+            model: Model name (e.g., "qwen3:8b", "deepseek-r1:8b")
+            messages: OpenAI-format message list
+            temperature: Sampling temperature (0-1)
             max_tokens: Maximum tokens to generate
 
         Returns:
-            ProviderResponse with content and metadata
-
-        Raises:
-            ProviderUnavailable: Ollama not running
-            ProviderTimeout: Request timed out
+            ProviderResponse with content and latency.
         """
-        if not await self.is_available():
-            raise ProviderUnavailable("Ollama not available")
-
-        actual_model = self._select_model(model)
-        session = await self._get_session()
-
-        # Convert OpenAI-format messages to Ollama prompt
-        prompt = self._messages_to_prompt(messages)
+        await self._rate_limit_wait()
         t0 = time.time()
+        self._total_requests += 1
+
+        # Resolve model shortcut
+        actual_model = self.config.models.get(model, model)
+
+        # Build Ollama chat request
+        payload = {
+            "model": actual_model,
+            "messages": messages,
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+            },
+            "stream": False,
+        }
 
         try:
-            async with session.post(
-                f"{self.base_url}/api/generate",
-                json={
-                    "model": actual_model,
-                    "prompt": prompt,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                    "stream": False,
-                    "options": {
-                        "num_ctx": 4096,  # Context window
-                    },
-                },
-                timeout=30.0,
-            ) as resp:
+            session = await self._get_session()
+            async with session.post(OLLAMA_CHAT_ENDPOINT, json=payload) as resp:
+                latency_ms = (time.time() - t0) * 1000
+
+                if resp.status == 404:
+                    raise ProviderUnavailable(
+                        f"Model '{actual_model}' not found. "
+                        f"Pull it: ollama pull {actual_model}"
+                    )
+                if resp.status == 503:
+                    raise ProviderUnavailable(
+                        "Ollama is loading the model. "
+                        "First inference is slow (~5-30s for model load)."
+                    )
                 if resp.status != 200:
                     error_text = await resp.text()
                     raise ProviderError(f"Ollama error {resp.status}: {error_text}")
 
                 data = await resp.json()
-                content = data.get("response", "")
-                latency_ms = (time.time() - t0) * 1000
+                content = data.get("message", {}).get("content", "")
 
-                # Approximate token count (4 chars per token for English)
-                tokens = len(content) // 4
+                # Parse Ollama metrics if available
+                tokens_per_sec = data.get("eval_count", 0) / max(data.get("eval_duration", 1) / 1e9, 0.001)
+                tokens_prompt = data.get("prompt_eval_count", 0)
+                tokens_completion = data.get("eval_count", 0)
+
+                self.record_latency(latency_ms)
+
+                logger.debug(
+                    "Ollama inference OK: model=%s latency=%.0fms tokens=%d+%d (%.1f tok/s)",
+                    actual_model, latency_ms, tokens_prompt, tokens_completion, tokens_per_sec,
+                )
 
                 return ProviderResponse(
                     content=content,
                     model=actual_model,
                     provider="local_ollama",
-                    latency_ms=round(latency_ms, 2),
-                    tokens_prompt=len(prompt) // 4,
-                    tokens_completion=tokens,
-                    cost_usd=0.0,  # Free! Local inference
+                    latency_ms=round(latency_ms, 1),
+                    tokens_prompt=tokens_prompt,
+                    tokens_completion=tokens_completion,
+                    cost_usd=0.0,
                 )
 
-        except asyncio.TimeoutError:
-            raise ProviderTimeout("Ollama request timed out after 30s")
-        except aiohttp.ClientError as e:
-            raise ProviderUnavailable(f"Ollama connection error: {e}")
+        except aiohttp.ClientConnectorError:
+            self._error_count += 1
+            raise ProviderUnavailable(
+                f"Ollama server not reachable at {self.config.base_url}. "
+                "Start with: ollama serve"
+            )
+        except aiohttp.ServerTimeoutError:
+            self._error_count += 1
+            raise ProviderTimeout(f"Ollama request timed out after {self.config.timeout}s")
 
     async def infer_stream(
         self,
@@ -208,26 +228,29 @@ class LocalOllamaProvider(BaseProvider):
         temperature: float = 0.1,
         max_tokens: int = 4096,
     ) -> AsyncGenerator[str, None]:
-        """Stream tokens from local Ollama."""
-        if not await self.is_available():
-            raise ProviderUnavailable("Ollama not available")
+        """Streaming inference from Ollama.
 
-        actual_model = self._select_model(model)
-        session = await self._get_session()
-        prompt = self._messages_to_prompt(messages)
+        Yields tokens as they are generated by the local model.
+        Useful for real-time display of reasoning.
+        """
+        await self._rate_limit_wait()
+        self._total_requests += 1
+
+        actual_model = self.config.models.get(model, model)
+
+        payload = {
+            "model": actual_model,
+            "messages": messages,
+            "options": {
+                "temperature": temperature,
+                "num_predict": max_tokens,
+            },
+            "stream": True,
+        }
 
         try:
-            async with session.post(
-                f"{self.base_url}/api/generate",
-                json={
-                    "model": actual_model,
-                    "prompt": prompt,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                    "stream": True,
-                },
-                timeout=60.0,
-            ) as resp:
+            session = await self._get_session()
+            async with session.post(OLLAMA_CHAT_ENDPOINT, json=payload) as resp:
                 if resp.status != 200:
                     raise ProviderError(f"Ollama stream error {resp.status}")
 
@@ -235,67 +258,80 @@ class LocalOllamaProvider(BaseProvider):
                     if line:
                         try:
                             data = json.loads(line)
-                            token = data.get("response", "")
-                            if token:
-                                yield token
+                            if data.get("done"):
+                                break
+                            if content := data.get("message", {}).get("content"):
+                                yield content
                         except json.JSONDecodeError:
                             continue
 
-        except asyncio.TimeoutError:
-            raise ProviderTimeout("Ollama stream timed out")
-        except aiohttp.ClientError as e:
-            raise ProviderUnavailable(f"Ollama connection error: {e}")
+        except aiohttp.ClientConnectorError:
+            raise ProviderUnavailable("Ollama server not reachable")
+        except Exception as e:
+            raise ProviderError(f"Ollama stream failed: {e}")
 
-    async def health(self) -> dict:
-        """Get Ollama server health."""
+    async def is_available(self) -> bool:
+        """Check if Ollama server is reachable and has models."""
         try:
             session = await self._get_session()
-            async with session.get(f"{self.base_url}/api/tags", timeout=3.0) as resp:
+            async with session.get(OLLAMA_TAGS_ENDPOINT) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    models = [m["name"] for m in data.get("models", [])]
-                    return {
-                        "provider": "local_ollama",
-                        "available": True,
-                        "models": models,
-                        "model_count": len(models),
-                        "latency_ms": 0,
-                    }
-        except Exception as e:
-            pass
+                    self._installed_models = [m["name"] for m in data.get("models", [])]
+                    return len(self._installed_models) > 0
+                return False
+        except Exception:
+            return False
 
-        return {
-            "provider": "local_ollama",
-            "available": False,
-            "error": "Ollama server not running at localhost:11434",
-            "setup_command": "ollama serve",
-        }
+    async def health(self) -> dict:
+        """Extended health report with installed models."""
+        health = await super().health()
+        health["base_url"] = self.config.base_url
 
-    @staticmethod
-    def _messages_to_prompt(messages: list) -> str:
-        """Convert OpenAI-format messages to a single prompt string."""
-        parts = []
-        for msg in messages:
-            role = msg.get("role", "user")
-            content = msg.get("content", "")
+        # Check installed models
+        try:
+            session = await self._get_session()
+            async with session.get(OLLAMA_TAGS_ENDPOINT) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    health["installed_models"] = [
+                        {
+                            "name": m["name"],
+                            "size_gb": round(m.get("size", 0) / 1e9, 2),
+                            "modified_at": m.get("modified_at", ""),
+                        }
+                        for m in data.get("models", [])
+                    ]
+                    health["model_count"] = len(health["installed_models"])
+                else:
+                    health["installed_models"] = []
+        except Exception:
+            health["installed_models"] = []
+            health["error"] = "Could not fetch model list"
 
-            if role == "system":
-                parts.append(f"System: {content}")
-            elif role == "user":
-                parts.append(f"User: {content}")
-            elif role == "assistant":
-                parts.append(f"Assistant: {content}")
+        return health
 
-        parts.append("Assistant:")
-        return "\n\n".join(parts)
+    async def list_models(self) -> list[dict]:
+        """Get list of installed Ollama models with details."""
+        try:
+            session = await self._get_session()
+            async with session.get(OLLAMA_TAGS_ENDPOINT) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return [
+                        {
+                            "name": m["name"],
+                            "size_gb": round(m.get("size", 0) / 1e9, 2),
+                            "digest": m.get("digest", "")[:12],
+                            "modified_at": m.get("modified_at", ""),
+                        }
+                        for m in data.get("models", [])
+                    ]
+                return []
+        except Exception:
+            return []
 
     async def close(self):
-        """Cleanup HTTP session."""
+        """Close the aiohttp session."""
         if self._session and not self._session.closed:
             await self._session.close()
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        await self.close()

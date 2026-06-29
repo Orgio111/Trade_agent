@@ -58,13 +58,14 @@ BRAIN_INTERVALS: dict[str, float] = {
     "freqai": 15.0,               # ML model
     "llm_regime": 15.0,           # LLM-based classification
     "microstructure": 10.0,       # Fast tick-level analysis
-    "finbert": 30.0,              # NLP news sentiment
-    "finrl": 30.0,                # RL position sizing
-    "onchain": 60.0,              # Slow on-chain data
-    "statarb": 15.0,              # Statistical arbitrage
+    "finbert_nlp": 30.0,          # NLP news sentiment
+    "finrl_kelly": 30.0,          # RL position sizing
+    "onchain_whale": 60.0,        # Slow on-chain data
+    "statarb_funding": 15.0,      # Statistical arbitrage
     "orderflow_nautilus": 5.0,    # Ultra-fast orderbook
     "polymarket_alpha": 60.0,     # Prediction market data
     "custom_nn": 30.0,            # Neural network inference
+    "odoo_erp": 60.0,             # Odoo ERP business intelligence
 }
 
 # ── Global State ──────────────────────────────────────────

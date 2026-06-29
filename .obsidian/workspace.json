@@ -4,11 +4,11 @@
     "type": "split",
     "children": [
       {
-        "id": "71a6e3ff688e5647",
+        "id": "bf768efaaba89b85",
         "type": "tabs",
         "children": [
           {
-            "id": "d7b5b667e792efbc",
+            "id": "f9ada08f81e08d80",
             "type": "leaf",
             "state": {
               "type": "graph",
@@ -176,8 +176,10 @@
       "bases:Create new base": false
     }
   },
-  "active": "d7b5b667e792efbc",
+  "active": "f9ada08f81e08d80",
   "lastOpenFiles": [
+    "wiki/content/overviews/brain-ecosystem.md",
+    "AGENTS.md",
     "orchestrator/moss_engine/krypt_core.py",
     "wiki/content/concepts/dynamic-brain-weight-adjustment.md",
     "backtest_results/nn_arch_comparison_20260627_015729.json",
@@ -194,7 +196,6 @@
     "wiki/content/overviews",
     "wiki/content/indicators",
     "wiki/content/entities",
-    "wiki/content/decisions",
     "frontend/node_modules/next/dist/docs/01-app/03-api-reference/04-functions/userAgent.md",
     "execution/target/release/build/zerocopy-c839572cdb04c7bb/stderr.md",
     "README.md"

@@ -18,13 +18,14 @@ from orchestrator.brains import BRAIN_REGISTRY, BaseBrain, BrainSignal
 async def run_brains_publish(nc, js):
     """Layer A: All 9 brains compute scores → publish to NATS signals.raw."""
     print("=" * 60)
-    print("LAYER A: 9 AI Brains → signals.raw")
+    print("LAYER A: All AI Brains → signals.raw")
     print("=" * 60)
 
     brain_weights = {
         "timesfm": 0.20, "freqai": 0.15, "llm_regime": 0.12,
-        "microstructure": 0.10, "finbert": 0.10, "finrl": 0.10,
-        "onchain": 0.08, "statarb": 0.08, "orderflow_nautilus": 0.07,
+        "microstructure": 0.10, "finbert_nlp": 0.07, "finrl_kelly": 0.07,
+        "onchain_whale": 0.05, "statarb_funding": 0.05, "orderflow_nautilus": 0.07,
+        "custom_nn": 0.05, "polymarket_alpha": 0.07,
     }
 
     results = {}
@@ -81,7 +82,7 @@ async def run_go_aggregation(nc, js):
     # Consume raw signals
     sub = await js.subscribe("signals.raw", durable="test-aggregator-v2")
     raw_signals = []
-    for _ in range(9):
+    for _ in range(len(BRAIN_REGISTRY)):
         try:
             msg = await asyncio.wait_for(sub.next_msg(), timeout=3.0)
             raw_signals.append(json.loads(msg.data.decode()))

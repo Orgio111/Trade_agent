@@ -712,10 +712,10 @@ AUDITORS = {
     "freqai": audit_freqai,
     "llm_regime": audit_llm_regime,
     "microstructure": audit_microstructure,
-    "finbert": audit_finbert,
-    "finrl": audit_finrl,
-    "onchain": audit_onchain,
-    "statarb": audit_statarb,
+    "finbert_nlp": audit_finbert,
+    "finrl_kelly": audit_finrl,
+    "onchain_whale": audit_onchain,
+    "statarb_funding": audit_statarb,
     "orderflow_nautilus": audit_orderflow_nautilus,
 }
 
@@ -829,7 +829,7 @@ async def main():
         print(f"  [{status_icon}] {name:20s}  funcs:{ok} ok / {fail} fail / {skip} skip  → {brain_status[name]}")
 
     print()
-    print(f"  TOTAL: {total_ok} OK | {total_fail} FAIL | {total_skip} SKIP across 9 brains")
+    print(f"  TOTAL: {total_ok} OK | {total_fail} FAIL | {total_skip} SKIP across {len(BRAIN_REGISTRY)} brains")
     healthy = sum(1 for s in brain_status.values() if s == "HEALTHY")
     degraded = sum(1 for s in brain_status.values() if s == "DEGRADED")
     broken = sum(1 for s in brain_status.values() if s == "BROKEN")

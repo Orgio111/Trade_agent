@@ -19,14 +19,15 @@ var DefaultBrainWeights = []BrainWeight{
 	{ID: "timesfm", Weight: 0.25},
 	{ID: "freqai", Weight: 0.15},
 	{ID: "llm_regime", Weight: 0.15},
-	{ID: "microstructure", Weight: 0.08},
-	{ID: "orderflow_nautilus", Weight: 0.08},
-	{ID: "finbert", Weight: 0.07},
-	{ID: "finrl", Weight: 0.07},
-	{ID: "statarb", Weight: 0.05},
-	{ID: "onchain", Weight: 0.03},
-	{ID: "custom_nn", Weight: 0.04},
-	{ID: "polymarket_alpha", Weight: 0.03},
+	{ID: "finbert_nlp", Weight: 0.07},
+	{ID: "microstructure", Weight: 0.05},
+	{ID: "orderflow_nautilus", Weight: 0.05},
+	{ID: "finrl_kelly", Weight: 0.05},
+	{ID: "statarb_funding", Weight: 0.05},
+	{ID: "onchain_whale", Weight: 0.05},
+	{ID: "custom_nn", Weight: 0.05},
+	{ID: "polymarket_alpha", Weight: 0.05},
+	{ID: "odoo_erp", Weight: 0.05},
 }
 
 // ── Orchestrator Configuration ─────────────────────────────────

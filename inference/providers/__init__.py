@@ -3,6 +3,7 @@ from .groq import GroqProvider
 from .nim import NvidiaNIMProvider
 from .openrouter import OpenRouterProvider
 from .vllm import vLLMProvider
+from .local_ollama import LocalOllamaProvider
 
 __all__ = [
     "BaseProvider",
@@ -13,4 +14,5 @@ __all__ = [
     "NvidiaNIMProvider",
     "OpenRouterProvider",
     "vLLMProvider",
+    "LocalOllamaProvider",
 ]

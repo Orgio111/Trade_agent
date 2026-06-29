@@ -11,6 +11,7 @@ const PriceChart = dynamic(() => import("../components/PriceChart"), { ssr: fals
 const MicrostructurePanel = dynamic(() => import("../components/MicrostructurePanel"), { ssr: false });
 const MarketStructurePanel = dynamic(() => import("../components/MarketStructurePanel"), { ssr: false });
 const InferenceRoutingPanel = dynamic(() => import("../components/InferenceRoutingPanel"), { ssr: false });
+const OdooErpPanel = dynamic(() => import("../components/OdooErpPanel"), { ssr: false });
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -177,6 +178,23 @@ interface InferenceRoutingData {
   cost_usage: CostUsage;
 }
 
+// ── Odoo ERP Types ─────────────────────────────────────
+
+interface OdooSignal {
+  demand_index: number; supply_pressure: number;
+  cash_flow: number; business_health: number;
+  combined_score: number; direction: "long" | "short" | "hold"; confidence: number;
+}
+
+interface OdooErpData {
+  connected: boolean; last_sync: string | null;
+  signal: OdooSignal | null;
+  inventory: { total_changes: number; net_delta: number; products_moved: number; recent_moves: { qty: number; state: string }[] } | null;
+  sales: { total_revenue: number; order_count: number; avg_order_value: number; growth_rate: number; recent_orders: { amount: number; state: string }[] } | null;
+  revenue: { daily: number; weekly: number; trend: "up" | "down" | "stable"; change_pct: number } | null;
+  crm: { pipeline_value: number; conversion_rate: number; active_leads: number; closed_deals: number } | null;
+}
+
 // ── Main Component ────────────────────────────────────────
 
 export default function Dashboard() {
@@ -187,6 +205,7 @@ export default function Dashboard() {
   const [microData, setMicroData] = useState(generateMicroData());
   const [structureData, setStructureData] = useState(generateStructureData());
   const [inferenceRouting, setInferenceRouting] = useState<InferenceRoutingData | null>(null);
+  const [odooData, setOdooData] = useState<OdooErpData | null>(null);
   const [wsStatus, setWsStatus] = useState("disconnected");
   const [events, setEvents] = useState<string[]>([]);
   const [riskScore, setRiskScore] = useState(42);
@@ -203,6 +222,7 @@ export default function Dashboard() {
     { id: "ML", label: "ML Model", color: "#00ff88", signal: "hold", confidence: 0.55, active: true },
     { id: "EXEC", label: "Execution", color: "#e0e0e0", signal: "hold", confidence: 0.5, active: true },
     { id: "MEM", label: "Memory", color: "#888", signal: "hold", confidence: 0.3, active: false },
+    { id: "ODOO", label: "Odoo ERP", color: "#ffaa00", signal: "hold", confidence: 0.5, active: true },
   ];
 
   // ── Data Fetching ──────────────────────────────────────
@@ -305,17 +325,66 @@ export default function Dashboard() {
         ws.onmessage = (msg) => {
           try {
             const data = JSON.parse(msg.data);
-            if (data.type === "inference_routing") {
+            const type = data.type || data.event_type || data.category || "";
+            const subject = data.subject || "";
+
+            // NATS event routing — maps subjects to dashboard state
+            if (type === "inference_routing") {
               setInferenceRouting(data);
-            } else if (data.type === "portfolio") {
-              setPortfolio(data);
+            } else if (type === "portfolio" || subject.startsWith("portfolio.")) {
+              if (data.balance !== undefined) setPortfolio(data);
               setRiskScore(Math.round((data.drawdown || 0) * 100 + (data.consecutive_losses || 0) * 5));
-            } else if (data.type === "signal") {
-              setSignal(data);
+            } else if (type === "signal" || subject.startsWith("signals.raw.")) {
+              const src = data.source || "";
+              // Update signal panel
+              if (src === "ml" || !signal) setSignal(data);
+              // Route to specific agent
+              const agentMap: Record<string, string> = {
+                timesfm: "ML", freqai: "ML", llm_regime: "REGIME",
+                finbert_nlp: "SENT", finrl_kelly: "ML",
+                microstructure: "SCALP", orderflow_nautilus: "SCALP",
+                statarb_funding: "SWING", onchain_whale: "SENT",
+                custom_nn: "ML", polymarket_alpha: "SENT",
+                odoo_erp: "ODOO",
+              };
+              const agentId = agentMap[src] || null;
+              if (agentId) {
+                setAgents((prev) =>
+                  prev.map((a) =>
+                    a.id === agentId
+                      ? { ...a, signal: data.signal as "long" | "short" | "hold", confidence: data.confidence }
+                      : a
+                  )
+                );
+              }
+            } else if (subject.startsWith("market.")) {
+              // Market data (candles, orderbook) — append to event log
+              setEvents((prev) => [`[MKT] ${JSON.stringify(data.data || data).slice(0, 80)}`, ...prev.slice(0, 49)]);
+            } else if (subject === "signals.aggregated") {
+              // Aggregated signal from Go orchestrator
+              if (data.symbol) {
+                setEvents((prev) => [`[AGG] ${data.symbol} ${data.consensus || "?"} (${data.brain_count || "?"} brains)`, ...prev.slice(0, 49)]);
+              }
+            } else if (type === "risk" || subject.startsWith("portfolio.risk")) {
+              // Risk event
+              if (data.drawdown !== undefined) {
+                setRiskScore(Math.round((data.drawdown || 0) * 100 + (data.consecutive_losses || 0) * 5));
+              }
+            } else if (type === "odoo" || subject.startsWith("odoo.")) {
+              // Odoo ERP event from odoo_brain
+              setOdooData((prev) => ({
+                connected: true,
+                last_sync: new Date().toISOString(),
+                signal: data.signal || prev?.signal || null,
+                inventory: data.inventory || prev?.inventory || null,
+                sales: data.sales || prev?.sales || null,
+                revenue: data.revenue || prev?.revenue || null,
+                crm: data.crm || prev?.crm || null,
+              }));
               setAgents((prev) =>
                 prev.map((a) =>
-                  a.id === "ML"
-                    ? { ...a, signal: data.signal as any, confidence: data.confidence }
+                  a.id === "ODOO"
+                    ? { ...a, signal: data.signal?.direction || "hold", confidence: data.signal?.confidence || 0.5 }
                     : a
                 )
               );
@@ -435,7 +504,7 @@ export default function Dashboard() {
 
       {/* ═══ Tab Navigation ═══ */}
       <div style={{ display: "flex", gap: 4, gridColumn: "1 / -1" }}>
-        {["overview", "trading", "risk", "microstructure", "inference"].map((tab) => (
+        {        ["overview", "trading", "risk", "microstructure", "inference", "odoo"].map((tab) => (
           <button key={tab} onClick={() => handleTabClick(tab)}
             style={{
               padding: "8px 20px", borderRadius: 8, fontSize: 11, fontWeight: 500,
@@ -657,6 +726,11 @@ export default function Dashboard() {
       {/* ═══ INFERENCE ROUTING TAB ═══ */}
       {activeTab === "inference" && (
         <InferenceRoutingPanel data={inferenceRouting} />
+      )}
+
+      {/* ═══ ODOO ERP TAB ═══ */}
+      {activeTab === "odoo" && (
+        <OdooErpPanel data={odooData} />
       )}
 
       {/* ═══ MICROSTRUCTURE TAB ═══ */}

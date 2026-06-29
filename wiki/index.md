@@ -2,7 +2,7 @@
 
 > Content catalog for the trading & quant second brain. Organized by category. ZCode updates this on every ingest. **Read this first** when answering a query — then drill into pages.
 >
-> **State:** 2 sources · 25 pages · last updated 2026-06-26
+> **State:** 2 sources · 31 pages · last updated 2026-06-30
 
 ---
 
@@ -14,12 +14,15 @@ _(none yet)_
 ## Concepts
 _Methods and ideas, synthesized across all sources._
 
+- [[odoo-erp-trading-integration]] — Odoo ERP business data as trading signals: inventory, sales, revenue, CRM → directional scores. (1 source, updated 2026-06-30)
+- [[real-time-trading-dashboard]] — Next.js + WebSocket + NATS dashboard architecture for 12-brain trading cockpit. (1 source, updated 2026-06-30)
+- [[attention-based-regime-detection]] — using Transformer attention weights (entropy, pattern shape) for automatic market regime classification. (research, updated 2026-06-26)
+- [[build-your-own-x]] — meta-learning philosophy: build from scratch to understand. 200+ tutorials across 30+ CS categories. (1 source, updated 2026-06-26)
+- [[custom-trading-brain-architecture]] — proposed LSTM/Transformer brain architecture for temporal pattern recognition. (1 source, updated 2026-06-26)
+- [[local-trading-ai-architecture]] — fully autonomous trading AI optimized for RTX 4050 + Ollama with incremental candle state. (1 source, updated 2026-06-30)
 - [[order-flow-imbalance]] — signed order-book pressure; the cleanest mechanical price-formation signal. Now-pressure, not a forecast. (1 source, updated 2026-06-25)
 - [[tick-rule-classification]] — trade direction proxy comparing price to previous trade; standard when bid/ask unavailable. (1 source, updated 2026-06-26)
 - [[cumulative-volume-delta]] — running sum of signed trade volume; net buying/selling pressure. Complement to OFI. (1 source, updated 2026-06-26)
-- [[build-your-own-x]] — meta-learning philosophy: build from scratch to understand. 200+ tutorials across 30+ CS categories. (1 source, updated 2026-06-26)
-- [[custom-trading-brain-architecture]] — proposed LSTM/Transformer brain architecture for temporal pattern recognition. (1 source, updated 2026-06-26)
-- [[attention-based-regime-detection]] — using Transformer attention weights (entropy, pattern shape) for automatic market regime classification. (research, updated 2026-06-26)
 
 ## Strategies
 
@@ -40,6 +43,7 @@ _(none yet)_
 ## Entities
 _Instruments, venues, tools, people, firms._
 
+- [[rtx4050-trading-system]] — hardware-optimized local trading system for RTX 4050 6GB VRAM + Ollama. (1 source, updated 2026-06-30)
 - [[microstructure-brain]] — orchestrator brain #4; trade-tick OFI, weight 0.10. (1 source, updated 2026-06-25)
 - [[orderflow-nautilus-brain]] — orchestrator brain #4b; depth-based OFI via NautilusTrader (tick fallback), weight 0.12. (1 source, updated 2026-06-25)
 - [[nautilustrader]] — open-source high-performance trading platform (Rust core + Python bindings); provides depth-based OFI for brain #4b. (1 source, updated 2026-06-26)
@@ -50,6 +54,7 @@ _Instruments, venues, tools, people, firms._
 - [[finrl-brain]] — brain #6; PPO + Kelly position sizing, weight 0.10. (updated 2026-06-26)
 - [[statarb-brain]] — brain #8; z-score mean reversion + funding + basis (contrarian), weight 0.10. (updated 2026-06-26)
 - [[onchain-brain]] — brain #7; exchange flow + whale + mempool, weight 0.05. (updated 2026-06-26)
+- [[odoo-erp-brain]] — brain #12; Odoo ERP business intelligence via XML-RPC, weight 0.05. (active, updated 2026-06-30)
 - [[neural-network-brain]] — brain #10; custom LSTM for temporal patterns, weight 0.05. (stable, updated 2026-06-26)
 
 ## Comparisons
@@ -60,6 +65,7 @@ _(none yet)_
 ## Playbooks
 _How-tos, processes, checklists._
 
+- [[local-ai-deployment-guide]] — step-by-step deployment of local trading AI on RTX 4050 + Ollama. (stable, updated 2026-06-30)
 - [[signal-aggregation-logic]] — Go orchestrator weighted aggregation formula, weight mismatch fixes, proposed rebalancing. (updated 2026-06-26)
 - [[nn-brain-development-guide]] — step-by-step playbook for building, training, and deploying custom NN brain. (stable, updated 2026-06-26)
 

@@ -1,271 +1,337 @@
-"""QUANTEX Trinity Architecture — Python Layer A Entry Point.
+"""Main orchestrator - FastAPI + WebSocket for real-time trading."""
 
-Launches all 11 AI Brains in parallel, each publishing signals to
-NATS JetStream subject `signals.raw` for the Go Orchestrator (Layer B)
-to aggregate and forward to the Rust Execution Engine (Layer C).
-
-Usage:
-    python main.py                      # Run with default .env config
-    python main.py --once               # Single cycle then exit
-    python main.py --interval 60         # Custom cycle interval (seconds)
-"""
-
-from __future__ import annotations
-
-import argparse
 import asyncio
+import json
 import logging
-import os
 import signal
 import sys
-from pathlib import Path
+from contextlib import asynccontextmanager
+from typing import Optional
+from datetime import datetime
 
-import nats
-import orjson
-from dotenv import load_dotenv
+import uvicorn
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+import yaml
 
-from notifications.telegram_notifier import TelegramNotifier
+from models import Candle, Signal, AccountState, ExecutionResult
+from state import IncrementalState
+from router import OllamaRouter
+from risk import RiskEngine
+from memory import LocalMemory
+from execution import BinanceClient, PaperClient, OrderRequest, OrderSide, OrderType
 
-# ── Load .env before anything else ──────────────────────────────
-
-ENV_PATH = Path(__file__).parent / ".env"
-if ENV_PATH.exists():
-    load_dotenv(ENV_PATH)
-else:
-    logging.warning("No .env file found at %s", ENV_PATH)
-
-# ── Logging Setup ──────────────────────────────────────────────
-
-LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)-20s | %(message)s"
-logging.basicConfig(format=LOG_FORMAT, level=logging.INFO)
-log = logging.getLogger("quantex.brains")
-
-# ── Configuration ──────────────────────────────────────────────
-
-NATS_URL = os.getenv("NATS_URL", "nats://localhost:4222")
-NATS_SUBJECT_RAW = os.getenv("NATS_SUBJECT_RAW", "signals.raw")
-TRADE_SYMBOLS = [s.strip() for s in os.getenv("TRADE_SYMBOLS", "BTC/USDT").split(",") if s.strip()]
-CYCLE_INTERVAL = int(os.getenv("BRAIN_CYCLE_INTERVAL", "60"))
-
-
-# ── NATS JetStream Stream Setup ────────────────────────────────
-
-async def ensure_jetstream_stream(nc: nats.NATS) -> None:
-    """Create the `signals` JetStream stream if it doesn't exist.
-
-    This is called once at startup so the Go Orchestrator and
-    Rust Execution Engine can subscribe immediately.
-    """
-    js = nc.jetstream()
-
-    try:
-        await js.add_stream(
-            name="signals",
-            subjects=["signals.raw", "signals.aggregated", "signals.executed"],
-            retention="limits",
-            max_msgs=10000,
-            max_age=86400,  # 24h
-        )
-        log.info("JetStream stream 'signals' created with 3 subjects")
-    except nats.js.errors.BadRequestError:
-        log.info("JetStream stream 'signals' already exists")
-    except Exception as e:
-        log.warning("JetStream stream creation failed (may already exist): %s", e)
-
-
-# ── Brain Registry ─────────────────────────────────────────────
-
-def create_all_brains() -> list:
-    """Instantiate all 11 AI brains from the brains package."""
-    from orchestrator.brains import (
-        TimesFMBrain,
-        FreqAIBrain,
-        LLMRegimeBrain,
-        MicrostructureBrain,
-        FinBERTBrain,
-        FinRLBrain,
-        OnChainBrain,
-        StatArbBrain,
-        OrderFlowNautilusBrain,
-        PolymarketBrain,
-        CustomNNBrain,
-    )
-
-    return [
-        TimesFMBrain(),
-        FreqAIBrain(),
-        LLMRegimeBrain(),
-        MicrostructureBrain(),
-        FinBERTBrain(),
-        FinRLBrain(),
-        OnChainBrain(),
-        StatArbBrain(),
-        OrderFlowNautilusBrain(),
-        PolymarketBrain(),
-        CustomNNBrain(),
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(name)-20s | %(message)s",
+    handlers=[
+        logging.FileHandler("logs/trading_ai.log"),
+        logging.StreamHandler(sys.stdout)
     ]
+)
+logger = logging.getLogger(__name__)
+
+# Global components
+state: Optional[IncrementalState] = None
+router: Optional[OllamaRouter] = None
+risk_engine: Optional[RiskEngine] = None
+memory: Optional[LocalMemory] = None
+execution_client = None
+account_state: Optional[AccountState] = None
+paper_mode = True
 
 
-# ── Main Loop ──────────────────────────────────────────────────
+# System prompts for different modes
+SCALP_SYSTEM_PROMPT = """You are a high-frequency scalping trader.
+Analyze the 1-minute candle data and current market state.
+Respond with ONLY valid JSON:
+{
+  "action": "BUY|SELL|HOLD",
+  "confidence": 0.0-1.0,
+  "size_pct": 0.0-1.0,
+  "entry_price": float or null,
+  "stop_loss": float or null,
+  "take_profit": float or null,
+  "reasoning": "brief explanation",
+  "regime": "trend_up|trend_down|range|volatile|transition"
+}"""
 
-async def run_brains_once(nc: nats.NATS, brains: list, tg: TelegramNotifier) -> None:
-    """Run all 11 brains once in parallel and publish signals to NATS."""
+REASONING_SYSTEM_PROMPT = """You are a quantitative trading analyst.
+Analyze the market data and provide a trading decision.
+Consider: regime, key levels, momentum, volume, risk/reward.
+Respond with ONLY valid JSON (same format as above)."""
 
-    log.info("Brain cycle started — running %d brains for %d symbols", len(brains), len(TRADE_SYMBOLS))
-
-    for symbol in TRADE_SYMBOLS:
-        # Run all brains concurrently for this symbol
-        tasks = [brain.compute_score(symbol) for brain in brains]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        for brain, result in zip(brains, results):
-            if isinstance(result, Exception):
-                log.error("Brain %s failed for %s: %s", brain.brain_id, symbol, result)
-                continue
-
-            # Publish raw signal to NATS
-            signal_data = {
-                "brain_name": result.brain_id,
-                "symbol": result.symbol,
-                "score": result.score,
-                "confidence": result.confidence,
-                "weight": result.weight,
-                "direction": result.direction,
-                "metadata": result.metadata,
-                "timestamp_ms": int(asyncio.get_event_loop().time() * 1000),
-            }
-
-            payload = orjson.dumps(signal_data)
-
-            try:
-                await nc.publish(
-                    NATS_SUBJECT_RAW,
-                    payload,
-                )
-                log.debug(
-                    "Published: %s %s score=%.4f dir=%s",
-                    result.brain_id, result.symbol, result.score, result.direction,
-                )
-                # Notify Telegram for strong signals (|score| > 0.6)
-                if abs(result.score) > 0.6:
-                    direction_str = "BUY" if result.direction > 0 else "SELL"
-                    if direction_str == "BUY":
-                        tg.signal_buy(
-                            symbol=result.symbol,
-                            entry_price=0.0,
-                            score=result.score,
-                            confidence=result.confidence,
-                            stop_loss=0.0,
-                            take_profit=0.0,
-                        )
-                    else:
-                        tg.signal_sell(
-                            symbol=result.symbol,
-                            entry_price=0.0,
-                            score=result.score,
-                            confidence=result.confidence,
-                            stop_loss=0.0,
-                            take_profit=0.0,
-                        )
-            except Exception as e:
-                log.error("NATS publish failed for %s: %s", result.brain_id, e)
-
-    log.info("Brain cycle complete — %d symbols processed", len(TRADE_SYMBOLS))
+DEEP_SYSTEM_PROMPT = """You are a macro trading strategist.
+Perform deep analysis of market structure, regime, and macro factors.
+Provide comprehensive trading thesis with specific levels.
+Respond with ONLY valid JSON (same format)."""
 
 
-async def main_loop(run_once: bool = False, interval: int = CYCLE_INTERVAL) -> None:
-    """Main event loop — connect to NATS, run brain cycles."""
+def load_config(path: str = "config.yaml") -> dict:
+    with open(path) as f:
+        return yaml.safe_load(f)
 
-    log.info("Connecting to NATS at %s", NATS_URL)
 
-    try:
-        nc = await nats.connect(NATS_URL)
-    except Exception as e:
-        log.error("Failed to connect to NATS: %s", e)
-        log.error("Make sure NATS server is running (docker start quantex-nats)")
-        sys.exit(1)
-
-    log.info("Connected to NATS successfully")
-
-    # Ensure JetStream stream exists
-    await ensure_jetstream_stream(nc)
-
-    # Start Telegram notifier
-    tg = TelegramNotifier()
-    await tg.start()
-    tg.system_status(f"QUANTEX Brain Layer started — {len(TRADE_SYMBOLS)} symbol(s)")
-
-    # Create all brains
-    brains = create_all_brains()
-    log.info(
-        "Initialized %d brains: %s",
-        len(brains),
-        ", ".join(b.brain_id for b in brains),
+async def initialize_components():
+    """Initialize all system components."""
+    global state, router, risk_engine, memory, execution_client, account_state, paper_mode
+    
+    config = load_config()
+    paper_mode = config.get("system", {}).get("paper_mode", True)
+    
+    logger.info("Initializing Local Trading AI System...")
+    
+    # Initialize components
+    state = IncrementalState("config.yaml")
+    router = OllamaRouter("config.yaml")
+    await router.initialize()
+    
+    risk_engine = RiskEngine("config.yaml")
+    memory = LocalMemory("config.yaml")
+    
+    # Execution client
+    if paper_mode:
+        from execution import PaperClient
+        execution_client = PaperClient(initial_balance=10000.0)
+        logger.info("Running in PAPER TRADING mode")
+    else:
+        # Load API keys from environment
+        import os
+        api_key = os.getenv("BINANCE_API_KEY")
+        api_secret = os.getenv("BINANCE_API_SECRET")
+        testnet = config.get("system", {}).get("testnet", True)
+        
+        if not api_key or not api_secret:
+            raise ValueError("BINANCE_API_KEY and BINANCE_API_SECRET required for live trading")
+        
+        execution_client = BinanceClient(api_key, api_secret, testnet=testnet)
+        await execution_client.__aenter__()
+        logger.info(f"Running in LIVE mode (testnet={testnet})")
+    
+    # Initial account state
+    account_state = AccountState(
+        equity=10000.0,
+        balance=10000.0,
+        unrealized_pnl=0.0,
+        daily_pnl=0.0,
+        daily_pnl_pct=0.0,
+        open_positions=0,
+        loss_streak=0,
+        max_drawdown_pct=0.0
     )
-
-    # Shutdown event
-    shutdown_event = asyncio.Event()
-
-    def _signal_handler():
-        log.info("Shutdown signal received")
-        shutdown_event.set()
-
-    loop = asyncio.get_event_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig, _signal_handler)
-        except NotImplementedError:
-            # Windows doesn't support add_signal_handler
-            pass
-
-    # Main cycle loop
-    cycle_count = 0
-    while not shutdown_event.is_set():
-        cycle_count += 1
-        log.info("=== Brain Cycle #%d ===", cycle_count)
-
-        try:
-            await run_brains_once(nc, brains, tg)
-        except Exception as e:
-            log.error("Brain cycle error: %s", e)
-
-        if run_once:
-            break
-
-        try:
-            await asyncio.wait_for(shutdown_event.wait(), timeout=interval)
-        except asyncio.TimeoutError:
-            pass  # Normal — next cycle
-
-    # Cleanup
-    log.info("Draining NATS connection...")
-    tg.system_status("QUANTEX Brain Layer shutting down")
-    await tg.stop()
-    await nc.drain()
-    log.info("QUANTEX Brain Layer shutdown complete")
+    
+    logger.info("All components initialized successfully")
 
 
-# ── CLI ────────────────────────────────────────────────────────
+async def shutdown_components():
+    """Cleanup on shutdown."""
+    logger.info("Shutting down...")
+    if execution_client and hasattr(execution_client, '__aexit__'):
+        await execution_client.__aexit__(None, None, None)
+    if router:
+        await router.shutdown()
+    logger.info("Shutdown complete")
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="QUANTEX Trinity — Brain Layer (Python)")
-    parser.add_argument("--once", action="store_true", help="Run one cycle then exit")
-    parser.add_argument("--interval", type=int, default=CYCLE_INTERVAL,
-                        help="Cycle interval in seconds (default: %(default)s)")
-    return parser.parse_args()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await initialize_components()
+    yield
+    await shutdown_components()
+
+
+app = FastAPI(title="Local Trading AI", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "ok",
+        "timestamp": datetime.now().isoformat(),
+        "components": {
+            "state": state is not None,
+            "router": router is not None,
+            "risk": risk_engine is not None,
+            "memory": memory is not None,
+            "execution": execution_client is not None,
+        },
+        "state_summary": state.summary() if state else {},
+        "router_status": await router.get_status() if router else {},
+    }
+
+
+@app.websocket("/candle")
+async def candle_websocket(ws: WebSocket):
+    """WebSocket endpoint for receiving 1-minute candles."""
+    await ws.accept()
+    logger.info("WebSocket client connected")
+    
+    try:
+        while True:
+            data = await ws.receive_text()
+            candle_data = json.loads(data)
+            
+            # Parse candle
+            candle = Candle.from_dict(candle_data)
+            
+            # Process through pipeline
+            result = await process_candle(candle)
+            
+            # Send response
+            await ws.send_text(json.dumps(result))
+            
+    except WebSocketDisconnect:
+        logger.info("WebSocket client disconnected")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        await ws.close()
+
+
+async def process_candle(candle: Candle) -> Dict[str, Any]:
+    """Process single candle through full pipeline."""
+    start_time = time.time()
+    
+    # 1. Update incremental state
+    features = state.on_new_candle(candle)
+    
+    # 2. Get context for model
+    context = state.get_context_for_model(mode="normal")
+    context["urgency"] = "normal"
+    
+    # 3. Build prompt
+    user_prompt = build_user_prompt(candle, features, context)
+    
+    # 4. Route to appropriate model
+    model = router.route(context)
+    
+    # 5. Generate signal
+    signal = await router.generate_signal(context, REASONING_SYSTEM_PROMPT, user_prompt)
+    signal.model_used = model
+    
+    # 6. Risk validation
+    risk_decision = risk_engine.validate(signal, account_state)
+    
+    # 7. Execute if allowed
+    execution_result = None
+    if risk_decision.allow and risk_decision.adjusted_signal:
+        final_signal = risk_decision.adjusted_signal
+        
+        # Create order request
+        order = OrderRequest(
+            symbol=candle.symbol,
+            side=OrderSide.BUY if final_signal.action == SignalAction.BUY else OrderSide.SELL,
+            type=OrderType.LIMIT,
+            quantity=final_signal.size_pct * account_state.equity / candle.close,
+            price=final_signal.entry_price or candle.close,
+            post_only=True,
+            reduce_only=False
+        )
+        
+        execution_result = await execution_client.place_order(order)
+        
+        # Update account state (simplified)
+        if execution_result.status == "FILLED":
+            account_state.open_positions += 1
+    
+    # 8. Prepare response
+    elapsed = time.time() - start_time
+    
+    response = {
+        "timestamp": int(time.time() * 1000),
+        "candle": candle.to_dict(),
+        "features": features.to_list() if features else [],
+        "signal": signal.model_dump() if signal else None,
+        "risk_decision": {
+            "allow": risk_decision.allow,
+            "reason": risk_decision.reason,
+            "max_size": risk_decision.max_size,
+        },
+        "execution": execution_result.__dict__ if execution_result else None,
+        "state": state.summary(),
+        "account": account_state.model_dump() if account_state else None,
+        "latency_ms": round(elapsed * 1000, 2),
+    }
+    
+    # Log signal
+    logger.info(f"Candle processed: {candle.symbol} {candle.close:.2f} | "
+                f"Signal: {signal.action if signal else 'N/A'} "
+                f"({signal.confidence:.2f} conf, {model}) | "
+                f"Risk: {'ALLOW' if risk_decision.allow else 'BLOCK: ' + risk_decision.reason} | "
+                f"Latency: {elapsed*1000:.1f}ms")
+    
+    return response
+
+
+def build_user_prompt(candle: Candle, features: Any, context: Dict) -> str:
+    """Build user prompt for model."""
+    return f"""Current Candle: {candle.to_dict()}
+Features: {features.to_list() if features else []}
+Regime: {context.get('regime', 'unknown')} (confidence: {context.get('regime_confidence', 0):.2f})
+Key Levels: Support={context.get('key_levels', {}).get('support', [])} Resistance={context.get('key_levels', {}).get('resistance', [])}
+Session: VWAP={context.get('session', {}).get('vwap', 0):.2f} Bias={context.get('session', {}).get('bias', 'neutral')}
+Strategy Stats: {context.get('strategy_stats', {})}
+
+Provide trading decision as JSON."""
+
+
+@app.get("/state")
+async def get_state():
+    """Get current system state."""
+    return {
+        "state": state.summary() if state else {},
+        "account": account_state.model_dump() if account_state else {},
+        "router": await router.get_status() if router else {},
+        "risk": risk_engine.get_status() if risk_engine else {},
+        "memory": memory.get_memory_stats() if memory else {},
+    }
+
+
+@app.get("/trades")
+async def get_trades(limit: int = 20):
+    """Get recent trades from memory."""
+    if memory:
+        return memory.get_recent_trades(limit)
+    return []
+
+
+@app.post("/signal")
+async def manual_signal(signal: Signal):
+    """Manually submit a signal for testing."""
+    risk_decision = risk_engine.validate(signal, account_state)
+    return {
+        "signal": signal.model_dump(),
+        "risk_decision": {
+            "allow": risk_decision.allow,
+            "reason": risk_decision.reason,
+            "adjusted": risk_decision.adjusted_signal.model_dump() if risk_decision.adjusted_signal else None,
+        }
+    }
+
+
+# Signal handlers
+def handle_shutdown(signum, frame):
+    logger.info("Shutdown signal received")
+    asyncio.create_task(shutdown_components())
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, handle_shutdown)
+signal.signal(signal.SIGTERM, handle_shutdown)
 
 
 if __name__ == "__main__":
-    args = parse_args()
-
-    log.info("=" * 60)
-    log.info("QUANTEX TRINITY — Python Brain Layer (Layer A)")
-    log.info("Symbols: %s", TRADE_SYMBOLS)
-    log.info("NATS: %s / %s", NATS_URL, NATS_SUBJECT_RAW)
-    log.info("Mode: %s", "ONCE" if args.once else f"CONTINUOUS (interval={args.interval}s)")
-    log.info("=" * 60)
-
-    try:
-        asyncio.run(main_loop(run_once=args.once, interval=args.interval))
-    except KeyboardInterrupt:
-        log.info("Interrupted by user")
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=False,
+        log_level="info"
+    )

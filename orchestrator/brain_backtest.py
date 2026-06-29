@@ -1,6 +1,6 @@
 """Brain aggregate backtest engine.
 
-Runs 9 brain signals over historical data, simulates the weighted
+Runs 11 brain signals over historical data, simulates the weighted
 aggregation that the Go NATSOrchestrator performs, and outputs
 per-brain + aggregate performance metrics.
 
@@ -27,14 +27,15 @@ BRAIN_WEIGHTS = {
     "timesfm": 0.25,
     "freqai": 0.15,
     "llm_regime": 0.15,
-    "microstructure": 0.08,
-    "orderflow_nautilus": 0.08,
-    "finbert": 0.07,
-    "finrl": 0.07,
-    "statarb": 0.07,
-    "onchain": 0.05,
+    "finbert_nlp": 0.07,
+    "microstructure": 0.05,
+    "orderflow_nautilus": 0.03,
+    "finrl_kelly": 0.05,
+    "statarb_funding": 0.05,
+    "onchain_whale": 0.05,
     "custom_nn": 0.05,
     "polymarket_alpha": 0.05,
+    "odoo_erp": 0.05,
 }
 
 BUY_THRESHOLD = 0.15
@@ -79,7 +80,7 @@ class BrainBacktestResult:
             f"Trades: {self.total_trades} | Win Rate: {self.win_rate:.1%} | "
             f"PnL: ${self.total_pnl:+.2f} ({self.total_pnl_pct:+.2%}) | "
             f"MaxDD: {self.max_drawdown_pct:.2%} | Sharpe: {self.sharpe_ratio:.2f} | "
-            f"PF: {self.profit_factor:.2f} | Avg Agreement: {self.avg_brain_agreement:.1f}/9"
+            f"PF: {self.profit_factor:.2f} | Avg Agreement: {self.avg_brain_agreement:.1f}/11"
         )
 
 
@@ -174,17 +175,17 @@ class BrainBacktestEngine:
         # 6. FinBERT proxy: price momentum as sentiment proxy
         if len(window) >= 5:
             chg_5 = (close / window["close"].iloc[-5] - 1)
-            scores["finbert"] = float(np.tanh(chg_5 * 20))
+            scores["finbert_nlp"] = float(np.tanh(chg_5 * 20))
 
         # 7. FinRL/Kelly proxy: directional signal modulated by volatility
         # Low vol = higher conviction in trend; high vol = reduce
         if len(window) >= 20:
             recent_vol = window["close"].pct_change().iloc[-20:].std()
             # Use trend direction (not always positive)
-            roc_20 = (close / window["close"].iloc[-20] - 1) if len(window) >= 20 else 0
+            roc_20 = (close / window["close"].iloc[-20] - 1)
             trend_score = float(np.tanh(roc_20 * 20))
             vol_scale = max(0.2, 1.0 - recent_vol * 15)
-            scores["finrl"] = trend_score * vol_scale
+            scores["finrl_kelly"] = trend_score * vol_scale
 
         # 8. StatArb proxy: Z-score mean reversion (contrarian)
         if len(window) >= 50:
@@ -192,10 +193,10 @@ class BrainBacktestEngine:
             rolling_std = window["close"].rolling(50).std().iloc[-1]
             if rolling_std > 0:
                 z = (close - rolling_mean) / rolling_std
-                scores["statarb"] = float(np.tanh(-z / 1.5))
+                scores["statarb_funding"] = float(np.tanh(-z / 1.5))
 
         # 9. OnChain proxy: deterministic micro-signal
-        scores["onchain"] = float(np.sin(i * 0.01) * 0.03)
+        scores["onchain_whale"] = float(np.sin(i * 0.01) * 0.03)
 
         # 10. Custom NN proxy: LSTM/Transformer temporal patterns (momentum + volume)
         if len(window) >= 50:
@@ -340,7 +341,7 @@ class BrainBacktestEngine:
                 direction=position["direction"], entry_price=position["entry_price"],
                 exit_price=last_price, quantity=position["qty"],
                 pnl=pnl, pnl_pct=pnl / balance if balance else 0, fees=0,
-                aggregated_score=0, active_brains=9,
+                aggregated_score=0, active_brains=11,
             ))
 
         # ── Compute metrics ──
@@ -375,7 +376,7 @@ class BrainBacktestEngine:
             for brain_id, bs in t.brain_scores.items():
                 brain_action = "BUY" if bs > self.buy_threshold else ("SELL" if bs < self.sell_threshold else "HOLD")
                 agreement_counts.append(1 if brain_action == agg_action else 0)
-        avg_agreement = np.mean(agreement_counts) * 9 if agreement_counts else 0
+        avg_agreement = np.mean(agreement_counts) * 11 if agreement_counts else 0
 
         return BrainBacktestResult(
             total_trades=len(trades),
@@ -486,7 +487,7 @@ async def main():
     print(f"  Sharpe Ratio:     {result.sharpe_ratio:.2f}")
     print(f"  Profit Factor:    {result.profit_factor:.2f}")
     print(f"  Expectancy:      ${result.expectancy:+.4f}")
-    print(f"  Brain Agreement:  {result.avg_brain_agreement:.1f}/9")
+    print(f"  Brain Agreement:  {result.avg_brain_agreement:.1f}/11")
     print("=" * 60)
 
     # Save results

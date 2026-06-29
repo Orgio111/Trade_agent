@@ -1,0 +1,57 @@
+# Local Trading AI System Configuration
+# Optimized for RTX 4050 6GB VRAM + Ollama
+
+system:
+  symbol: "BTCUSDT"
+  timeframe: "1m"
+  paper_mode: true
+  exchange: "binance_testnet"
+  testnet: true
+
+model:
+  warm_model: "phi3:3.8b"           # Always-loaded scalping model (<100ms)
+  reasoning_model: "qwen3:8b"       # Main reasoning (<300ms)
+  deep_model: "deepseek-r1:8b"      # Macro analysis (async, >2s)
+  execution_model: "mistral:7b"     # Tool calling / order execution
+  vision_model: "moondream"         # Chart analysis (on-demand)
+  embedding_model: "nomic-embed-text"
+  
+  # Ollama options
+  ollama_host: "http://localhost:11434"
+  num_predict: 512
+  temperature: 0.3
+  top_p: 0.9
+
+risk:
+  max_position_pct: 0.05          # 5% equity per trade
+  max_daily_drawdown: 0.03        # 3% daily stop
+  max_concurrent: 3               # Max 3 positions
+  kill_streak: 5                  # Stop after 5 consecutive losses
+  min_confidence: 0.6             # Minimum signal confidence
+  volatility_filter: true
+  atr_threshold_mult: 2.5         # Skip if ATR > 2.5x median
+
+memory:
+  chroma_path: "./memory"
+  buffer_size: 200                # Rolling candle buffer
+  regime_states: 5                # HMM states: trend_up, trend_down, range, volatile, transition
+  similarity_top_k: 5             # Similar pattern retrieval
+
+execution:
+  maker_preference: true
+  default_type: "LIMIT"
+  post_only: true
+  reduce_only: false
+  max_slippage_bps: 5
+
+data:
+  ws_url: "wss://stream.binance.com:9443/ws/btcusdt@kline_1m"
+  testnet_ws_url: "wss://stream.binancefuture.com/ws/btcusdt@kline_1m"
+  reconnect_interval: 5
+  buffer_maxlen: 1000
+
+logging:
+  level: "INFO"
+  file: "./logs/trading_ai.log"
+  max_bytes: 10485760
+  backup_count: 5

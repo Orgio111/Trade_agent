@@ -7,6 +7,28 @@
 
 ---
 
+## [2026-06-30] ingest | Odoo ERP + Real-Time Dashboard — ERP-to-trading integration
+
+Ingested Odoo ERP integration and real-time dashboard architecture into wiki. Created 3 pages:
+
+- [[odoo-erp-trading-integration]] (concept) — full architecture: Odoo data → feature fusion → trading signals. Signal mapping table (inventory/sales/revenue/CRM → bullish/bearish). Decision engine flow. Odoo-aware risk rules.
+- [[real-time-trading-dashboard]] (concept) — Next.js + WebSocket + NATS dashboard. Full architecture from market feed → inference → brains → NATS → Go aggregator → WebSocket → UI. NATS event type → panel routing table. 7 panels: Swarm Viz, Price Chart, Microstructure, Market Structure, Inference Routing, Risk, Odoo ERP.
+- [[odoo-erp-brain]] (entity) — Brain #12: XML-RPC polling, 5 sub-signals (inventory 25%, sales 30%, purchase 15%, revenue 20%, CRM 10%), weight 0.05, registration status across 7 files.
+
+Updated [[index.md]]: 2 sources, 31 pages. No contradictions with existing content. Key integration point: connects to [[signal-aggregation-logic]] and [[local-trading-ai-architecture]].
+
+## [2026-06-30] note | Local Trading AI Architecture — RTX 4050 + Ollama optimized design
+
+Designed fully autonomous local trading AI system for consumer hardware (RTX 4050 6GB VRAM):
+- Created [[local-trading-ai-architecture]] (concept) — sequential model loading, incremental candle state, VRAM-aware routing
+- Created [[rtx4050-trading-system]] (entity) — hardware specs, model capacity table, latency profiles, Ollama config
+- Created [[local-ai-deployment-guide]] (playbook) — complete step-by-step deployment for Windows/WSL2
+- Key innovation: phi3:3.8b always-warm for <100ms scalping; qwen3:8b on-demand for reasoning; deepseek-r1:8b async for macro
+- VRAM management: only one 8B model loaded at a time; sequential unload/load via Ollama
+- Candle linking: 4-level incremental state (active candle → rolling buffer → key levels → session context → strategy stats)
+- Updated `index.md`: 2 sources, 28 pages, added 1 concept + 1 entity + 1 playbook
+- Integration point: connects to existing [[signal-aggregation-logic]] and brain registry
+
 ## [2026-06-26] note | Attention-based regime detection — research documented
 
 Researched using Transformer attention weights for automatic market regime classification:

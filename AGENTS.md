@@ -684,6 +684,191 @@ NATS_STREAMS = {
 
 ---
 
+## 🏢 ODOO ERP → TRADING AI INTEGRATION
+
+Odoo-г "Real-world business state engine" болгож, зах зээлийн мэдээлэлтэй хамт ашиглана — ERP өөрчлөлтүүд нь худалдааны signal болно.
+
+### Role
+
+> Autonomous trading AI system + Odoo ERP integrated decision engine. Analyzes financial markets AND uses Odoo business data as additional signal sources.
+
+### System Context
+
+- RTX 4050 Laptop GPU / i5-13420H / 16GB RAM
+- Local Ollama models: `qwen3:8b`, `deepseek-r1:8b`, `qwen2.5:3b`, `phi3:3.8b`, `mistral`, `moondream`
+- Maps to existing inference provider: `inference/providers/local_ollama.py`
+
+### Odoo Data Sources
+
+| Data | Signal Mapping |
+|------|----------------|
+| Inventory increase sharply | demand ↓ → bearish on related assets |
+| Sales spike | demand strength ↑ → bullish macro signal |
+| Revenue drop | risk-off mode → reduce exposure |
+| CRM pipeline up | growth trajectory ↑ → bullish |
+| Purchase orders surge | supply chain activity ↑ → sector signal |
+
+### Decision Engine Flow
+
+```
+Market Data (candles) + Odoo ERP Data
+        ↓
+Feature Fusion Layer
+        ↓
+Model Router (phi3 / qwen / deepseek)
+        ↓
+Decision Output → Risk Engine → Execution
+```
+
+### Model Usage Rules
+
+| Mode | Model | Use Case |
+|------|-------|----------|
+| ⚡ Fast | `phi3:3.8b` | Quick reaction trading, scalping |
+| 🧠 Normal | `qwen3:8b` | Main decision engine |
+| 🧠 Deep | `deepseek-r1:8b` | Macro + Odoo analysis |
+| ⚙️ Execution | `mistral` | Odoo + broker action controller |
+| 👁 Vision | `moondream` | Chart + Odoo dashboard image analysis |
+
+### Odoo Feature Engine
+
+```python
+def odoo_features(data):
+    return {
+        "demand_index": data["sales_growth"],
+        "supply_pressure": data["inventory_change"],
+        "cash_flow": data["revenue_trend"],
+        "business_health": data["crm_conversion"],
+    }
+```
+
+### Odoo-Aware Risk Rules
+
+```
+IF Odoo revenue ↓ AND market volatility ↑: → reduce position size
+IF Odoo demand ↑ AND market trend ↑:    → increase exposure
+IF Odoo signals conflict with market:    → stay neutral
+```
+
+### Integration with Existing Systems
+
+- **Brain #12 potential**: `OdooBrain(BaseBrain)` — polls Odoo API, converts ERP signals to brain score
+- **NATS Subject**: `market.odoo.<event_type>` for ERP-driven events
+- **Feature fusion**: Feed `odoo_features()` output into `FeatureEngine` or `EnsembleMeta`
+- **Inference routing**: Use `LocalOllamaProvider` for local model inference, cloud tiers as fallback
+
+---
+
+## 📊 REAL-TIME AI TRADING DASHBOARD
+
+> "AI trading brain control tower" + live market + agent decisions + RL feedback dashboard
+
+### Dashboard Architecture
+
+```
+                Live Market Feed
+                        ↓
+                Inference Server (vLLM / LocalOllama)
+                        ↓
+                MoE Router (11 brains + OdooBrain)
+                        ↓
+                LangGraph Engine
+                        ↓
+        ┌──────────────┼──────────────┐
+        ▼              ▼              ▼
+  Trades Stream   AI Decisions   Risk Engine
+        ▼              ▼              ▼
+                Event Bus (NATS JetStream)
+                        ↓
+                Dashboard Backend (FastAPI WS)
+                        ↓
+              REAL-TIME DASHBOARD UI (Next.js)
+```
+
+### Tech Stack
+
+| Layer | Tech | Notes |
+|-------|------|-------|
+| Backend | FastAPI (WebSocket) | Port 8001, existing |
+| Event Bus | NATS JetStream | Already deployed |
+| AI Core | vLLM / LocalOllama | GPU inference |
+| Orchestration | LangGraph | Brain routing |
+| Frontend | Next.js + lightweight-charts | Port 3000, existing |
+| Charts | TradingView OSS (`lightweight-charts`) | Candlestick + indicators |
+
+### Event Types (NATS → WebSocket)
+
+| Event | NATS Subject | Dashboard Panel |
+|-------|-------------|------------------|
+| `MARKET_CANDLE` | `market.candle.<symbol>` | Live chart candles |
+| `FEATURE_UPDATE` | `market.features.<symbol>` | Indicator overlay |
+| `MODEL_SIGNAL` | `signals.aggregated` | AI Brain Output panel |
+| `RISK_DECISION` | `system.risk` | Risk Control panel |
+| `TRADE_EXECUTED` | `signals.executed` | Trades Feed |
+| `PNL_UPDATE` | `portfolio.pnl` | PnL chart |
+| `AGENT_STATE` | `system.agent` | Active brain status |
+| `ODOO_SIGNAL` | `market.odoo.<type>` | ERP business intelligence |
+
+### Dashboard Layout
+
+```
+┌──────────────────────────────────────────┐
+│ 📊 Live Chart (candles + indicators)     │
+├──────────────────┬───────────────────────┤
+│ 🤖 AI Brain Output│ ⚡ Trades Feed       │
+│ - active brain    │ - BUY/SELL logs       │
+│ - confidence      │ - fill price          │
+│ - model + latency │ - PnL per trade       │
+├──────────────────┼───────────────────────┤
+│ 🧠 Risk Panel     │ 📈 PnL Chart          │
+│ - exposure        │ - equity curve        │
+│ - drawdown        │ - daily returns       │
+│ - risk mode       │ - Sharpe ratio        │
+├──────────────────┴───────────────────────┤
+│ 🏢 Odoo ERP Signals (optional panel)     │
+│ - demand index, supply pressure, cash    │
+└──────────────────────────────────────────┘
+```
+
+### Performance Rules
+
+- **NO polling** — only WebSocket streaming
+- **Batch UI updates** at 50–100ms intervals
+- **NATS pub/sub** (not HTTP) for event delivery
+- **GPU inference** isolated to vLLM/Ollama server
+- **CPU only** for dashboard logic and rendering
+
+### Implementation Files
+
+| File | Purpose |
+|------|---------|
+| `frontend/src/components/PriceChart.tsx` | TradingView lightweight-charts candlestick |
+| `frontend/src/components/AgentSwarmVisor.tsx` | Brain status + MoE router live view |
+| `frontend/src/components/MarketStructurePanel.tsx` | Market structure signals |
+| `frontend/src/components/MicrostructurePanel.tsx` | Orderbook imbalance / OFI |
+| `frontend/src/components/OrderbookHeatmap.tsx` | L2 heatmap visualization |
+| `frontend/src/components/InferenceRoutingPanel.tsx` | Model routing + latency display |
+
+### WebSocket Hook (React)
+
+```javascript
+import { useEffect, useState } from "react";
+
+export default function Dashboard() {
+  const [data, setData] = useState([]);
+
+  useEffect(() => {
+    const ws = new WebSocket("ws://localhost:3000/ws");
+    ws.onmessage = (event) => {
+      setData((prev) => [...prev.slice(-100), JSON.parse(event.data)]);
+    };
+    return () => ws.close();
+  }, []);
+}
+```
+
+---
+
 ## 🧠 PPO PORTFOLIO MANAGER
 
 Reinforcement learning-based capital allocation — PPO policy that learns to distribute capital across N assets optimally.

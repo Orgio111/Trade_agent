@@ -29,7 +29,7 @@ MOSS Engine brains:
                   optimization (±30% bounds)
 """
 
-from .moss_signal import TimesFMBrain
+from .timesfm_brain import TimesFMBrain
 from .freqai_brain import FreqAIBrain
 from .llm_regime_brain import LLMRegimeBrain
 from .microstructure_brain import MicrostructureBrain
@@ -40,13 +40,9 @@ from .statarb_brain import StatArbBrain
 from .orderflow_nautilus_brain import OrderFlowNautilusBrain
 from .polymarket_brain import PolymarketBrain
 from .custom_nn_brain import CustomNNBrain
+from .odoo_brain import OdooBrain
 
-# MOSS Signal Factory integration
-from .moss_engine.skill_registry import SkillRegistry
-from .moss_engine.composite_engine import MossCompositeEngine
-from .moss_engine.krypt_core import KryptCryptoCore
-from .moss_engine.reconciliation_engine import ReconciliationEngine
-from .moss_engine.reflection_engine import ReflectiveEvolutionLoop
+# MOSS Signal Factory integration (deferred — uncomment when moss_engine/ is production-ready)
 
 # -- BRAIN_REGISTRY: name -> class mapping -------------------------------------------------------
 BRAIN_REGISTRY: dict[str, type] = {
@@ -54,17 +50,18 @@ BRAIN_REGISTRY: dict[str, type] = {
     "freqai": FreqAIBrain,
     "llm_regime": LLMRegimeBrain,
     "microstructure": MicrostructureBrain,
-    "finbert": FinBERTBrain,
-    "finrl": FinRLBrain,
-    "onchain": OnChainBrain,
-    "statarb": StatArbBrain,
+    "finbert_nlp": FinBERTBrain,
+    "finrl_kelly": FinRLBrain,
+    "onchain_whale": OnChainBrain,
+    "statarb_funding": StatArbBrain,
     "orderflow_nautilus": OrderFlowNautilusBrain,
     "polymarket_alpha": PolymarketBrain,
     "custom_nn": CustomNNBrain,
-    # MOSS SIGNAL FACTORY
-    "moss_composite": MossCompositeEngine,      # 5-pillar composite
-    "krypt_core": KryptCryptoCore,              # microstructure
-    "moss_reflection": ReflectiveEvolutionLoop  # self-optimizing
+    "odoo_erp": OdooBrain,
+    # MOSS SIGNAL FACTORY (deferred)
+    # "moss_composite": MossCompositeEngine,      # 5-pillar composite
+    # "krypt_core": KryptCryptoCore,              # microstructure
+    # "moss_reflection": ReflectiveEvolutionLoop  # self-optimizing
 }
 
 __all__ = [
@@ -79,11 +76,12 @@ __all__ = [
     "OrderFlowNautilusBrain",
     "PolymarketBrain",
     "CustomNNBrain",
+    "OdooBrain",
     "BRAIN_REGISTRY",
-    # MOSS Engine
-    "SkillRegistry",
-    "MossCompositeEngine",
-    "KryptCryptoCore",
-    "ReconciliationEngine",
-    "ReflectiveEvolutionLoop",
+    # MOSS Engine (deferred)
+    # "SkillRegistry",
+    # "MossCompositeEngine",
+    # "KryptCryptoCore",
+    # "ReconciliationEngine",
+    # "ReflectiveEvolutionLoop",
 ]
