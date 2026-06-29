@@ -19,11 +19,9 @@
 #
 # ═══════════════════════════════════════════════════════════
 
-version: "3.9"
-
 services:
   # ── Orchestrator: Hot-reload ────────────────────────────
-  # Overrides: ports, volumes, command
+  # Overrides: ports, volumes, command, NATS for dev
   orchestrator:
     ports:
       - "8001:8001"
@@ -32,6 +30,9 @@ services:
       - ./orchestrator:/app/orchestrator
       # Mount .env so API keys are loaded from the host file
       - ./.env:/app/.env
+    environment:
+      # NATS_URL is inherited from docker-compose.yml (nats://nats:4222)
+      # Docker service discovery works inside containers — no override needed
     command: uvicorn orchestrator.main:app --host 0.0.0.0 --port 8001 --reload
 
   # ── Frontend: Hot-reload Dev Mode ──────────────────────

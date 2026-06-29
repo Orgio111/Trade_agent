@@ -33,6 +33,9 @@ spec:
               value: "postgresql://quantex:secret@quantex-postgres:5432/quantex"
             - name: REDIS_HOST
               value: "quantex-redis"
+            # Trinity Layer A: NATS JetStream — 11 brain signals bus
+            - name: NATS_URL
+              value: "nats://quantex-nats:4222"
           livenessProbe:
             httpGet: { path: /health, port: 8001 }
             initialDelaySeconds: 10
@@ -71,6 +74,29 @@ spec:
           image: quantex/realtime:latest
           ports:
             - containerPort: 8082
+          env:
+            # Trinity Layer B: NATS JetStream — signal aggregation
+            - name: NATS_URL
+              value: "nats://quantex-nats:4222"
+            # Brain weight overrides from ConfigMap (optional)
+            - name: BRAIN_WEIGHT_TIMESFM
+              valueFrom:
+                configMapKeyRef:
+                  name: quantex-brain-weights
+                  key: brain_weight_timesfm
+                  optional: true
+            - name: BRAIN_WEIGHT_CUSTOM_NN
+              valueFrom:
+                configMapKeyRef:
+                  name: quantex-brain-weights
+                  key: brain_weight_custom_nn
+                  optional: true
+            - name: BRAIN_WEIGHT_POLYMARKET_ALPHA
+              valueFrom:
+                configMapKeyRef:
+                  name: quantex-brain-weights
+                  key: brain_weight_polymarket_alpha
+                  optional: true
           livenessProbe:
             httpGet: { path: /health, port: 8082 }
           resources:
@@ -255,6 +281,139 @@ spec:
   ports:
     - port: 9090
       targetPort: 9090
+---
+# ── Brain Weights ConfigMap ────────────────────────────────
+# Maps brain IDs to their weights for the Trinity Architecture.
+# The Go orchestrator (quantex-realtime) uses these via env var overrides.
+# Total should sum to 1.00. Override any brain weight by uncommenting.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: quantex-brain-weights
+  namespace: quantex
+  labels: { app: quantex, component: brains }
+data:
+  # All 11 Trinity Architecture brains with default weights
+  # BRAIN_WEIGHT_<ID> env vars override the Go config.go defaults
+  brain_weight_timesfm: "0.25"
+  brain_weight_freqai: "0.15"
+  brain_weight_llm_regime: "0.15"
+  brain_weight_microstructure: "0.08"
+  brain_weight_orderflow_nautilus: "0.08"
+  brain_weight_finbert: "0.07"
+  brain_weight_finrl: "0.07"
+  brain_weight_statarb: "0.05"
+  brain_weight_onchain: "0.03"
+  brain_weight_custom_nn: "0.04"
+  brain_weight_polymarket_alpha: "0.03"
+---
+# NATS JetStream — Trinity Architecture Event Backbone
+#   Layer A (Python brains)  publish → signals.raw
+#   Layer B (Go orchestrator) subscribes → aggregates → signals.aggregated
+#   Layer C (Rust execution)  subscribes → signals.aggregated → executes
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quantex-nats
+  namespace: quantex
+  labels: { app: quantex, component: nats }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: quantex, component: nats }
+  template:
+    metadata:
+      labels: { app: quantex, component: nats }
+    spec:
+      containers:
+        - name: nats
+          image: nats:2.10-alpine
+          args:
+            - "--jetstream"
+            - "--store_dir=/data"
+            - "-m"
+            - "8222"
+            - "--max_payload=1MB"
+          ports:
+            - containerPort: 4222
+              name: client
+            - containerPort: 8222
+              name: monitor
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8222 }
+            initialDelaySeconds: 5
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8222 }
+            initialDelaySeconds: 3
+          resources:
+            requests: { cpu: "0.25", memory: "256Mi" }
+            limits: { cpu: "0.5", memory: "512Mi" }
+          volumeMounts:
+            - name: nats-data
+              mountPath: /data
+      volumes:
+        - name: nats-data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quantex-nats
+  namespace: quantex
+  labels: { app: quantex, component: nats }
+spec:
+  selector: { app: quantex, component: nats }
+  ports:
+    - name: client
+      port: 4222
+      targetPort: 4222
+    - name: monitor
+      port: 8222
+      targetPort: 8222
+---
+# NATS Prometheus Exporter (optional — metrics for Prometheus)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quantex-nats-exporter
+  namespace: quantex
+  labels: { app: quantex, component: nats-exporter }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: quantex, component: nats-exporter }
+  template:
+    metadata:
+      labels: { app: quantex, component: nats-exporter }
+    spec:
+      containers:
+        - name: nats-exporter
+          image: natsio/prometheus-nats-exporter:latest
+          args:
+            - "-connz"
+            - "-routez"
+            - "-subz"
+            - "-varz"
+            - "http://quantex-nats:8222"
+          ports:
+            - containerPort: 7777
+              name: metrics
+          resources:
+            requests: { cpu: "0.1", memory: "64Mi" }
+            limits: { cpu: "0.25", memory: "128Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: quantex-nats-exporter
+  namespace: quantex
+  labels: { app: quantex, component: nats-exporter }
+spec:
+  selector: { app: quantex, component: nats-exporter }
+  ports:
+    - name: metrics
+      port: 7777
+      targetPort: 7777
 ---
 # Grafana
 apiVersion: apps/v1

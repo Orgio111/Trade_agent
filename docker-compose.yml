@@ -4,8 +4,6 @@
 # Layer 4: Services | Layer 5-7: Application
 # ═══════════════════════════════════════════════════════════
 
-version: "3.9"
-
 services:
   # ── LAYER 1: INFRASTRUCTURE ─────────────────────────────
 
@@ -60,12 +58,25 @@ services:
       resources:
         limits: { cpus: "1.0", memory: 1G }
 
+  # ── LAYER 2-4: EVENT STREAM BUS ──────────────────────
+  # NATS JetStream is the backbone of the Trinity Architecture:
+  #   Layer A (Python brains) publish → signals.raw
+  #   Layer B (Go orchestrator) subscribes → aggregates → signals.aggregated
+  #   Layer C (Rust execution) subscribes → signals.aggregated → executes
+
   nats:
     image: nats:2.10-alpine
     container_name: quantex-nats
     restart: unless-stopped
-    ports: ["4222:4222", "8222:8222"]
-    command: ["--jetstream", "--store_dir=/data", "-m", "8222"]
+    ports:
+      - "4222:4222"   # Client connections (brains, orchestrator, realtime)
+      - "8222:8222"   # HTTP monitoring / health
+    command:
+      - "--jetstream"
+      - "--store_dir=/data"
+      - "-m"
+      - "8222"
+      - "--max_payload=1MB"
     volumes:
       - nats_data:/data
     healthcheck:
@@ -110,6 +121,8 @@ services:
       REDIS_HOST: redis
       INITIAL_BALANCE: ${INITIAL_BALANCE:-1000.0}
       FORWARDED_ALLOW_IPS: "*"
+      # Trinity Layer A: NATS JetStream — brain signals bus
+      NATS_URL: nats://nats:4222
     volumes:
       - ./inference:/app/inference
       - ./models:/app/models
@@ -119,6 +132,8 @@ services:
       redis:
         condition: service_healthy
       qdrant:
+        condition: service_started
+      nats:
         condition: service_started
     deploy:
       resources:
@@ -132,6 +147,16 @@ services:
     ports: []
     expose:
       - "8082"
+    environment:
+      # Trinity Layer B: NATS JetStream — signal aggregation bus
+      NATS_URL: nats://nats:4222
+      # Brain weight overrides (optional — uncomment to customise):
+      # BRAIN_WEIGHT_TIMESFM: "0.25"
+      # BRAIN_WEIGHT_CUSTOM_NN: "0.04"
+      # BRAIN_WEIGHT_POLYMARKET_ALPHA: "0.03"
+    depends_on:
+      nats:
+        condition: service_started
     deploy:
       resources:
         limits: { cpus: "1.0", memory: 1G }

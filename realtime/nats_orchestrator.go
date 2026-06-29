@@ -19,6 +19,8 @@ type BrainSignal struct {
 	Symbol      string                 `json:"symbol"`
 	Score       float64                `json:"score"`        // -1.0 to 1.0
 	Confidence  float64                `json:"confidence"`   // 0.0 to 1.0
+	Weight      float64                `json:"weight"`       // weight from Python (overridden by Go config)
+	Direction   int                    `json:"direction"`    // +1 buy, -1 sell, 0 hold
 	TimestampMs int64                  `json:"timestamp_ms"`
 	Metadata    map[string]interface{} `json:"metadata,omitempty"`
 }
@@ -153,7 +155,7 @@ func (o *NATSOrchestrator) StartAggregationLoop() {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	log.Printf("🔄 Aggregation loop started (interval: %s)", interval)
+		log.Printf("🔄 Aggregation loop started (interval: %s, %d brains configured)", interval, len(o.cfg.BrainWeights))
 
 	for range ticker.C {
 		result := o.aggregate()

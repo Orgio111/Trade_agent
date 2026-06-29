@@ -47,6 +47,25 @@ from .microstructure import SpoofingDetector, HiddenLiquidityDetector, DeltaCVDT
 from .execution import ExecutionOrchestrator, TWAPExecutor, VWAPExecutor, IcebergExecutor, SmartOrderRouter, SlippageEstimator, get_execution_plan, ExecutionPlan
 from .agent_routing import AgentModelRouter, TaskRouter, AGENT_MODEL_MAP, AGENT_PROVIDER_CHAINS, AGENT_TASK_TYPE_OVERRIDES
 
+# Trinity Layer A: Brain registry + NATS runner
+from .brains import BRAIN_REGISTRY, BaseBrain
+from .brains.base_brain import BrainRunner, BrainNATSPublisher
+
+
+# ── Per-brain intervals (seconds) — used to set runner cadence ──
+BRAIN_INTERVALS: dict[str, float] = {
+    "timesfm": 60.0,              # Heavy model inference
+    "freqai": 15.0,               # ML model
+    "llm_regime": 15.0,           # LLM-based classification
+    "microstructure": 10.0,       # Fast tick-level analysis
+    "finbert": 30.0,              # NLP news sentiment
+    "finrl": 30.0,                # RL position sizing
+    "onchain": 60.0,              # Slow on-chain data
+    "statarb": 15.0,              # Statistical arbitrage
+    "orderflow_nautilus": 5.0,    # Ultra-fast orderbook
+    "polymarket_alpha": 60.0,     # Prediction market data
+    "custom_nn": 30.0,            # Neural network inference
+}
 
 # ── Global State ──────────────────────────────────────────
 
@@ -94,6 +113,11 @@ execution_orch: ExecutionOrchestrator | None = None
 agent_router: AgentModelRouter | None = None
 task_router: TaskRouter | None = None
 timesfm_forecaster: TimesFMForecaster | None = None
+
+# Trinity Layer A: Brain runner instances
+brain_publisher: BrainNATSPublisher | None = None
+brain_runners: dict[str, BrainRunner] = {}
+brain_runner_tasks: dict[str, asyncio.Task] = {}
 
 active_connections: list[WebSocket] = []
 
@@ -183,6 +207,7 @@ async def lifespan(app: FastAPI):
     global spoofing_detector, hidden_liquidity, delta_tracker, liq_cascade, ob_imbalance
     global execution_orch, agent_router, task_router
     global timesfm_forecaster
+    global brain_publisher, brain_runners, brain_runner_tasks
 
     # Phase 1-3 components (nim_enhanced kept for NeMoDistiller backward compat)
     nim = InferenceIntegration(budget_tier=os.getenv("INFERENCE_BUDGET_TIER", "free"))
@@ -249,6 +274,34 @@ async def lifespan(app: FastAPI):
 
     # TimesFM forecaster (model weights load lazily on first forecast)
     timesfm_forecaster = TimesFMForecaster()
+
+    # ── Trinity Layer A: Brain Runners ────────────────────────────────
+    # Each brain runs independently, publishing signals to NATS JetStream "signals.raw"
+    # The Go orchestrator (Layer B) aggregates these into a weighted signal.
+    brain_publisher = BrainNATSPublisher()
+    brain_runners = {}
+    brain_runner_tasks = {}
+
+    try:
+        await brain_publisher.connect()
+        print(f"  ✅ NATS JetStream connected — publishing {len(BRAIN_REGISTRY)} brains to signals.raw")
+
+        for brain_id, brain_class in BRAIN_REGISTRY.items():
+            try:
+                brain_instance: BaseBrain = brain_class()
+                interval = BRAIN_INTERVALS.get(brain_id, 15.0)
+                runner = BrainRunner(brain_instance, brain_publisher, interval_secs=interval)
+                brain_runners[brain_id] = runner
+                # Start as background task
+                task = asyncio.create_task(runner.run(symbol="BTCUSDT"), name=f"brain:{brain_id}")
+                brain_runner_tasks[brain_id] = task
+                print(f"    ✅ Brain [{brain_id}] started — interval={interval}s")
+            except Exception as e:
+                print(f"    ❌ Brain [{brain_id}] failed to start: {e}")
+
+    except Exception as e:
+        print(f"  ⚠️  NATS unavailable — brains will not publish: {e}")
+        print(f"     {len(BRAIN_REGISTRY)} brains registered but not connected to NATS")
 
     print("  Institutional v2: EnhancedRisk, MarketStructure, Execution, Microstructure, AgentRouting")
 
@@ -372,7 +425,21 @@ async def lifespan(app: FastAPI):
     print(f"   Budget tier: {os.getenv('INFERENCE_BUDGET_TIER', 'free')}")
     yield
 
-    # Cleanup
+    # Cleanup: stop all brain runners and disconnect NATS
+    if brain_runners:
+        print(f"  Stopping {len(brain_runners)} brain runners...")
+        for brain_id, runner in brain_runners.items():
+            runner.stop()
+        # Cancel runner tasks
+        for brain_id, task in brain_runner_tasks.items():
+            task.cancel()
+        # Give tasks a moment to finish
+        if brain_runner_tasks:
+            await asyncio.sleep(0.5)
+    if brain_publisher:
+        await brain_publisher.close()
+        print("  ✅ NATS publisher disconnected")
+
     if database:
         await database.disconnect()
     if data_orchestrator:
@@ -443,6 +510,17 @@ async def health():
         "ml": {"trained": ml_engine._model is not None if ml_engine else False},
         "database": db_status,
         "balance": paper_account.balance if paper_account else 0,
+        "brains": {
+            "registered": len(BRAIN_REGISTRY),
+            "runners_active": len(brain_runners),
+            "nats_connected": (
+                brain_publisher is not None
+                and brain_publisher.nc is not None
+                and brain_publisher.nc.is_connected
+            ),
+            "brain_ids": list(BRAIN_REGISTRY.keys()),
+            "intervals_sec": {k: BRAIN_INTERVALS.get(k, 15.0) for k in BRAIN_REGISTRY},
+        },
     }
 
 
@@ -1503,6 +1581,31 @@ async def recommend_task(symbol: str = "BTCUSDT", volatility: float = 0.02,
         "recommended_task": task_type,
         "reasoning": f"Based on vol={volatility}, tf={timeframe}, conf={confidence}, regime={regime}",
         "resolved": resolved,
+    }
+
+
+# ── API: Layer A Brain Runners ────────────────────────────────────────
+
+@app.get("/api/v1/brains")
+async def get_brains_status():
+    """Status of all registered brain runners and their latest signals."""
+    nats_connected = brain_publisher is not None and brain_publisher.nc is not None and brain_publisher.nc.is_connected
+    return {
+        "total_registered": len(BRAIN_REGISTRY),
+        "runners_active": len(brain_runners),
+        "nats_connected": nats_connected,
+        "brains": {
+            brain_id: {
+                "class": brain_class.__name__,
+                "runner_active": brain_id in brain_runners,
+                "task_alive": (
+                    brain_runner_tasks.get(brain_id) is not None
+                    and not brain_runner_tasks[brain_id].done()
+                ) if brain_id in brain_runner_tasks else False,
+                "interval": BRAIN_INTERVALS.get(brain_id, 15.0),
+            }
+            for brain_id, brain_class in sorted(BRAIN_REGISTRY.items())
+        },
     }
 
 
