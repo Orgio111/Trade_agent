@@ -60,6 +60,7 @@ Cache + Track Cost          Try Next Provider
 - [[vllm-inference-provider]] — self-hosted GPU provider
 - [[brain-ecosystem]] — brains that consume inference
 - [[brain-backtest-infrastructure]] — backtesting uses inference for LLM brains
+- [[inference-routing-panel]] — frontend observability for inference routing
 
 ## Sources
 

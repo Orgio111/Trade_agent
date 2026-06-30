@@ -79,6 +79,7 @@ Every brain must be registered in all of these:
 - [[signal-aggregation-logic]] — how weights are applied in the Go aggregator
 - [[ensemble-meta-model]] — proposed meta-learner for dynamic weight adjustment
 - [[brain-backtest-infrastructure]] — backtesting framework using these weights
+- [[infrastructure-overview]] — Docker Compose + K8s deployment architecture
 
 ## Individual Brain Pages
 
@@ -94,5 +95,5 @@ Every brain must be registered in all of these:
 | StatArb | [[statarb-brain]] |
 | OnChain | [[onchain-brain]] |
 | Custom NN | [[neural-network-brain]] |
-| Polymarket | — (no entity page yet) |
+| Polymarket | [[polymarket-brain]] |
 | Odoo ERP | [[odoo-erp-brain]] |

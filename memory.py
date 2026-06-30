@@ -1,20 +1,48 @@
-"""Local Memory + RAG using ChromaDB."""
+"""Local Memory + RAG using ChromaDB with Ollama embeddings."""
 
 import chromadb
 from chromadb.config import Settings
-from chromadb.utils import embedding_functions
 from typing import List, Dict, Any, Optional
 import logging
 import json
+import ollama
 from models import Trade
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
+class OllamaEmbeddingFunction:
+    """Wrapper to use Ollama for embeddings with ChromaDB."""
+    
+    def __init__(self, model_name: str = "nomic-embed-text", host: str = "http://localhost:11434"):
+        self.model_name = model_name
+        self.client = ollama.Client(host=host)
+    
+    def name(self) -> str:
+        """Return the name of the embedding function for ChromaDB."""
+        return f"ollama-{self.model_name}"
+    
+    def __call__(self, input: List[str]) -> List[List[float]]:
+        """Generate embeddings for a list of texts. ChromaDB expects 'input' parameter."""
+        embeddings = []
+        for text in input:
+            try:
+                response = self.client.embeddings(
+                    model=self.model_name,
+                    prompt=text
+                )
+                embeddings.append(response["embedding"])
+            except Exception as e:
+                logger.error(f"Embedding failed for text: {e}")
+                # Return zero vector as fallback
+                embeddings.append([0.0] * 768)
+        return embeddings
+
+
 class LocalMemory:
     """
-    Vector memory + pattern retrieval using ChromaDB.
+    Vector memory + pattern retrieval using ChromaDB with Ollama embeddings.
     Local, no cloud dependencies.
     """
     
@@ -34,9 +62,22 @@ class LocalMemory:
             settings=Settings(anonymized_telemetry=False)
         )
         
-        # Embedding function
-        self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name="nomic-embed-text"
+        # Ollama embedding function
+        model_cfg = {}
+        try:
+            with open("config.yaml") as f:
+                import yaml
+                full_config = yaml.safe_load(f)
+                model_cfg = full_config.get("model", {})
+        except:
+            pass
+        
+        ollama_host = model_cfg.get("ollama_host", "http://localhost:11434")
+        embedding_model = model_cfg.get("embedding_model", "nomic-embed-text")
+        
+        self.embedding_fn = OllamaEmbeddingFunction(
+            model_name=embedding_model,
+            host=ollama_host
         )
         
         # Collections
@@ -58,7 +99,7 @@ class LocalMemory:
             metadata={"description": "Regime-specific patterns"}
         )
         
-        logger.info(f"Memory initialized at {self.chroma_path}")
+        logger.info(f"Memory initialized at {self.chroma_path} with Ollama embeddings")
     
     def store_trade(self, trade: Trade) -> str:
         """Store completed trade for future pattern matching."""
@@ -104,7 +145,7 @@ class LocalMemory:
                 "regime": regime,
                 "setup": json.dumps(setup),
                 "outcome": json.dumps(outcome),
-                "features": json.dumps(features[:10])  # Store first 10 features
+                "features": json.dumps(features[:10])
             }],
             ids=[pattern_id]
         )
@@ -137,7 +178,7 @@ class LocalMemory:
             trades.append({
                 "document": doc,
                 "metadata": meta,
-                "similarity": 1.0  # Chroma returns distances, convert if needed
+                "similarity": 1.0
             })
         
         return trades
@@ -187,7 +228,6 @@ class LocalMemory:
             pnl = meta.get('pnl', 0)
             if pnl > 0:
                 wins += 1
-            # R-multiple would need entry/exit prices
             total_r += pnl / abs(meta.get('entry_price', 1)) if meta.get('entry_price', 1) != 0 else 0
         
         return {
@@ -204,7 +244,6 @@ class LocalMemory:
         )
         
         trades = []
-        # Sort by exit_time descending
         items = list(zip(results['documents'], results['metadatas']))
         items.sort(key=lambda x: x[1].get('exit_time', 0), reverse=True)
         
@@ -224,9 +263,3 @@ class LocalMemory:
             "regimes_count": self.regime_collection.count(),
             "path": self.chroma_path,
         }
-    
-    def cleanup_old_trades(self, keep_last: int = 10000):
-        """Remove old trades beyond keep_last limit."""
-        # ChromaDB doesn't have direct delete by timestamp
-        # Would need to query all and delete old IDs
-        pass

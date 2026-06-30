@@ -142,6 +142,13 @@ if (subject.startsWith("odoo.")) → update Odoo ERP panel
 - [[signal-aggregation-logic]] — how brain signals flow to dashboard
 - [[odoo-erp-brain]] — Brain #12 feeding Odoo panel
 - [[local-trading-ai-architecture]] — overall system design
+- [[agent-swarm-visor]] — 3D brain swarm visualization component
+- [[price-chart]] — TradingView candlestick chart component
+- [[microstructure-panel]] — orderbook/delta/spoofing/cascade panel
+- [[inference-routing-panel]] — multi-provider inference observability
+- [[orderbook-heatmap]] — L2 depth visualization with whale detection
+- [[infrastructure-overview]] — Docker Compose + K8s + Terraform deployment
+- [[odoo-erp-panel]] — planned Odoo ERP business intelligence panel
 
 ## Sources
 

@@ -11,12 +11,11 @@ system:
 model:
   warm_model: "phi3:3.8b"           # Always-loaded scalping model (<100ms)
   reasoning_model: "qwen3:8b"       # Main reasoning (<300ms)
-  deep_model: "deepseek-r1:8b"      # Macro analysis (async, >2s)
+  deep_model: "deepseek-r1:8b"      # Macro analysis
   execution_model: "mistral:7b"     # Tool calling / order execution
   vision_model: "moondream"         # Chart analysis (on-demand)
   embedding_model: "nomic-embed-text"
   
-  # Ollama options
   ollama_host: "http://localhost:11434"
   num_predict: 512
   temperature: 0.3
@@ -34,7 +33,6 @@ risk:
 memory:
   chroma_path: "./memory"
   buffer_size: 200                # Rolling candle buffer
-  regime_states: 5                # HMM states: trend_up, trend_down, range, volatile, transition
   similarity_top_k: 5             # Similar pattern retrieval
 
 execution:

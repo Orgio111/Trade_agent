@@ -1,11 +1,41 @@
 # Log
 
 > Append-only timeline of every operation on the wiki. Newest at top. Reverse chronological so the current state is the first thing you read.
+
+## [2026-06-30] ingest | Infrastructure Overview — Docker Compose + K8s + Terraform deployment architecture
+
+Created [[infrastructure-overview]] (overview) — single source of truth for the full QUANTEX deployment architecture across 3 environments:
+
+- **Docker Compose:** 13 services (postgres, redis, qdrant, nats, influxdb, orchestrator, realtime, frontend, nginx, certbot, prometheus, nats-exporter, grafana), 10 named volumes, ~8.75 CPU / ~11.5G memory limits.
+- **Kubernetes:** 25 resources (8 Deployments, 1 StatefulSet, 9 Services, 2 ConfigMaps, 2 PVCs, 1 RayCluster), GPU inference (vLLM), RL training (Ray), brain weights ConfigMap.
+- **Terraform:** Hetzner Cloud provisioning — tier0 (cx21, 2 vCPU, 4GB, ~$4-5/mo) and tier1 (cx41, 4 vCPU, 16GB, ~$20-40/mo) with firewall rules.
+- **Nginx:** Reverse proxy with SSL termination (Let's Encrypt + fallback self-signed), rate limiting (30 r/s API, 10 r/s WS), WebSocket upgrade, security headers.
+- **Monitoring:** Prometheus (30-day retention) + Grafana (auto-provisioned dashboards) + NATS exporter.
+- **Data flow:** Trinity Architecture (Layer A Python brains → NATS → Layer B Go aggregator → Layer C Next.js frontend).
+
+Updated [[index.md]]: 2 sources, 51 pages. Cross-references added to [[nats-event-system]], [[vllm-inference-provider]], [[brain-ecosystem]], [[real-time-trading-dashboard]], [[ppo-portfolio-manager]], [[broker-abstraction-layer]].
 >
 > Entry format: `## [YYYY-MM-DD] <op> | <subject>` where `<op>` is `ingest` · `query` · `lint` · `note`.
 > Quick last-5: `grep "^## \[" log.md | tail -5`
 
 ---
+
+## [2026-06-30] ingest | Frontend Dashboard Components — 6 pages created
+
+Ingested 5 frontend dashboard component source files + 1 planned component into wiki:
+
+- [[agent-swarm-visor]] (entity) — Three.js 3D brain swarm visualization: glowing spheres, inter-agent connections, particle background, HTML overlay labels
+- [[price-chart]] (entity) — TradingView lightweight-charts candlestick with volume histogram, EMA 9/21 overlays, NaN-safe data filtering
+- [[microstructure-panel]] (entity) — 2×2 grid: orderbook imbalance, delta/CVD divergence, spoofing detection, liquidation cascade risk
+- [[inference-routing-panel]] (entity) — Multi-provider inference observability: provider health cards, adaptive chain visualization, latency heatmap, cost tracking
+- [[orderbook-heatmap]] (entity) — L2 depth visualization: bid/ask bars, cumulative depth, mid-price marker, whale liquidity cluster detection
+- [[odoo-erp-panel]] (concept) — planned Odoo ERP business intelligence panel (not yet implemented)
+
+Updated `index.md`: 2 sources, 50 pages. Cross-references added to [[brain-ecosystem]], [[real-time-trading-dashboard]], [[microstructure]], [[inference-router]], [[incremental-candle-state]], [[odoo-erp-trading-integration]], [[orderflow-nautilus-brain]], [[cost-aware-llm-pipeline]].
+
+## [2026-06-30] note | PolymarketBrain entity page — completes 12-brain wiki coverage
+
+Created [[polymarket-brain]] (entity) — Brain #11: 5-formula mathematical pipeline (Bayesian evidence tracking, longshot bias correction, EV/ROI filtering, Quarter-Kelly sizing, Nash order routing). All 12 brains now have wiki entity pages. Updated `index.md`: 44 pages.
 
 ## [2026-06-30] ingest | Fix 9 broken wikilinks — created missing concept pages
 

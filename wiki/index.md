@@ -2,7 +2,7 @@
 
 > Content catalog for the trading & quant second brain. Organized by category. ZCode updates this on every ingest. **Read this first** when answering a query — then drill into pages.
 >
-> **State:** 2 sources · 43 pages · last updated 2026-06-30
+> **State:** 2 sources · 51 pages · last updated 2026-06-30
 
 ---
 
@@ -10,10 +10,13 @@
 _Synthesis pages — the big picture of a topic._
 
 - [[brain-ecosystem]] — single source of truth for all 12 brain weights, tiers, registration files, and aggregation flow. (stable, updated 2026-06-30)
+- [[infrastructure-overview]] — full deployment architecture: Docker Compose (13 services), Kubernetes (25 resources), Terraform (Hetzner), Nginx reverse proxy, monitoring stack. (stable, updated 2026-06-30)
+- [[infrastructure-overview]] — full deployment architecture: Docker Compose (13 services), Kubernetes (25 resources), Terraform (Hetzner), Nginx reverse proxy, monitoring stack. (stable, updated 2026-06-30)
 
 ## Concepts
 _Methods and ideas, synthesized across all sources._
 
+- [[odoo-erp-panel]] — planned Odoo ERP business intelligence panel for the real-time dashboard. (planned, updated 2026-06-30)
 - [[odoo-erp-trading-integration]] — Odoo ERP business data as trading signals: inventory, sales, revenue, CRM → directional scores. (1 source, updated 2026-06-30)
 - [[backtesting-pipeline]] — alias for [[brain-backtest-infrastructure]]; validates brain weights before deployment. (stable, updated 2026-06-30)
 - [[brain-backtest-infrastructure]] — lightweight backtest engine simulating 12-brain weighted aggregation with pandas proxies. (stable, updated 2026-06-30)
@@ -41,13 +44,6 @@ _Methods and ideas, synthesized across all sources._
 _(none yet)_
 
 ## Indicators
-
-_(none yet)_
-_Specific trading strategies._
-
-_(none yet)_
-
-## Indicators
 _Signals, features, and metrics._
 
 _(none yet)_
@@ -55,6 +51,11 @@ _(none yet)_
 ## Entities
 _Instruments, venues, tools, people, firms._
 
+- [[agent-swarm-visor]] — Three.js 3D brain swarm visualization: glowing spheres, inter-agent connections, particle background. (active, updated 2026-06-30)
+- [[price-chart]] — TradingView lightweight-charts candlestick with volume histogram, EMA 9/21 overlays, NaN-safe data filtering. (active, updated 2026-06-30)
+- [[microstructure-panel]] — 2×2 grid: orderbook imbalance, delta/CVD, spoofing detection, liquidation cascade risk. (active, updated 2026-06-30)
+- [[inference-routing-panel]] — Multi-provider inference observability: health cards, adaptive chains, latency heatmap, cost tracking. (active, updated 2026-06-30)
+- [[orderbook-heatmap]] — L2 depth visualization: bid/ask bars, cumulative depth, mid-price marker, whale cluster detection. (active, updated 2026-06-30)
 - [[rtx4050-trading-system]] — hardware-optimized local trading system for RTX 4050 6GB VRAM + Ollama. (1 source, updated 2026-06-30)
 - [[microstructure-brain]] — orchestrator brain #4; trade-tick OFI, weight 0.10. (1 source, updated 2026-06-25)
 - [[orderflow-nautilus-brain]] — orchestrator brain #4b; depth-based OFI via NautilusTrader (tick fallback), weight 0.12. (1 source, updated 2026-06-25)
@@ -68,6 +69,7 @@ _Instruments, venues, tools, people, firms._
 - [[onchain-brain]] — brain #7; exchange flow + whale + mempool, weight 0.05. (updated 2026-06-26)
 - [[vllm-inference-provider]] — self-hosted GPU inference via vLLM, zero API cost, OpenAI-compatible API. (active, updated 2026-06-30)
 - [[ppo-portfolio-manager]] — PPO RL-based capital allocation with Markowitz fallback chain. (active, updated 2026-06-30)
+- [[polymarket-brain]] — brain #11; Polymarket 5-formula alpha pipeline (Bayesian/Longshot/EV/Kelly/Nash), weight 0.05. (active, updated 2026-06-30)
 - [[odoo-erp-brain]] — brain #12; Odoo ERP business intelligence via XML-RPC, weight 0.05. (active, updated 2026-06-30)
 - [[neural-network-brain]] — brain #10; custom LSTM for temporal patterns, weight 0.05. (stable, updated 2026-06-26)
 

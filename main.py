@@ -5,8 +5,9 @@ import json
 import logging
 import signal
 import sys
+import time
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime
 
 import uvicorn
@@ -14,7 +15,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import yaml
 
-from models import Candle, Signal, AccountState, ExecutionResult
+from models import Candle, Signal, AccountState, ExecutionResult, OrderRequest, OrderSide, OrderType
 from state import IncrementalState
 from router import OllamaRouter
 from risk import RiskEngine
@@ -42,7 +43,7 @@ account_state: Optional[AccountState] = None
 paper_mode = True
 
 
-# System prompts for different modes
+# System prompts
 SCALP_SYSTEM_PROMPT = """You are a high-frequency scalping trader.
 Analyze the 1-minute candle data and current market state.
 Respond with ONLY valid JSON:
@@ -229,7 +230,7 @@ async def process_candle(candle: Candle) -> Dict[str, Any]:
         order = OrderRequest(
             symbol=candle.symbol,
             side=OrderSide.BUY if final_signal.action == SignalAction.BUY else OrderSide.SELL,
-            type=OrderType.LIMIT,
+            order_type=OrderType.LIMIT,
             quantity=final_signal.size_pct * account_state.equity / candle.close,
             price=final_signal.entry_price or candle.close,
             post_only=True,
@@ -239,7 +240,7 @@ async def process_candle(candle: Candle) -> Dict[str, Any]:
         execution_result = await execution_client.place_order(order)
         
         # Update account state (simplified)
-        if execution_result.status == "FILLED":
+        if execution_result.success and execution_result.filled_qty > 0:
             account_state.open_positions += 1
     
     # 8. Prepare response
@@ -248,14 +249,14 @@ async def process_candle(candle: Candle) -> Dict[str, Any]:
     response = {
         "timestamp": int(time.time() * 1000),
         "candle": candle.to_dict(),
-        "features": features.to_list() if features else [],
+        "features": features.to_vector() if features else [],
         "signal": signal.model_dump() if signal else None,
         "risk_decision": {
             "allow": risk_decision.allow,
             "reason": risk_decision.reason,
             "max_size": risk_decision.max_size,
         },
-        "execution": execution_result.__dict__ if execution_result else None,
+        "execution": execution_result.model_dump() if execution_result else None,
         "state": state.summary(),
         "account": account_state.model_dump() if account_state else None,
         "latency_ms": round(elapsed * 1000, 2),
@@ -274,7 +275,7 @@ async def process_candle(candle: Candle) -> Dict[str, Any]:
 def build_user_prompt(candle: Candle, features: Any, context: Dict) -> str:
     """Build user prompt for model."""
     return f"""Current Candle: {candle.to_dict()}
-Features: {features.to_list() if features else []}
+Features: {features.to_vector() if features else []}
 Regime: {context.get('regime', 'unknown')} (confidence: {context.get('regime_confidence', 0):.2f})
 Key Levels: Support={context.get('key_levels', {}).get('support', [])} Resistance={context.get('key_levels', {}).get('resistance', [])}
 Session: VWAP={context.get('session', {}).get('vwap', 0):.2f} Bias={context.get('session', {}).get('bias', 'neutral')}

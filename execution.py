@@ -109,7 +109,9 @@ class BinanceClient:
             logger.error(f"Request failed: {method} {endpoint} - {e}")
             raise
     
-    # Market data =="GET", "/fapi/v2/account", signed=True)
+    async def get_account(self) -> Dict:
+        """Get account balance and positions."""
+        return await self._request("GET", "/fapi/v2/account", signed=True)
     
     async def get_positions(self) -> List[Dict]:
         """Get current positions."""
@@ -197,7 +199,7 @@ class PaperClient:
         self.order_counter = 0
         self.fills: List[Dict] = []
         
-        # Simulated market data (would connect to real feed in practice)
+        # Simulated market data
         self.current_prices: Dict[str, float] = {}
     
     def update_price(self, symbol: str, price: float):
@@ -545,7 +547,6 @@ class ExecutionEngine:
         """Cancel all open orders for symbol."""
         try:
             if self.paper_mode:
-                # Cancel all paper orders for symbol
                 to_cancel = [
                     oid for oid, order in self.paper_client.orders.items()
                     if order.symbol == symbol and order.status == OrderStatus.NEW
@@ -555,7 +556,6 @@ class ExecutionEngine:
                 return True
             else:
                 async with self.client as c:
-                    # Would need to query open orders first
                     pass
             return True
         except Exception as e:
@@ -563,7 +563,6 @@ class ExecutionEngine:
             return False
 
 
-# Factory
 async def create_execution_engine(config_path: str = "config.yaml") -> ExecutionEngine:
     engine = ExecutionEngine(config_path)
     await engine.start()

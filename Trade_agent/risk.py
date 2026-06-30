@@ -3,7 +3,6 @@
 from typing import Optional, Dict, Any
 from models import Signal, SignalAction, RiskDecision, AccountState, OrderSide
 import logging
-import yaml
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +14,7 @@ class RiskEngine:
     """
     
     def __init__(self, config_path: str = "config.yaml"):
+        import yaml
         with open(config_path) as f:
             self.config = yaml.safe_load(f)
         
@@ -85,7 +85,7 @@ class RiskEngine:
             )
         
         # 5. Signal validation
-        if signal.action == "HOLD":
+        if signal.action == SignalAction.HOLD:
             return RiskDecision(
                 allow=False,
                 reason="Signal is HOLD",
@@ -107,7 +107,7 @@ class RiskEngine:
         adjusted_signal = signal.model_copy()
         adjusted_signal.size_pct = adjusted_size / state.equity if state.equity > 0 else 0
         
-        logger.info(f"Signal validated: {signal.action} {adjusted_signal.size_pct:.2%} equity (confidence: {signal.confidence:.2f})")
+        logger.info(f"Signal validated: {signal.action.value} {adjusted_signal.size_pct:.2%} equity (confidence: {signal.confidence:.2f})")
         
         return RiskDecision(
             allow=True,

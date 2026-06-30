@@ -952,70 +952,24 @@ The `PPOPortfolioManager` automatically falls back through this chain if PPO is 
 
 ---
 
-### Brain Files vs Registration Cross-Reference
+### Brain Files vs Registration Cross-Reference (as of 2026-06-30)
 
-| # | Brain Class | Source File | `__init__.py` | `BRAIN_REGISTRY` | `brain_registry.json` | `brain_backtest.py` | `main.py` |
-|---|-------------|-------------|:---:|:---:|:---:|:---:|:---:|
-| 1 | TimesFMBrain | timesfm_brain.py | ✅ | ✅ timesfm | ✅ timesfm | ✅ 0.25 | ❌ |
-| 2 | FreqAIBrain | freqai_brain.py | ✅ | ✅ freqai | ✅ freqai | ✅ 0.15 | ❌ |
-| 3 | LLMRegimeBrain | llm_regime_brain.py | ✅ | ✅ llm_regime | ✅ llm_regime | ✅ 0.15 | ❌ |
-| 4 | MicrostructureBrain | microstructure_brain.py | ✅ | ✅ microstructure | ❌ | ✅ 0.10 | ❌ |
-| 5 | FinBERTBrain | finbert_brain.py | ✅ | ✅ finbert | ✅ finbert_nlp | ✅ 0.10 | ❌ |
-| 6 | FinRLBrain | finrl_brain.py | ✅ | ✅ finrl | ✅ finrl_kelly | ✅ 0.10 | ❌ |
-| 7 | OnChainBrain | onchain_brain.py | ✅ | ✅ onchain | ✅ onchain_whale | ✅ 0.05 | ❌ |
-| 8 | StatArbBrain | statarb_brain.py | ✅ | ✅ statarb | ✅ statarb_funding | ✅ 0.10 | ❌ |
-| 9 | OrderFlowNautilusBrain | orderflow_nautilus_brain.py | ✅ | ✅ orderflow_nautilus | ❌ | ✅ 0.12 | ❌ |
-| 10 | **CustomNNBrain** | custom_nn_brain.py | **❌** | **❌** | ✅ custom_nn (0.05) | **❌** | **❌** |
-| 11 | **PolymarketBrain** | polymarket_brain.py | ✅ | ✅ polymarket_alpha | ✅ polymarket_alpha (0.05) | **❌** | **❌** |
+All 12 brains are fully registered across all files. Weight sum = 1.00.
 
-### 🔴 Тэнцвэргүй байдал (Inconsistencies Found)
+| # | Brain Class | Source File | `__init__.py` | `BRAIN_REGISTRY` | `brain_registry.json` | `brain_backtest.py` | Weight |
+|---|-------------|-------------|:---:|:---:|:---:|:---:|:------:|
+| 1 | TimesFMBrain | timesfm_brain.py | ✅ | ✅ timesfm | ✅ timesfm | ✅ | 0.25 |
+| 2 | FreqAIBrain | freqai_brain.py | ✅ | ✅ freqai | ✅ freqai | ✅ | 0.15 |
+| 3 | LLMRegimeBrain | llm_regime_brain.py | ✅ | ✅ llm_regime | ✅ llm_regime | ✅ | 0.15 |
+| 4 | MicrostructureBrain | microstructure_brain.py | ✅ | ✅ microstructure | ✅ microstructure | ✅ | 0.05 |
+| 5 | FinBERTBrain | finbert_brain.py | ✅ | ✅ finbert_nlp | ✅ finbert_nlp | ✅ | 0.07 |
+| 6 | FinRLBrain | finrl_brain.py | ✅ | ✅ finrl_kelly | ✅ finrl_kelly | ✅ | 0.05 |
+| 7 | OnChainBrain | onchain_brain.py | ✅ | ✅ onchain_whale | ✅ onchain_whale | ✅ | 0.05 |
+| 8 | StatArbBrain | statarb_brain.py | ✅ | ✅ statarb_funding | ✅ statarb_funding | ✅ | 0.05 |
+| 9 | OrderFlowNautilusBrain | orderflow_nautilus_brain.py | ✅ | ✅ orderflow_nautilus | ✅ orderflow_nautilus | ✅ | 0.03 |
+| 10 | CustomNNBrain | custom_nn_brain.py | ✅ | ✅ custom_nn | ✅ custom_nn | ✅ | 0.05 |
+| 11 | PolymarketBrain | polymarket_brain.py | ✅ | ✅ polymarket_alpha | ✅ polymarket_alpha | ✅ | 0.05 |
+| 12 | OdooERPBrain | odoo_erp_brain.py | ✅ | ✅ odoo_erp | ✅ odoo_erp | ✅ | 0.05 |
+| | **TOTAL** | | **12/12** | **12/12** | **12/12** | **12/12** | **1.00** |
 
-#### 1. `CustomNNBrain` — `__init__.py` болон `main.py`-д алга
-- Файл: `orchestrator/brains/custom_nn_brain.py` ✅ (L411, `class CustomNNBrain(BaseBrain)`)
-- `brain_registry.json`-д бүртгэлтэй ✅ ("custom_nn", weight 0.05)
-- `orchestrator/brains/__init__.py`-д **import хийгдээгүй** ❌
-- `BRAIN_REGISTRY` dict-д **байхгүй** ❌
-- `brain_backtest.py`-ийн `BRAIN_WEIGHTS`-д **байхгүй** ❌
-- `main.py`-д **ачаалагдахгүй** ❌
-
-#### 2. `PolymarketBrain` — `brain_backtest.py` болон `main.py`-д алга
-- `__init__.py`-д import + BRAIN_REGISTRY ✅ ("polymarket_alpha")
-- `brain_registry.json`-д бүртгэлтэй ✅ ("polymarket_alpha", weight 0.05)
-- `brain_backtest.py`-ийн `BRAIN_WEIGHTS`-д **байхгүй** ❌
-- `main.py`-д **ачаалагдахгүй** ❌
-
-#### 3. `MicrostructureBrain` — `brain_registry.json`-д алга
-- `brain_registry.json`-д 9 entry (timesfm, freqai, llm_regime, finbert_nlp, finrl_kelly, statarb_funding, onchain_whale, custom_nn, polymarket_alpha)
-- Алга: microstructure, orderflow_nautilus
-
-#### 4. `OrderFlowNautilusBrain` — `brain_registry.json`-д алга
-- `brain_registry.json`-д entry байхгүй ❌
-- `brain_backtest.py`-д 0.12 жинтэй ✅
-
-#### 5. `brain_backtest.py` BRAIN_WEIGHTS нийт жин > 1.0
-- Нийт жин: 0.25+0.15+0.15+0.10+0.12+0.10+0.10+0.10+0.05 = **1.12** (хэт ачаалал)
-- Засах: orderflow_nautilus-ийг 0.12→0.08, microstructure-ийг 0.10→0.08, finbert/finrl/statarb-ийг 0.10→0.07 тус бүр болгон бууруулж, custom_nn (0.05) + polymarket_alpha (0.05)-д зай гаргах. Ингэвэл нийлбэр 1.0 болно.
-
-#### 6. `main.py` — Brain Runners ачаалагдахгүй
-- `main.py`-д BRAIN_REGISTRY эсвэл BrainRunner/NATSPublisher **ашиглагдахгүй**
-- Brains нь `brain_backtest.py`-аар backtest хийгддэг, гэхдээ live горимд NATS JetStream-ээр тусдаа процесс хэлбэрээр ажиллах ёстой
-- `orchestrator/nautilus_bridge/nats_bridge.py`-д Brain NATS bridge байгаа
-
-#### 7. `test_brain_audit.py` — файл байхгүй
-- `tests/test_brain_audit.py` **байхгүй** (өмнөх commit-д байсан ч эсвэл хэзээ ч байгаагүй байж болно)
-- `test_custom_nn_brain.py`, `test_polymarket_brain.py` — эдгээр файлууд байгаа эсэхийг шалгаагүй
-
-### 📊 Нийт Brain Count
-- **11 brain classes** (+1 BaseBrain)
-- **10 in BRAIN_REGISTRY** (`__init__.py`) — custom_nn дутуу
-- **9 in brain_registry.json** — microstructure, orderflow_nautilus дутуу
-- **9 in brain_backtest BRAIN_WEIGHTS** — custom_nn, polymarket_alpha дутуу
-- **0 in main.py** — ямар ч brain ачаалагдахгүй (зөвхөн NATS-ээр)
-
-### ✅ Зөвлөмж
-1. `CustomNNBrain`-ийг `__init__.py`-д import + BRAIN_REGISTRY-д нэмэх
-2. `MicrostructureBrain` + `OrderFlowNautilusBrain`-ийг `brain_registry.json`-д нэмэх
-3. `CustomNNBrain` + `PolymarketBrain`-ийг `brain_backtest.py` BRAIN_WEIGHTS-д нэмэх (0.05 тус бүр)
-4. `brain_backtest.py` BRAIN_WEIGHTS нийт жинг 1.0 болгон хэвийн болгох
-5. `main.py`-д BrainRunner-уудыг NATS-ээр ачаалах логик нэмэх
-6. `orchestrator/brains/__init__.py`-д CustomNNBrain-ийг import + BRAIN_REGISTRY-д нэмэх замаар 11 brain бүрэн бүртгэгдсэн байх ёстой
+> **Note:** `main.py` does not directly load brains — brains run as separate NATS-published processes via `orchestrator/nautilus_bridge/nats_bridge.py`. See [[brain-ecosystem]] for the authoritative weight table and tier distribution.

@@ -1,20 +1,20 @@
-"""Incremental Candle State Management - No full history recomputation."""
+"""Incremental Candle State - Core candle linking system with compressed memory."""
 
 from collections import deque
 from typing import Dict, List, Optional, Any
 import numpy as np
-from models import Candle, CandleFeatures, RegimeState
 import yaml
 from pathlib import Path
+from models import Candle, CandleFeatures, RegimeState
 
 
 class IncrementalState:
     """
-    4-Level Incremental State Architecture:
+    4-Level Incremental State Architecture (NO full history recomputation):
     
     Level 0: Active Candle (updated every 60s)
     Level 1: Rolling Buffer (200 candles, fixed size)
-    Level 2: Key Levels (persistent, event-driven updates)
+    Level 2: Key Levels (persistent, event-driven)
     Level 3: Session Context (daily reset)
     Level 4: Strategy Performance (per-trade update)
     """
@@ -29,21 +29,21 @@ class IncrementalState:
         self.active_candle: Optional[Candle] = None
         self.active_features: Optional[CandleFeatures] = None
         
-        # Level 1: Rolling buffer (compressed features)
+        # Level 1: Rolling buffers
         self.candle_buffer: deque = deque(maxlen=self.buffer_size)
         self.feature_buffer: deque = deque(maxlen=self.buffer_size)
         
-        # Regime detection (streaming HMM)
+        # Regime detection
         self.regime_state: RegimeState = RegimeState.TRANSITION
-        self.regime_history: deque = deque(maxlen=50)
         self.regime_confidence: float = 0.0
+        self.regime_history: deque = deque(maxlen=50)
         
-        # Level 2: Key levels (persistent, updated on break/retest)
+        # Level 2: Key levels
         self.support_levels: List[float] = []
         self.resistance_levels: List[float] = []
-        self.volume_nodes: List[Dict[str, Any]] = []  # {price, volume, timestamp}
+        self.volume_nodes: List[Dict[str, Any]] = []
         
-        # Level 3: Session context (daily reset)
+        # Level 3: Session context
         self.session_vwap: float = 0.0
         self.session_high: float = 0.0
         self.session_low: float = float('inf')
@@ -52,64 +52,53 @@ class IncrementalState:
         self.session_bias: str = "neutral"
         self.day_start_ts: int = 0
         
-        # Level 4: Strategy performance (per-trade update)
+        # Level 4: Strategy performance
         self.strategy_stats: Dict[str, Dict[str, float]] = {
             "scalp": {"wins": 0, "losses": 0, "avg_r": 0.0, "total_r": 0.0},
             "swing": {"wins": 0, "losses": 0, "avg_r": 0.0, "total_r": 0.0},
         }
         
-        # Technical indicator state (for incremental computation)
+        # Technical indicator state
         self._prev_closes: deque = deque(maxlen=60)
         self._prev_highs: deque = deque(maxlen=60)
         self._prev_lows: deque = deque(maxlen=60)
         self._prev_volumes: deque = deque(maxlen=60)
-        
-        # EMA state
         self._ema_9: Optional[float] = None
         self._ema_21: Optional[float] = None
         self._ema_50: Optional[float] = None
-        
-        # OBV state
+        self._ema_12: Optional[float] = None
+        self._ema_26: Optional[float] = None
+        self._macd_signal: Optional[float] = None
         self._obv: float = 0.0
         self._prev_close: Optional[float] = None
-        
-        # RSI state
         self._gains: deque = deque(maxlen=14)
         self._losses: deque = deque(maxlen=14)
-        
+    
     def on_new_candle(self, candle: Candle) -> CandleFeatures:
-        """
-        Process new 1-minute candle.
-        Updates all 4 levels incrementally.
-        Returns computed features for model inference.
-        """
-        # Check for new day
+        """Process new candle - updates all 4 levels incrementally."""
         self._check_new_day(candle)
-        
-        # Update active candle
         self.active_candle = candle
         
-        # Update rolling buffers
+        # Update buffers
         self.candle_buffer.append(candle)
         self._prev_closes.append(candle.close)
         self._prev_highs.append(candle.high)
         self._prev_lows.append(candle.low)
         self._prev_volumes.append(candle.volume)
         
-        # Update session stats
         self._update_session(candle)
         
-        # Compute incremental features
+        # Compute features incrementally
         features = self._compute_features_incremental(candle)
         self.active_features = features
         self.feature_buffer.append(features)
         
-        # Update regime (streaming HMM)
+        # Update regime
         if len(self.feature_buffer) >= 20:
             self._update_regime()
         
         # Update key levels
-        self._update_key_levels(candle, features)
+        self._update_key_levels(candle)
         
         # Update EMAs
         self._update_emas(candle.close)
@@ -117,8 +106,8 @@ class IncrementalState:
         return features
     
     def _check_new_day(self, candle: Candle):
-        """Reset session state on new day."""
-        candle_date = candle.timestamp // 86400000  # days since epoch
+        """Reset session on new day."""
+        candle_date = candle.timestamp // 86400000
         if self.day_start_ts != candle_date:
             self.session_vwap = 0.0
             self.session_high = 0.0
@@ -126,23 +115,21 @@ class IncrementalState:
             self.session_open = candle.open
             self.session_volume = 0.0
             self.session_bias = "neutral"
-            self.day_start_ts = candle_date
+            self.day_start_ts = candle.timestamp // 86400000
     
     def _update_session(self, candle: Candle):
-        """Update session-level statistics."""
-        # VWAP update
+        """Update session VWAP and bias."""
         if self.session_volume == 0:
             self.session_vwap = candle.typical_price
         else:
             self.session_vwap = (
-                (self.session_vwap * self.session_volume) + candle.vwap
+                (self.session_vwap * self.session_volume) + candle.vwap_component
             ) / (self.session_volume + candle.volume)
         
         self.session_volume += candle.volume
         self.session_high = max(self.session_high, candle.high)
         self.session_low = min(self.session_low, candle.low)
         
-        # Session bias
         if self.session_vwap > 0:
             dev = (candle.close - self.session_vwap) / self.session_vwap
             if dev > 0.01:
@@ -153,208 +140,186 @@ class IncrementalState:
                 self.session_bias = "neutral"
     
     def _compute_features_incremental(self, candle: Candle) -> CandleFeatures:
-        """Compute features using only incremental state."""
-        features = CandleFeatures()
+        """Compute all features using only incremental state."""
+        f = CandleFeatures()
         
-        # Need minimum history
         if len(self._prev_closes) < 2:
-            return features
+            return f
         
         closes = list(self._prev_closes)
         highs = list(self._prev_highs)
         lows = list(self._prev_lows)
         volumes = list(self._prev_volumes)
         
-        current_close = closes[-1]
-        current_high = highs[-1]
-        current_low = lows[-1]
-        current_volume = volumes[-1]
+        c = closes[-1]
+        h = highs[-1]
+        l = lows[-1]
+        v = volumes[-1]
         
         # Returns
         if len(closes) >= 2:
-            features.returns_1 = (closes[-1] - closes[-2]) / closes[-2]
+            f.ret_1 = (closes[-1] - closes[-2]) / closes[-2]
         if len(closes) >= 6:
-            features.returns_5 = (closes[-1] - closes[-6]) / closes[-6]
+            f.ret_5 = (c - closes[-6]) / closes[-6]
         if len(closes) >= 16:
-            features.returns_15 = (closes[-1] - closes[-16]) / closes[-16]
+            f.ret_15 = (c - closes[-16]) / closes[-16]
         if len(closes) >= 61:
-            features.returns_60 = (closes[-1] - closes[-61]) / closes[-61]
+            f.ret_60 = (c - closes[-61]) / closes[-61]
         
-        # ATR (14-period)
-        if len(highs) >= 15:
-            tr_values = []
-            for i in range(-14, 0):
-                h = highs[i]
-                l = lows[i]
-                pc = closes[i-1]
-                tr = max(h - l, abs(h - pc), abs(l - pc))
-                tr_values.append(tr)
-            features.atr_14 = np.mean(tr_values)
-            features.atr_pct = features.atr_14 / current_close
+        # RSI
+        if len(closes) >= 2:
+            chg = closes[-1] - closes[-2]
+            self._gains.append(max(chg, 0))
+            self._losses.append(max(-chg, 0))
+            if len(self._gains) == 14:
+                ag = np.mean(self._gains)
+                al = np.mean(self._losses)
+                if al > 0:
+                    f.rsi_14 = 100 - (100 / (1 + ag/al))
+                else:
+                    f.rsi_14 = 100.0
         
-        # Bollinger Bands width (20-period)
-        if len(closes) >= 20:
-            recent = closes[-20:]
+        # EMAs & MACD
+        if self._ema_12 is None:
+            self._ema_12 = self._ema_26 = c
+        else:
+            self._ema_12 = 0.1538 * c + 0.8462 * self._ema_12
+            self._ema_26 = 0.0741 * c + 0.9259 * self._ema_26
+        f.ema_9 = self._ema_12
+        f.ema_21 = self._ema_26
+        
+        if self._ema_12 is not None and self._ema_26 is not None:
+            macd = self._ema_12 - self._ema_26
+            f.macd = macd
+            if self._macd_signal is None:
+                self._macd_signal = macd
+            else:
+                self._macd_signal = 0.2 * macd + 0.8 * self._macd_signal
+            f.macd_signal = self._macd_signal
+            f.macd_hist = macd - self._macd_signal
+        
+        # Bollinger Bands
+        if len(self._prev_closes) >= 20:
+            recent = list(self._prev_closes)[-20:]
             sma = np.mean(recent)
             std = np.std(recent)
-            features.bb_width = (2 * std) / sma if sma > 0 else 0
+            f.bb_width = (4 * std) / sma if sma > 0 else 0
+            upper = sma + 2 * std
+            lower = sma - 2 * std
+            f.bb_pct = (c - lower) / (upper - lower) if upper != lower else 0.5
         
-        # RSI (14-period) - incremental
+        # ATR
+        if len(highs) >= 2 and len(lows) >= 2 and len(closes) >= 2:
+            tr = max(h - l, abs(h - closes[-2]), abs(l - closes[-2]))
+            f.atr_14 = tr
+            f.atr_pct = tr / c
+        
+        # RSI
         if len(closes) >= 2:
-            change = closes[-1] - closes[-2]
-            self._gains.append(max(change, 0))
-            self._losses.append(max(-change, 0))
+            chg = c - closes[-2]
+            self._gains.append(max(chg, 0))
+            self._losses.append(max(-chg, 0))
             if len(self._gains) == 14:
-                avg_gain = np.mean(self._gains)
-                avg_loss = np.mean(self._losses)
-                if avg_loss > 0:
-                    rs = avg_gain / avg_loss
-                    features.rsi_14 = 100 - (100 / (1 + rs))
+                ag = np.mean(self._gains)
+                al = np.mean(self._losses)
+                f.rsi_14 = 100 - (100 / (1 + ag/al)) if al > 0 else 100
         
-        # MACD (12, 26, 9) - using EMA state
-        if self._ema_12 is not None and self._ema_26 is not None:
-            features.macd = self._ema_12 - self._ema_26
-            # MACD signal line (9-period EMA of MACD)
-            if not hasattr(self, '_macd_signal'):
-                self._macd_signal = features.macd
-            else:
-                self._macd_signal = 0.2 * features.macd + 0.8 * self._macd_signal
-            features.macd_signal = self._macd_signal
-            features.macd_hist = features.macd - features.macd_signal
+        # EMAs
+        if self._ema_9 is None:
+            self._ema_9 = self._ema_21 = self._ema_50 = c
+        else:
+            self._ema_9 = 0.2 * c + 0.8 * self._ema_9
+            self._ema_21 = 0.0909 * c + 0.9091 * self._ema_21
+            self._ema_50 = 0.0392 * c + 0.9608 * self._ema_50
+        f.ema_9 = self._ema_9
+        f.ema_21 = self._ema_21
+        f.ema_50 = self._ema_50
         
-        # Volume ratio
-        if len(volumes) >= 21:
-            recent_vol = np.mean(volumes[-5:])
-            prev_vol = np.mean(volumes[-20:-5])
-            features.volume_ratio = recent_vol / prev_vol if prev_vol > 0 else 1.0
+        # MACD
+        if self._ema_12 is None:
+            self._ema_12 = self._ema_26 = c
+        else:
+            self._ema_12 = 0.1538 * c + 0.8462 * self._ema_12
+            self._ema_26 = 0.0741 * c + 0.9259 * self._ema_26
+        f.macd = self._ema_12 - self._ema_26
+        if self._macd_signal is None:
+            self._macd_signal = f.macd
+        else:
+            self._macd_signal = 0.2 * f.macd + 0.8 * self._macd_signal
+        f.macd_signal = self._macd_signal
+        f.macd_hist = f.macd - f.macd_signal
+        
+        # Volume
+        if len(self._prev_volumes) >= 21:
+            recent = np.mean(list(self._prev_volumes)[-5:])
+            prev = np.mean(list(self._prev_volumes)[-20:-5])
+            f.volume_ratio = recent / prev if prev > 0 else 1.0
         
         # OBV
         if self._prev_close is not None:
-            if current_close > self._prev_close:
-                self._obv += current_volume
-            elif current_close < self._prev_close:
-                self._obv -= current_volume
-        features.obv = self._obv
-        self._prev_close = current_close
+            if c > self._prev_close:
+                self._obv += v
+            elif c < self._prev_close:
+                self._obv -= v
+        f.obv = self._obv
+        self._prev_close = c
         
         # VWAP deviation
-        if self.session_vwap > 0:
-            features.vwap_dev = (current_close - self.session_vwap) / self.session_vwap
-        
-        # EMAs (already computed)
-        features.ema_9 = self._ema_9 or 0.0
-        features.ema_21 = self._ema_21 or 0.0
-        features.ema_50 = self._ema_50 or 0.0
-        
-        # ADX (simplified)
-        if len(highs) >= 14 and len(lows) >= 14:
-            features.adx = self._compute_adx(highs[-14:], lows[-14:], closes[-14:])
+        if hasattr(self, 'session_vwap') and self.session_vwap > 0:
+            f.vwap_dev = (c - self.session_vwap) / self.session_vwap
         
         # Market structure
-        if len(highs) >= 3 and len(lows) >= 3:
-            features.higher_high = highs[-1] > highs[-2] and highs[-2] > highs[-3]
-            features.higher_low = lows[-1] > lows[-2] and lows[-2] > lows[-3]
-            features.lower_high = highs[-1] < highs[-2] and highs[-2] < highs[-3]
-            features.lower_low = lows[-1] < lows[-2] and lows[-2] < lows[-3]
-        
-        return features
+        if len(highs) >= 3:
+            f.higher_high = highs[-1] > highs[-2] > highs[-3]
+            f.higher_low = lows[-1] > lows[-2] > lows[-3]
+            f.lower_high = highs[-1] < highs[-2] < highs[-3]
+            f.lower_low = lows[-1] < lows[-2] < lows[-3]
+        return f
     
     def _update_emas(self, close: float):
-        """Update exponential moving averages incrementally."""
-        alpha_9 = 2 / (9 + 1)
-        alpha_21 = 2 / (21 + 1)
-        alpha_50 = 2 / (50 + 1)
-        
+        """Update all EMAs."""
         if self._ema_9 is None:
-            self._ema_9 = close
-            self._ema_21 = close
-            self._ema_50 = close
+            self._ema_9 = self._ema_21 = self._ema_50 = close
         else:
-            self._ema_9 = alpha_9 * close + (1 - alpha_9) * self._ema_9
-            self._ema_21 = alpha_21 * close + (1 - alpha_21) * self._ema_21
-            self._ema_50 = alpha_50 * close + (1 - alpha_50) * self._ema_50
+            self._ema_9 = 0.2 * close + 0.8 * self._ema_9
+            self._ema_21 = 0.0909 * close + 0.9091 * self._ema_21
+            self._ema_50 = 0.0392 * close + 0.9608 * self._ema_50
         
         # MACD EMAs
-        alpha_12 = 2 / (12 + 1)
-        alpha_26 = 2 / (26 + 1)
-        if not hasattr(self, '_ema_12'):
-            self._ema_12 = close
-            self._ema_26 = close
+        if self._ema_12 is None:
+            self._ema_12 = self._ema_26 = close
         else:
-            self._ema_12 = alpha_12 * close + (1 - alpha_12) * self._ema_12
-            self._ema_26 = alpha_26 * close + (1 - alpha_26) * self._ema_26
-    
-    def _compute_adx(self, highs: List[float], lows: List[float], closes: List[float]) -> float:
-        """Simplified ADX computation."""
-        if len(highs) < 2:
-            return 0.0
-        
-        dm_plus = []
-        dm_minus = []
-        tr_values = []
-        
-        for i in range(1, len(highs)):
-            up_move = highs[i] - highs[i-1]
-            down_move = lows[i-1] - lows[i]
-            
-            dm_plus.append(max(up_move, 0) if up_move > down_move else 0)
-            dm_minus.append(max(down_move, 0) if down_move > up_move else 0)
-            
-            tr = max(
-                highs[i] - lows[i],
-                abs(highs[i] - closes[i-1]),
-                abs(lows[i] - closes[i-1])
-            )
-            tr_values.append(tr)
-        
-        if not tr_values:
-            return 0.0
-        
-        atr = np.mean(tr_values)
-        if atr == 0:
-            return 0.0
-        
-        di_plus = 100 * np.mean(dm_plus) / atr
-        di_minus = 100 * np.mean(dm_minus) / atr
-        
-        dx = 100 * abs(di_plus - di_minus) / (di_plus + di_minus) if (di_plus + di_minus) > 0 else 0
-        return dx
+            self._ema_12 = 0.1538 * close + 0.8462 * self._ema_12
+            self._ema_26 = 0.0741 * close + 0.9259 * self._ema_26
     
     def _update_regime(self):
-        """
-        Streaming HMM-style regime detection.
-        5 states: trend_up, trend_down, range, volatile, transition
-        """
-        # Simple rule-based regime for now
-        # Can be replaced with actual HMM later
-        
+        """Streaming regime detection."""
         if len(self.feature_buffer) < 20:
             return
         
         recent = list(self.feature_buffer)[-20:]
         
-        # Trend strength
-        returns = [f.returns_15 for f in recent if f.returns_15 != 0]
-        avg_return = np.mean(returns) if returns else 0
-        return_std = np.std(returns) if len(returns) > 1 else 0
+        # Trend
+        rets = [f.ret_15 for f in recent if f.ret_15 != 0]
+        avg_ret = np.mean(rets) if rets else 0
         
         # Volatility
-        atr_pcts = [f.atr_pct for f in recent if f.atr_pct > 0]
-        avg_atr = np.mean(atr_pcts) if atr_pcts else 0
+        atrs = [f.atr_pct for f in recent if f.atr_pct > 0]
+        avg_atr = np.mean(atrs) if atrs else 0
         
-        # ADX trend strength
+        # ADX
         adx_vals = [f.adx for f in recent if f.adx > 0]
         avg_adx = np.mean(adx_vals) if adx_vals else 0
         
-        # RSI extremes
+        # RSI
         rsi_vals = [f.rsi_14 for f in recent if f.rsi_14 > 0]
         avg_rsi = np.mean(rsi_vals) if rsi_vals else 50
         
         # Regime logic
-        if avg_adx_adx > 0.02 and avg_adx > 25:
+        if avg_ret > 0.02 and avg_adx > 25:
             self.regime_state = RegimeState.TREND_UP
             self.regime_confidence = min(avg_adx / 50, 1.0)
-        elif avg_return < -0.02 and avg_adx > 25:
+        elif avg_ret < -0.02 and avg_adx > 25:
             self.regime_state = RegimeState.TREND_DOWN
             self.regime_confidence = min(avg_adx / 50, 1.0)
         elif avg_atr > 0.03 or avg_adx < 15:
@@ -368,73 +333,55 @@ class IncrementalState:
             self.regime_confidence = 0.5
         
         self.regime_history.append({
-            "state": self.regime_state,
-            "confidence": self.regime_confidence,
-            "avg_return": avg_return,
-            "avg_adx": avg_adx,
-            "avg_atr": avg_atr
+            "state": self.regime_state.value,
+            "confidence": self.regime_confidence
         })
     
-    def _update_key_levels(self, candle: Candle, features: CandleFeatures):
-        """Update support/resistance on break or retest."""
-        current_price = candle.close
+    def _update_key_levels(self, candle: Candle):
+        """Update support/resistance on break/retest."""
+        price = candle.close
         
-        # Check resistance retest
+        # Check resistance
         for level in self.resistance_levels[:]:
-            if abs(current_price - level) / level < 0.002:  # Within 0.2%
-                # Retest - strengthen or break
+            if abs(price - level) / level < 0.002:
                 if candle.high > level * 1.005:
-                    # Breakout - move to support
                     self.resistance_levels.remove(level)
                     self.support_levels.append(level)
                     self.support_levels = sorted(set(self.support_levels))[-10:]
         
-        # Check support retest
+        # Check support
         for level in self.support_levels[:]:
-            if abs(current_price - level) / level < 0.002:
+            if abs(price - level) / level < 0.002:
                 if candle.low < level * 0.995:
-                    # Breakdown - move to resistance
                     self.support_levels.remove(level)
                     self.resistance_levels.append(level)
                     self.resistance_levels = sorted(set(self.resistance_levels))[-10:]
         
-        # Add new levels from volume nodes
-        if features.volume_ratio > 2.0:
-            # High volume area - potential support/resistance
-            node_price = candle.typical_price
-            self.volume_nodes.append({
-                "price": node_price,
-                "volume": candle.volume,
-                "timestamp": candle.timestamp
-            })
-            # Keep last 20 volume nodes
+        # Add from volume nodes
+        if len(self.feature_buffer) > 0 and self.feature_buffer[-1].volume_ratio > 2.0:
+            self.volume_nodes.append({"price": candle.typical_price, "volume": candle.volume, "ts": candle.timestamp})
             self.volume_nodes = self.volume_nodes[-20:]
     
     def update_trade_result(self, trade_result: Dict):
-        """Update strategy performance stats (Level 4)."""
+        """Level 4: Update strategy performance."""
         strategy = trade_result.get("strategy", "scalp")
-        r_multiple = trade_result.get("r_multiple", 0)
-        win = r_multiple > 0
+        r = trade_result.get("r_multiple", 0)
+        win = r > 0
         
         if strategy in self.strategy_stats:
-            stats = self.strategy_stats[strategy]
+            s = self.strategy_stats[strategy]
             if win:
-                stats["wins"] += 1
+                s["wins"] += 1
             else:
-                stats["losses"] += 1
-            
-            total = stats["wins"] + stats["losses"]
-            stats["total_r"] += r_multiple
-            stats["avg_r"] = stats["total_r"] / total if total > 0 else 0
+                s["losses"] += 1
+            total = s["wins"] + s["losses"]
+            s["total_r"] += r
+            s["avg_r"] = s["total_r"] / total if total > 0 else 0
     
-    def get_context_for_model(self, mode: str = "normal") -> Dict[str, Any]:
-        """
-        Get minimal context needed by model.
-        Does NOT include full history - only compressed state.
-        """
+    def get_context_for_model(self, mode: str = "normal") -> Dict:
+        """Get minimal context for model (NO full history)."""
         base = {
-            "current_candle": self.active_candle.to_dict() if self.active_candle else {},
-            "features": self.active_features.to_list() if self.active_features else [],
+            "current": self.active_candle.to_dict() if self.active_candle else {},
             "regime": self.regime_state.value,
             "regime_confidence": self.regime_confidence,
             "key_levels": {
@@ -452,27 +399,18 @@ class IncrementalState:
         }
         
         if mode == "deep":
-            base["recent_candles"] = [
-                c.to_dict() for c in list(self.candle_buffer)[-20:]
-            ]
-            base["regime_history"] = list(self.regime_history)[-10:]
+            base["recent"] = [c.to_dict() for c in list(self.candle_buffer)[-20:]]
         
         return base
     
-    def summary(self) -> Dict[str, Any]:
-        """Human-readable state summary."""
+    def summary(self) -> Dict:
         return {
-            "candle_buffer": len(self.candle_buffer),
+            "buffer": len(self.candle_buffer),
             "regime": self.regime_state.value,
-            "regime_confidence": round(self.regime_confidence, 3),
+            "conf": round(self.regime_confidence, 3),
             "support": [round(x, 2) for x in self.support_levels[-3:]],
             "resistance": [round(x, 2) for x in self.resistance_levels[-3:]],
-            "session_vwap": round(self.session_vwap, 2),
-            "session_bias": self.session_bias,
-            "strategy_stats": self.strategy_stats,
+            "vwap": round(self.session_vwap, 2),
+            "bias": self.session_bias,
+            "stats": self.strategy_stats,
         }
-
-
-# Backward compatibility
-def create_incremental_state(config_path: str = "config.yaml") -> IncrementalState:
-    return IncrementalState(config_path)

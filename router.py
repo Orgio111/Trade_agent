@@ -40,7 +40,7 @@ class OllamaRouter:
         self.config = load_config(config_path)
         self.model_cfg = self.config.get("model", {})
         
-        # Override from config if provided
+        # Override from config
         self.warm_model = self.model_cfg.get("warm_model", self.WARM_MODEL)
         self.reasoning_model = self.model_cfg.get("reasoning_model", self.REASONING_MODELS[0])
         self.deep_model = self.model_cfg.get("deep_model", self.DEEP_MODELS[0])
@@ -166,7 +166,6 @@ class OllamaRouter:
         self,
         model: str,
         prompt: str,
-        context: Optional[Dict[str, Any]] = None,
         system: Optional[str] = None,
         images: Optional[List[str]] = None,
         options: Optional[Dict] = None

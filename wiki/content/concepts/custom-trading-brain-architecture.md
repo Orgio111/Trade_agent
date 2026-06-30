@@ -128,6 +128,7 @@ When model is unavailable (cold start, retraining):
 - Expert analysis suggests moving away from LSTM toward Transformer for production trading. LSTM is prone to overfitting on market noise. We start with LSTM for prototyping but plan migration to Transformer.
 
 ## Related
+- [[nn-brain-development-guide]] — step-by-step implementation playbook
 - [[freqai-brain]] — uses XGBoost, the model this brain would complement
 - [[timesfm-brain]] — foundation model forecaster, this brain is a custom trained alternative
 - [[finrl-brain]] — RL brain, this brain is a supervised/attention alternative

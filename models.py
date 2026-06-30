@@ -200,6 +200,19 @@ class AccountState(BaseModel):
     max_drawdown_pct: float = 0.0
 
 
+class OrderRequest(BaseModel):
+    """Order request parameters."""
+    symbol: str
+    side: OrderSide
+    order_type: OrderType
+    quantity: float
+    price: Optional[float] = None
+    stop_price: Optional[float] = None
+    time_in_force: str = "GTC"
+    reduce_only: bool = False
+    post_only: bool = True
+
+
 class SystemState(BaseModel):
     """Complete system state summary."""
     active_candle: Optional[Candle] = None

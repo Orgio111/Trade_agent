@@ -37,6 +37,7 @@ The collection also serves as a **benchmark for our system's sophistication** �
 ## Concepts introduced / updated
 
 - [[build-your-own-x]] — the meta-learning philosophy and curated resource index
+- [[codecrafters]] — entity page for the CodeCrafters platform — the meta-learning philosophy and curated resource index
 
 ## Relevance to our trading
 

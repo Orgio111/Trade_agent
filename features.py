@@ -3,7 +3,6 @@
 import numpy as np
 from typing import List, Dict, Any, Optional
 from collections import deque
-from models import Candle, CandleFeatures
 
 
 class FeatureExtractor:
@@ -46,17 +45,11 @@ class FeatureExtractor:
         # Volume
         self.volume_window = deque(maxlen=20)
         
-    def update(self, candle: Candle) -> Dict[str, float]:
+    def update(self, close: float, high: float, low: float, volume: float) -> Dict[str, float]:
         """
         Update all indicators with new candle.
         Returns dictionary of current indicator values.
         """
-        close = candle.close
-        high = candle.high
-        low = candle.low
-        volume = candle.volume
-        
-        # Update price history
         self.closes.append(close)
         self.highs.append(high)
         self.lows.append(low)
@@ -167,11 +160,11 @@ class FeatureExtractor:
         
         # OBV
         if self.prev_close is not None:
-            if self.closes[-1] > self.prev_close:
-                self.obv += self.volumes[-1]
-            elif self.closes[-1] < self.prev_close:
-                self.obv -= self.volumes[-1]
-        self.prev_close = self.closes[-1]
+            if close > self.prev_close:
+                self.obv += volume
+            elif close < self.prev_close:
+                self.obv -= volume
+        self.prev_close = close
         indicators["obv"] = self.obv
         
         # Volume ratio
@@ -186,14 +179,14 @@ class FeatureExtractor:
             high_14 = max(list(self.highs)[-14:])
             low_14 = min(list(self.lows)[-14:])
             if high_14 != low_14:
-                indicators["stoch_k"] = 100 * (self.closes[-1] - low_14) / (high_14 - low_14)
+                indicators["stoch_k"] = 100 * (close - low_14) / (high_14 - low_14)
         
         # Williams %R
         if len(self.highs) >= 14 and len(self.lows) >= 14:
             high_14 = max(list(self.highs)[-14:])
             low_14 = min(list(self.lows)[-14:])
             if high_14 != low_14:
-                indicators["willr"] = -100 * (high_14 - self.closes[-1]) / (high_14 - low_14)
+                indicators["willr"] = -100 * (high_14 - close) / (high_14 - low_14)
         
         return indicators
     
@@ -204,7 +197,7 @@ class FeatureExtractor:
         return []
 
 
-def extract_features(candles: List[Dict]) -> np.ndarray:
+def extract_features_batch(candles: List[Dict]) -> np.ndarray:
     """
     Batch feature extraction for backtesting.
     """
