@@ -42,6 +42,24 @@ import time
 from dataclasses import dataclass, field, asdict
 from typing import Optional
 
+# ── Prometheus Metrics (optional, graceful fallback) ────────
+try:
+    from prometheus_client import Histogram, Counter, Gauge
+
+    SCALPING_DECISION_LATENCY = Histogram(
+        "scalping_decision_latency_ms",
+        "Scalping engine decision latency in milliseconds",
+        buckets=[0.1, 0.5, 1, 2, 5, 10, 20, 50, 100],
+    )
+    SCALPING_SIGNALS_TOTAL = Counter(
+        "scalping_signals_total",
+        "Scalping engine signal counts by type",
+        ["signal"],  # "momentum_breakout", "rejection_support", "rejection_resistance", "volume_spike", "trend_aligned"
+    )
+    SCALPING_PROMETHEUS_AVAILABLE = True
+except ImportError:
+    SCALPING_PROMETHEUS_AVAILABLE = False
+
 
 # ── Constants ───────────────────────────────────────────────
 
@@ -224,8 +242,25 @@ class ScalpingEngine:
             resistance=resistance,
         )
 
+        # ── Record signal type metrics ──
+        if SCALPING_PROMETHEUS_AVAILABLE:
+            if momentum_signal:
+                SCALPING_SIGNALS_TOTAL.labels(signal="momentum_breakout").inc()
+            if rejection_signal == "BUY":
+                SCALPING_SIGNALS_TOTAL.labels(signal="rejection_support").inc()
+            elif rejection_signal == "SELL":
+                SCALPING_SIGNALS_TOTAL.labels(signal="rejection_resistance").inc()
+            if volume_spike:
+                SCALPING_SIGNALS_TOTAL.labels(signal="volume_spike").inc()
+            if trend_aligned:
+                SCALPING_SIGNALS_TOTAL.labels(signal="trend_aligned").inc()
+
         elapsed_ms = (time.perf_counter() - t0) * 1000
         decision.reason = f"{decision.reason}|{elapsed_ms:.1f}ms"
+
+        # ── Record Prometheus metrics ──
+        if SCALPING_PROMETHEUS_AVAILABLE:
+            SCALPING_DECISION_LATENCY.observe(elapsed_ms)
 
         return decision
 

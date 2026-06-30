@@ -4,28 +4,25 @@ QUANTEX RAG Agent — Retrieval Augmented Generation for trade pattern memory.
 Queries Qdrant vector store for historically similar trade setups,
 provides context to the strategy agent for informed decisions.
 
-Architecture:
-  Current Market State → Embedding → Qdrant Search → Context Assembly → LLM
+ALL external APIs are optional — works fully with local-only inference.
+Embeddings: NIM cloud (optional) → hash-based fallback (always available).
+Vector store: Qdrant (optional) → in-memory fallback (always available).
 
 Usage:
-    agent = RAGAgent(qdrant_url="http://localhost:6333")
+    agent = RAGAgent()  # No API keys needed
     context = await agent.retrieve(
         symbol="BTCUSDT", regime="trending", rsi=65.0, ...
     )
-    # context = {"documents": [...], "pattern_stats": {...}, "query_time_ms": 42}
 """
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
 import os
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
-import httpx
 import numpy as np
 
 logger = logging.getLogger("quantex.rag_agent")
@@ -62,8 +59,9 @@ class RAGAgent:
     """
     RAG Agent for trade pattern retrieval.
 
-    Uses Qdrant for vector storage and NIM for embeddings.
-    Falls back to in-memory cosine similarity if Qdrant is unavailable.
+    All external APIs are optional:
+      - Qdrant: optional, falls back to in-memory cosine similarity
+      - NIM embeddings: optional, falls back to hash-based embeddings
     """
 
     def __init__(
@@ -81,6 +79,17 @@ class RAGAgent:
         self.top_k = top_k
         self._connected = False
         self._local_store: list[dict] = []  # In-memory fallback
+        self._embedding_backend = "hash"  # Track which embedding backend is active
+
+        # Lazy-import httpx only when needed
+        self._http = None
+
+    async def _get_http(self):
+        """Lazy-import httpx."""
+        if self._http is None:
+            import httpx
+            self._http = httpx.AsyncClient(timeout=10.0)
+        return self._http
 
     async def retrieve(
         self,
@@ -97,19 +106,7 @@ class RAGAgent:
         """
         Retrieve similar trade patterns from vector memory.
 
-        Args:
-            symbol: Trading pair
-            regime: Market regime
-            rsi: Current RSI
-            macd: Current MACD
-            volume_ratio: Volume ratio vs SMA
-            price: Current price
-            vlm_trend: VLM analysis trend output
-            extra_context: Additional text context
-            top_k: Override default top_k
-
-        Returns:
-            RAGContext with documents, stats, and timing
+        Works without any API keys — uses hash-based embeddings and local store.
         """
         start = time.perf_counter()
         k = top_k or self.top_k
@@ -119,25 +116,20 @@ class RAGAgent:
             symbol, regime, rsi, macd, volume_ratio, price, vlm_trend, extra_context,
         )
 
-        # Generate embedding
-        try:
-            embedding = await self._embed(query_text)
-        except Exception as e:
-            logger.warning(f"Embedding failed ({e}), using hash-based fallback")
-            embedding = self._hash_embedding(query_text)
+        # Generate embedding (NIM cloud → hash fallback)
+        embedding = await self._embed(query_text)
 
-        # Search Qdrant
+        # Search Qdrant → local fallback
         try:
             results = await self._search_qdrant(embedding, k)
             source = "qdrant"
         except Exception as e:
-            logger.warning(f"Qdrant search failed ({e}), using local fallback")
+            logger.debug(f"Qdrant search failed ({e}), using local fallback")
             results = self._search_local(embedding, k)
             source = "local"
 
         # Compute pattern statistics
         pattern_stats = self._compute_stats(results)
-
         query_time_ms = (time.perf_counter() - start) * 1000
 
         return RAGContext(
@@ -162,21 +154,14 @@ class RAGAgent:
         outcome: str = "pending",
         lesson: str = "",
     ) -> bool:
-        """
-        Store a trade pattern for future retrieval.
-
-        Returns True if stored successfully.
-        """
+        """Store a trade pattern for future retrieval."""
         text = (
             f"Trade: {symbol} {direction} @ {entry_price:.2f} "
             f"Regime={regime} RSI={rsi:.1f} "
             f"PnL={pnl:.4f} Outcome={outcome} Lesson={lesson}"
         )
 
-        try:
-            embedding = await self._embed(text)
-        except Exception:
-            embedding = self._hash_embedding(text)
+        embedding = await self._embed(text)
 
         point = {
             "id": str(uuid.uuid4()),
@@ -197,13 +182,13 @@ class RAGAgent:
 
         # Try Qdrant upsert
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.put(
-                    f"{self.qdrant_url}/collections/{self.collection}/points",
-                    json={"points": [point]},
-                )
-                if resp.status_code in (200, 201):
-                    return True
+            http = await self._get_http()
+            resp = await http.put(
+                f"{self.qdrant_url}/collections/{self.collection}/points",
+                json={"points": [point]},
+            )
+            if resp.status_code in (200, 201):
+                return True
         except Exception:
             pass
 
@@ -231,26 +216,33 @@ class RAGAgent:
         return " | ".join(parts)
 
     async def _embed(self, text: str) -> list[float]:
-        """Generate embedding via NVIDIA NIM."""
-        if not self.nim_key:
-            return self._hash_embedding(text)
+        """Generate embedding. NIM cloud (optional) → hash-based (always available)."""
+        # Try NIM cloud first
+        if self.nim_key:
+            try:
+                http = await self._get_http()
+                resp = await http.post(
+                    f"{self.nim_url}/embeddings",
+                    headers={
+                        "Authorization": f"Bearer {self.nim_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": EMBEDDING_MODEL,
+                        "input": text,
+                        "input_type": "query",
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                self._embedding_backend = "nim"
+                return data["data"][0]["embedding"]
+            except Exception as e:
+                logger.debug(f"NIM embedding failed: {e}, using hash fallback")
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                f"{self.nim_url}/embeddings",
-                headers={
-                    "Authorization": f"Bearer {self.nim_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": EMBEDDING_MODEL,
-                    "input": text,
-                    "input_type": "query",
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return data["data"][0]["embedding"]
+        # Hash-based fallback (deterministic, no API needed)
+        self._embedding_backend = "hash"
+        return self._hash_embedding(text)
 
     def _hash_embedding(self, text: str) -> list[float]:
         """Deterministic hash-based embedding (no API needed)."""
@@ -261,18 +253,18 @@ class RAGAgent:
 
     async def _search_qdrant(self, query_vector: list[float], k: int) -> list[dict]:
         """Search Qdrant collection."""
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(
-                f"{self.qdrant_url}/collections/{self.collection}/points/search",
-                json={
-                    "vector": query_vector,
-                    "limit": k,
-                    "with_payload": True,
-                    "score_threshold": 0.3,
-                },
-            )
-            resp.raise_for_status()
-            return resp.json().get("result", [])
+        http = await self._get_http()
+        resp = await http.post(
+            f"{self.qdrant_url}/collections/{self.collection}/points/search",
+            json={
+                "vector": query_vector,
+                "limit": k,
+                "with_payload": True,
+                "score_threshold": 0.3,
+            },
+        )
+        resp.raise_for_status()
+        return resp.json().get("result", [])
 
     def _search_local(self, query_vector: list[float], k: int) -> list[dict]:
         """Fallback: cosine similarity on local store."""
@@ -308,8 +300,13 @@ class RAGAgent:
     async def health_check(self) -> bool:
         """Check Qdrant availability."""
         try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                resp = await client.get(f"{self.qdrant_url}/collections")
-                return resp.status_code == 200
+            http = await self._get_http()
+            resp = await http.get(f"{self.qdrant_url}/collections")
+            return resp.status_code == 200
         except Exception:
             return False
+
+    async def close(self):
+        """Close HTTP client."""
+        if self._http and not self._http.is_closed:
+            await self._http.aclose()

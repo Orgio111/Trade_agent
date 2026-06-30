@@ -54,6 +54,8 @@ class ModelLoader:
            we track state for budget awareness).
         2. If the new model + current usage > vram_limit, force unload first.
         3. Pre-warm: send a tiny request after load to confirm readiness.
+        4. GPU pinning: keep_keep_alive > 0 prevents Ollama auto-unload.
+        5. Batch warmup: pre-heat all models sequentially for first-cycle perf.
     """
 
     def __init__(
@@ -61,11 +63,16 @@ class ModelLoader:
         ollama_base: str = OLLAMA_BASE,
         vram_limit_mb: int = 5120,  # 5GB usable out of 6GB
         warmup_prompt: str = "hi",
+        keep_alive: str = "5m",     # keep model in VRAM for 5min after last use
+        gpu_pinned: list[str] | None = None,  # models to never auto-unload
     ):
         self.ollama_base = ollama_base
         self.vram_limit_mb = vram_limit_mb
         self.warmup_prompt = warmup_prompt
+        self.keep_alive = keep_alive
+        self.gpu_pinned = set(gpu_pinned or [])
         self._loaded: dict[str, ModelLoadInfo] = {}
+        self._warmup_times: dict[str, float] = {}  # model → warmup latency ms
 
     @property
     def used_vram_mb(self) -> int:
@@ -76,7 +83,11 @@ class ModelLoader:
         return self.vram_limit_mb - self.used_vram_mb
 
     def load(self, model: str, warmup: bool = True) -> bool:
-        """Load a model, unloading others if VRAM budget exceeded."""
+        """Load a model, unloading others if VRAM budget exceeded.
+
+        Uses keep_alive parameter to prevent Ollama auto-unload for
+        GPU-pinned models and recently used models.
+        """
         if model in self._loaded:
             self._loaded[model].last_used = time.time()
             logger.debug("Model %s already loaded (cache hit)", model)
@@ -89,14 +100,23 @@ class ModelLoader:
                          model, required_mb, self.vram_limit_mb)
             return False
 
-        # Unload models until we have room
+        # Unload models until we have room (skip GPU-pinned)
         while self.available_vram_mb < required_mb and self._loaded:
-            # Unload least-recently-used
-            lru_model = min(self._loaded.values(), key=lambda m: m.last_used)
+            # Unload least-recently-used (skip pinned)
+            candidates = [m for m in self._loaded.values() if m.model not in self.gpu_pinned]
+            if not candidates:
+                logger.error("Cannot free VRAM — all loaded models are GPU-pinned")
+                return False
+            lru_model = min(candidates, key=lambda m: m.last_used)
             self.unload(lru_model.model)
 
-        logger.info("Loading model %s (%dMB) — available: %dMB",
-                    model, required_mb, self.available_vram_mb)
+        # Determine keep_alive: pinned models stay longer
+        ka = self.keep_alive
+        if model in self.gpu_pinned:
+            ka = "30m"  # pinned models stay 30min in VRAM
+
+        logger.info("Loading model %s (%dMB) — available: %dMB, keep_alive=%s",
+                    model, required_mb, self.available_vram_mb, ka)
         t0 = time.perf_counter()
 
         # Pre-warm: send a tiny generate request to force model into VRAM
@@ -104,7 +124,12 @@ class ModelLoader:
             try:
                 resp = requests.post(
                     f"{self.ollama_base}/api/generate",
-                    json={"model": model, "prompt": self.warmup_prompt, "stream": False},
+                    json={
+                        "model": model,
+                        "prompt": self.warmup_prompt,
+                        "stream": False,
+                        "options": {"keep_alive": ka},
+                    },
                     timeout=120,
                 )
                 if resp.status_code != 200:
@@ -115,13 +140,14 @@ class ModelLoader:
                 return False
 
         elapsed_ms = (time.perf_counter() - t0) * 1000
+        self._warmup_times[model] = elapsed_ms
         self._loaded[model] = ModelLoadInfo(
             model=model,
             vram_mb=required_mb,
             loaded_at=time.time(),
             last_used=time.time(),
         )
-        logger.info("Model %s loaded in %.0fms", model, elapsed_ms)
+        logger.info("Model %s loaded in %.0fms (keep_alive=%s)", model, elapsed_ms, ka)
         return True
 
     def unload(self, model: str) -> bool:
@@ -155,6 +181,35 @@ class ModelLoader:
 
     def is_loaded(self, model: str) -> bool:
         return model in self._loaded
+
+    def warmup_model(self, model: str) -> bool:
+        """Force-warm a single model (load + tiny inference). Alias for load()."""
+        return self.load(model, warmup=True)
+
+    def warm_all(self, models: list[str] | None = None) -> dict[str, float]:
+        """Pre-warm all models sequentially.
+
+        Returns dict of model → warmup_time_ms.
+        On RTX 4050 (6GB), models load one-at-a-time with auto-swap.
+        """
+        if models is None:
+            models = list(MODEL_VRAM.keys())
+
+        results: dict[str, float] = {}
+        for m in models:
+            t0 = time.perf_counter()
+            ok = self.load(m, warmup=True)
+            dt = (time.perf_counter() - t0) * 1000
+            results[m] = dt if ok else -1.0
+
+        logger.info("Batch warmup complete: %d models, total %.0fms",
+                    len(models), sum(v for v in results.values() if v > 0))
+        return results
+
+    @property
+    def warmup_times(self) -> dict[str, float]:
+        """Return recorded warmup latencies per model."""
+        return dict(self._warmup_times)
 
 
 # ── SEQUENTIAL PIPELINE LOADER ─────────────────────────────────

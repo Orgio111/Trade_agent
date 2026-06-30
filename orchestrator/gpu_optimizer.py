@@ -26,6 +26,44 @@ from typing import Optional
 
 logger = logging.getLogger("quantex.gpu_optimizer")
 
+# ── Prometheus Metrics (optional, graceful fallback) ────────
+try:
+    from prometheus_client import Gauge, Counter
+
+    GPU_UTILIZATION = Gauge(
+        "gpu_utilization_pct",
+        "GPU utilization percentage",
+        ["gpu"],
+    )
+    GPU_VRAM_USED_MB = Gauge(
+        "gpu_vram_used_mb",
+        "GPU VRAM used in MB",
+        ["gpu"],
+    )
+    GPU_VRAM_TOTAL_MB = Gauge(
+        "gpu_vram_total_mb",
+        "GPU VRAM total in MB",
+        ["gpu"],
+    )
+    GPU_TEMPERATURE_C = Gauge(
+        "gpu_temperature_celsius",
+        "GPU temperature in Celsius",
+        ["gpu"],
+    )
+    GPU_POWER_DRAW_W = Gauge(
+        "gpu_power_draw_watts",
+        "GPU power draw in watts",
+        ["gpu"],
+    )
+    GPU_STATUS_CHECKS = Counter(
+        "gpu_status_checks_total",
+        "Total GPU status checks",
+        ["result"],  # "ok" or "error"
+    )
+    GPU_PROMETHEUS_AVAILABLE = True
+except ImportError:
+    GPU_PROMETHEUS_AVAILABLE = False
+
 
 @dataclass
 class GPUStatus:
@@ -132,10 +170,24 @@ class GPUOptimizer:
                     status.power_draw_w = float(parts[8].strip())
                     status.power_limit_w = float(parts[9].strip())
                     status.performance_mode = "max_performance" if status.power_draw_w > 50 else "normal"
+
+                    # ── Export to Prometheus (single block) ──
+                    if GPU_PROMETHEUS_AVAILABLE:
+                        gpu_label = status.gpu_name
+                        GPU_UTILIZATION.labels(gpu=gpu_label).set(status.gpu_utilization)
+                        GPU_VRAM_USED_MB.labels(gpu=gpu_label).set(status.vram_used_mb)
+                        GPU_VRAM_TOTAL_MB.labels(gpu=gpu_label).set(status.vram_total_mb)
+                        GPU_TEMPERATURE_C.labels(gpu=gpu_label).set(status.temperature_c)
+                        GPU_POWER_DRAW_W.labels(gpu=gpu_label).set(status.power_draw_w)
+                        GPU_STATUS_CHECKS.labels(result="ok").inc()
         except FileNotFoundError:
             logger.warning("nvidia-smi not found — GPU status unavailable")
+            if GPU_PROMETHEUS_AVAILABLE:
+                GPU_STATUS_CHECKS.labels(result="error").inc()
         except Exception as e:
             logger.error(f"GPU status check failed: {e}")
+            if GPU_PROMETHEUS_AVAILABLE:
+                GPU_STATUS_CHECKS.labels(result="error").inc()
 
         self._status = status
         return status

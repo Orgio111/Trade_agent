@@ -1,0 +1,121 @@
+# QUANTEX — Prometheus Recording Rules
+# Pre-computed metrics for dashboard efficiency
+
+groups:
+  # ── GPU Metrics ──
+  - name: gpu_metrics
+    interval: 30s
+    rules:
+      # VRAM usage ratio (used/total)
+      - record: gpu_vram_usage_ratio
+        expr: >
+          (gpu_vram_used_mb / gpu_vram_total_mb)
+          or vector(0)
+
+      # GPU power efficiency (utilization per watt)
+      - record: gpu_power_efficiency
+        expr: >
+          (gpu_utilization_pct / gpu_power_draw_watts)
+          or vector(0)
+
+      # GPU temperature trend (5m avg)
+      - record: gpu_temp_avg_5m
+        expr: avg_over_time(gpu_temperature_celsius[5m])
+
+  # ── vLLM Inference Metrics ──
+  - name: inference_metrics
+    interval: 15s
+    rules:
+      # vLLM average latency by model (5m)
+      - record: vllm_avg_latency_fast_5m
+        expr: >
+          (rate(vllm_inference_latency_ms_sum[5m])
+          /
+          rate(vllm_inference_latency_ms_count[5m]))
+          or vector(0)
+
+      # vLLM throughput (tokens/s per model)
+      - record: vllm_throughput_tps_5m
+        expr: rate(vllm_tokens_generated_total[5m])
+
+      # vLLM request rate per endpoint
+      - record: vllm_req_rate_5m
+        expr: rate(vllm_requests_total[5m])
+
+  # ── Scalping Metrics ──
+  - name: scalping_metrics
+    interval: 15s
+    rules:
+      # Scalping avg decision latency (5m)
+      - record: scalping_avg_latency_5m
+        expr: >
+          (rate(scalping_decision_latency_ms_sum[5m])
+          /
+          rate(scalping_decision_latency_ms_count[5m]))
+          or vector(0)
+
+      # Scalping signal detection rate by type
+      - record: scalping_signal_rate_5m
+        expr: rate(scalping_signals_total[5m])
+
+      # Scalping vs vLLM latency ratio
+      - record: scalping_vs_vllm_latency_ratio
+        expr: >
+          (scalping_avg_latency_5m / vllm_avg_latency_fast_5m)
+          or vector(0)
+
+  # ── Pipeline Path Rules ──
+  - name: pipeline_path_rules
+    interval: 15s
+    rules:
+      # Fast path ratio: fast / (fast + heavy), with NaN guard
+      - record: pipeline_fast_path_ratio
+        expr: >
+          (sum(pipeline_path_total{path="fast"})
+          /
+          (sum(pipeline_path_total{path="fast"}) + sum(pipeline_path_total{path="heavy"})))
+          or vector(0)
+
+      # Fast path count (5m rate)
+      - record: pipeline_fast_path_rate_5m
+        expr: rate(pipeline_path_total{path="fast"}[5m])
+
+      # Heavy path count (5m rate)
+      - record: pipeline_heavy_path_rate_5m
+        expr: rate(pipeline_path_total{path="heavy"}[5m])
+
+      # Average latency by path (5m)
+      - record: pipeline_avg_latency_fast_5m
+        expr: >
+          (rate(pipeline_latency_ms_sum{path="fast"}[5m])
+          /
+          rate(pipeline_latency_ms_count{path="fast"}[5m]))
+          or vector(0)
+
+      - record: pipeline_avg_latency_heavy_5m
+        expr: >
+          (rate(pipeline_latency_ms_sum{path="heavy"}[5m])
+          /
+          rate(pipeline_latency_ms_count{path="heavy"}[5m]))
+          or vector(0)
+
+      # Scalping decision rates (5m)
+      - record: scalping_buy_rate_5m
+        expr: rate(scalping_decisions_total{action="BUY"}[5m])
+
+      - record: scalping_sell_rate_5m
+        expr: rate(scalping_decisions_total{action="SELL"}[5m])
+
+      - record: scalping_hold_rate_5m
+        expr: rate(scalping_decisions_total{action="HOLD"}[5m])
+
+      # Pipeline throughput (total candles/min)
+      - record: pipeline_throughput_1m
+        expr: sum(rate(pipeline_path_total[1m])) * 60
+
+      # Raw path counts for piechart (avoids NaN)
+      - record: pipeline_fast_path_count
+        expr: sum(pipeline_path_total{path="fast"})
+
+      - record: pipeline_heavy_path_count
+        expr: sum(pipeline_path_total{path="heavy"})

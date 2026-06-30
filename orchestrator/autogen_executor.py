@@ -17,7 +17,6 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -38,6 +37,7 @@ from risk import RiskEngine
 
 from orchestrator.autogen_team import TradingTeam, autogen_to_langgraph
 from orchestrator.model_loader import ModelLoader
+from orchestrator.enhanced_risk import EnhancedRiskEngine
 
 logger = logging.getLogger(__name__)
 
@@ -116,8 +116,11 @@ class AutoGenSignalExecutor:
 
         # Components
         self.team = TradingTeam(max_round=max_round)
-        self.risk_engine = RiskEngine(config_path=config_path)
-        self.model_loader = ModelLoader()
+        self.risk_engine = EnhancedRiskEngine(config_path=config_path)
+        self.model_loader = ModelLoader(
+            gpu_pinned=["phi3:mini"],  # coordinator stays in VRAM
+            keep_alive="5m",
+        )
 
         # Execution client
         if paper_mode:
@@ -151,12 +154,13 @@ class AutoGenSignalExecutor:
         logger.info("Pre-warming Ollama models (sequential GPU load)...")
         from orchestrator.autogen_team import (
             MODEL_COORDINATOR,
-            MODEL_MACRO_RISK,
-            MODEL_PATTERN,
             MODEL_QUANT,
+            MODEL_PATTERN,
+            MODEL_MACRO,
+            MODEL_RISK,
         )
 
-        for model_name in [MODEL_QUANT, MODEL_PATTERN, MODEL_MACRO_RISK, MODEL_COORDINATOR]:
+        for model_name in [MODEL_QUANT, MODEL_PATTERN, MODEL_MACRO, MODEL_RISK, MODEL_COORDINATOR]:
             t0 = time.perf_counter()
             try:
                 self.model_loader.warmup_model(model_name)
@@ -174,8 +178,15 @@ class AutoGenSignalExecutor:
         candle_data: dict[str, Any],
         vlm_output: dict[str, Any] | None = None,
         market_context: dict[str, Any] | None = None,
+        indicators: dict[str, Any] | None = None,
     ) -> CycleResult:
         """Execute one complete trading cycle.
+
+        Args:
+            candle_data: OHLCV + symbol dict.
+            vlm_output: Vision model output (optional).
+            market_context: Macro context (optional).
+            indicators: ATR/volatility metrics for enhanced risk filter.
 
         Returns CycleResult with full trace (autogen → risk → execution).
         """
@@ -210,7 +221,7 @@ class AutoGenSignalExecutor:
             )
 
             t1 = time.perf_counter()
-            risk_decision = self.risk_engine.validate(model_signal, self.account)
+            risk_decision = self.risk_engine.validate(model_signal, self.account, indicators=indicators)
             result.risk_latency_ms = (time.perf_counter() - t1) * 1000
             result.risk_decision = {
                 "allow": risk_decision.allow,
@@ -239,17 +250,18 @@ class AutoGenSignalExecutor:
                 + result.exec_latency_ms
             )
 
+            return result
+
         except Exception as e:
             result.status = "error"
             result.error = str(e)
             logger.error(f"[{cycle_id}] Cycle error: {e}", exc_info=True)
-
-        return result
+            return result
 
     # ── Execution dispatch ─────────────────────────────
 
-    def _execute_signal(self, signal: Signal, risk_decision) -> dict:
-        """Dispatch signal to paper or live execution client."""
+    async def _execute_signal_async(self, signal: Signal, risk_decision) -> dict:
+        """Async dispatch to execution client."""
         symbol = "BTCUSDT"  # could be dynamic
         side = OrderSide.BUY if signal.action == "BUY" else OrderSide.SELL
         quantity = self._calc_quantity(signal, risk_decision.max_size)
@@ -263,7 +275,7 @@ class AutoGenSignalExecutor:
         }
 
         if self.paper_mode:
-            # Paper execution (synchronous)
+            # PaperClient.place_order is async
             order_req = OrderRequest(
                 symbol=symbol,
                 side=side,
@@ -271,7 +283,26 @@ class AutoGenSignalExecutor:
                 quantity=quantity,
             )
             if isinstance(self.executor, PaperClient):
-                order_resp = self.executor.place_order(order_req)
+                # Update price before execution
+                price = signal.entry_price or 60000.0
+                self.executor.update_price(symbol, price)
+
+                # Synchronous wrapper for async place_order
+                def _sync_place_order():
+                    return asyncio.run(self.executor.place_order(order_req))
+
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # Inside async context — run sync wrapper in thread
+                        order_resp = await loop.run_in_executor(None, _sync_place_order)
+                    else:
+                        # Direct execution
+                        order_resp = _sync_place_order()
+                except RuntimeError:
+                    # Fallback for no loop
+                    order_resp = _sync_place_order()
+
                 exec_dict.update({
                     "order_id": order_resp.order_id,
                     "filled_qty": order_resp.filled_qty,
@@ -280,14 +311,24 @@ class AutoGenSignalExecutor:
                     "mode": "paper",
                 })
         else:
-            # Live Binance execution (would need async wrapper in production)
+            # Live Binance execution would need async wrapper
+            order_req = OrderRequest(
+                symbol=symbol,
+                side=side,
+                order_type=OrderType.MARKET,
+                quantity=quantity,
+            )
             exec_dict.update({
                 "mode": "live",
-                "status": "deferred",
-                "note": "Use async execute_cycle_live() for Binance execution",
+                "status": "NOT_IMPLEMENTED",
             })
-
         return exec_dict
+
+    def _execute_signal(self, signal: Signal, risk_decision) -> dict:
+        """Sync wrapper for paper/live execution."""
+        return asyncio.run(self._execute_signal_async(signal, risk_decision))
+
+    # ── Helpers ──────────────────────────────────────────
 
     def _calc_quantity(self, signal: Signal, max_size: float) -> float:
         """Calculate order quantity from signal and risk limits."""

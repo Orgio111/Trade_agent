@@ -2,7 +2,7 @@
 
 > Content catalog for the trading & quant second brain. Organized by category. ZCode updates this on every ingest. **Read this first** when answering a query — then drill into pages.
 >
-> **State:** 2 sources · 58 pages · last updated 2026-07-01
+> **State:** 2 sources · 59 pages · last updated 2026-07-01
 
 ---
 
@@ -80,6 +80,7 @@ _Instruments, venues, tools, people, firms._
 - [[chart-segmentation]] — OpenCV chart feature extraction: candle detection, trend lines, S/R levels, volume analysis. (active, updated 2026-07-01)
 - [[local-inference-server]] — vLLM + FastAPI GPU inference server for RTX 4050: quantized models, SSE streaming, /generate/fast endpoint. (active, updated 2026-07-01)
 - [[gpu-optimizer]] — RTX 4050 optimization: GPU status monitoring, VRAM-based config, CUDA env tuning, model recommendations. (active, updated 2026-07-01)
+- [[ultra-low-latency-monitoring]] — Grafana dashboard + Prometheus metrics for GPU utilization, VRAM, vLLM inference latency, scalping engine timing. (active, updated 2026-07-01)
 
 ## Comparisons
 _Analyses and side-by-side comparisons (often filed from queries)._

@@ -43,6 +43,45 @@ groups:
         annotations:
           summary: "Sustained low confidence ({{ $value }}) across swarm"
 
+  - name: quantex-pipeline-latency
+    interval: 15s
+    rules:
+      - alert: PipelineLatencyHigh
+        expr: histogram_quantile(0.99, rate(pipeline_latency_ms_bucket[5m])) > 2000
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pipeline p99 latency {{ $labels.path }} path {{ $value }}ms exceeds 2000ms"
+          description: "The pipeline p99 latency on the {{ $labels.path }} path has been {{ $value }}ms for 3+ minutes. Heavy path (VLM+RAG+swarm) may be too slow. Consider increasing SCALPING_CONFIDENCE_THRESHOLD to route more traffic through the fast path."
+
+      - alert: PipelineLatencyCritical
+        expr: histogram_quantile(0.99, rate(pipeline_latency_ms_bucket[5m])) > 5000
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Pipeline p99 latency {{ $labels.path }} path {{ $value }}ms exceeds 5000ms — critical"
+          description: "Pipeline latency p99 on {{ $labels.path }} path exceeds 5 seconds ({{ $value }}ms). This may indicate GPU inference timeout, model OOM, or upstream dependency failure."
+
+      - alert: ScalpingUnderperforming
+        expr: pipeline_fast_path_ratio < 0.30
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Fast path ratio {{ $value | humanizePercentage }} below 30% for 10 minutes"
+          description: "The scalping engine is taking the fast path less than 30% of the time. This means the heavy path (VLM+RAG+swarm) is handling most decisions, increasing latency and compute cost. Possible causes: SCALPING_CONFIDENCE_THRESHOLD too high, market regime shift, or scalping engine degraded."
+
+      - alert: ScalpingNearlyDisabled
+        expr: pipeline_fast_path_ratio < 0.10
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Fast path ratio {{ $value | humanizePercentage }} below 10% — scalping effectively disabled"
+          description: "The scalping fast path is being used less than 10% of the time for 15+ minutes. The system is running almost entirely on the heavy path. Check scalping engine health, SCALPING_CONFIDENCE_THRESHOLD setting, and recent market volatility."
+
   - name: quantex-adaptive-routing
     interval: 30s
     rules:

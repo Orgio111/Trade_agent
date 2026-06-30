@@ -274,6 +274,157 @@
         }
       },
       "description": "Currently firing Prometheus alerts across all rule groups"
+    },
+    {
+      "title": "Pipeline Path Ratio",
+      "type": "piechart",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 30},
+      "targets": [
+        {
+          "expr": "sum by (path) (pipeline_path_total)",
+          "legendFormat": "{{path}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "legend": {"displayMode": "table", "placement": "right", "values": ["percent", "value"]},
+        "pieType": "donut"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"}
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "fast"},
+            "properties": [{"id": "color", "value": {"fixedColor": "green", "mode": "fixed"}}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "heavy"},
+            "properties": [{"id": "color", "value": {"fixedColor": "orange", "mode": "fixed"}}]
+          }
+        ]
+      },
+      "description": "Fast path (scalping) vs Heavy path (VLM+RAG+swarm) ratio"
+    },
+    {
+      "title": "Fast Path Ratio",
+      "type": "stat",
+      "gridPos": {"h": 3, "w": 4, "x": 0, "y": 36},
+      "targets": [
+        {
+          "expr": "pipeline_fast_path_ratio * 100",
+          "legendFormat": "Ratio",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [
+            {"color": "orange", "value": null},
+            {"color": "green", "value": 50},
+            {"color": "blue", "value": 80}
+          ]}
+        }
+      },
+      "description": "Percentage of pipeline runs taking the scalping fast path"
+    },
+    {
+      "title": "Pipeline Latency by Path (precomputed)",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 30},
+      "targets": [
+        {
+          "expr": "pipeline_avg_latency_fast_5m",
+          "legendFormat": "Fast Path (scalping)"
+        },
+        {
+          "expr": "pipeline_avg_latency_heavy_5m",
+          "legendFormat": "Heavy Path (VLM+RAG+swarm)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "lineWidth": 2,
+          "fillOpacity": 10,
+          "color": {"mode": "palette-classic"}
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Fast Path (scalping)"},
+            "properties": [{"id": "color", "value": {"fixedColor": "green", "mode": "fixed"}}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Heavy Path (VLM+RAG+swarm)"},
+            "properties": [{"id": "color", "value": {"fixedColor": "orange", "mode": "fixed"}}]
+          }
+        ]
+      },
+      "description": "Average pipeline latency per path (5m rolling average, precomputed)"
+    },
+    {
+      "title": "Pipeline Throughput",
+      "type": "stat",
+      "gridPos": {"h": 3, "w": 4, "x": 12, "y": 36},
+      "targets": [
+        {
+          "expr": "pipeline_throughput_1m",
+          "legendFormat": "candles/min",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [
+            {"color": "red", "value": null},
+            {"color": "green", "value": 1}
+          ]}
+        }
+      },
+      "description": "Total pipeline throughput (candles processed per minute)"
+    },
+    {
+      "title": "Scalping Decisions",
+      "type": "bargauge",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 30},
+      "targets": [
+        {
+          "expr": "sum by (action) (scalping_decisions_total)",
+          "legendFormat": "{{action}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"}
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "BUY"},
+            "properties": [{"id": "color", "value": {"fixedColor": "green", "mode": "fixed"}}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "SELL"},
+            "properties": [{"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "HOLD"},
+            "properties": [{"id": "color", "value": {"fixedColor": "blue", "mode": "fixed"}}]
+          }
+        ]
+      },
+      "description": "Scalping engine decision distribution (BUY/SELL/HOLD)"
     }
   ]
 }

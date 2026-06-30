@@ -142,7 +142,8 @@ def cmd_single(args):
         logger.info("Using demo candle data")
 
     # Run cycle
-    result = executor.execute_cycle(candle_data=candle, vlm_output=DEMO_VLM)
+    indicators = candle.get("indicators", {})
+    result = executor.execute_cycle(candle_data=candle, vlm_output=DEMO_VLM, indicators=indicators)
     _print_result(result)
 
     # Save result
@@ -179,7 +180,7 @@ def cmd_daemon(args):
             else:
                 candle = DEMO_CANDLE
 
-            result = executor.execute_cycle(candle_data=candle, vlm_output=DEMO_VLM)
+            result = executor.execute_cycle(candle_data=candle, vlm_output=DEMO_VLM, indicators=candle.get("indicators", {}))
             _print_result(result, verbose=False)
 
             # Check if we should stop

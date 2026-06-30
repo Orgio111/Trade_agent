@@ -1,0 +1,394 @@
+{
+  "title": "QUANTEX Ultra-Low Latency Stack",
+  "uid": "quantex-ultra-low-latency",
+  "tags": ["quantex", "gpu", "inference", "scalping", "ultra-low-latency"],
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": {"from": "now-1h", "to": "now"},
+  "panels": [
+    {
+      "title": "GPU Utilization",
+      "type": "gauge",
+      "gridPos": {"h": 6, "w": 4, "x": 0, "y": 0},
+      "targets": [{"expr": "gpu_utilization_pct", "legendFormat": "{{gpu}}"}],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0, "max": 100,
+          "unit": "percent",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [
+            {"color": "green", "value": null},
+            {"color": "yellow", "value": 70},
+            {"color": "red", "value": 90}
+          ]}
+        }
+      },
+      "description": "NVIDIA GPU utilization percentage"
+    },
+    {
+      "title": "VRAM Usage",
+      "type": "bargauge",
+      "gridPos": {"h": 6, "w": 4, "x": 4, "y": 0},
+      "targets": [
+        {"expr": "gpu_vram_used_mb", "legendFormat": "Used"},
+        {"expr": "gpu_vram_total_mb", "legendFormat": "Total"}
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes",
+          "max": 6144,
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [
+            {"color": "green", "value": null},
+            {"color": "yellow", "value": 4000},
+            {"color": "red", "value": 5500}
+          ]}
+        }
+      },
+      "description": "GPU VRAM used vs total (RTX 4050 = 6GB)"
+    },
+    {
+      "title": "GPU Temperature",
+      "type": "gauge",
+      "gridPos": {"h": 6, "w": 4, "x": 8, "y": 0},
+      "targets": [{"expr": "gpu_temperature_celsius", "legendFormat": "{{gpu}}"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "min": 20, "max": 100,
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [
+            {"color": "green", "value": null},
+            {"color": "yellow", "value": 70},
+            {"color": "red", "value": 85}
+          ]}
+        }
+      },
+      "description": "GPU temperature — throttle risk above 85°C"
+    },
+    {
+      "title": "GPU Power Draw",
+      "type": "stat",
+      "gridPos": {"h": 6, "w": 4, "x": 12, "y": 0},
+      "targets": [{"expr": "gpu_power_draw_watts", "legendFormat": "{{gpu}}"}],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [
+            {"color": "green", "value": null},
+            {"color": "yellow", "value": 80},
+            {"color": "red", "value": 115}
+          ]}
+        }
+      },
+      "description": "GPU power draw in watts"
+    },
+    {
+      "title": "GPU Status Checks",
+      "type": "stat",
+      "gridPos": {"h": 6, "w": 4, "x": 16, "y": 0},
+      "targets": [
+        {"expr": "gpu_status_checks_total{result=\"ok\"}", "legendFormat": "OK"},
+        {"expr": "gpu_status_checks_total{result=\"error\"}", "legendFormat": "Errors"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [
+            {"color": "green", "value": null}
+          ]}
+        }
+      },
+      "description": "Total GPU status check attempts (ok vs error)"
+    },
+    {
+      "title": "VRAM Usage Over Time",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+      "targets": [
+        {"expr": "gpu_vram_used_mb", "legendFormat": "Used (MB)"},
+        {"expr": "gpu_vram_total_mb", "legendFormat": "Total (MB)"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes",
+          "lineWidth": 2,
+          "fillOpacity": 20,
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "description": "VRAM usage trend — spikes indicate model loading"
+    },
+    {
+      "title": "GPU Utilization Over Time",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+      "targets": [
+        {"expr": "gpu_utilization_pct", "legendFormat": "{{gpu}}"},
+        {"expr": "gpu_temperature_celsius", "legendFormat": "Temp (°C)"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "lineWidth": 2,
+          "fillOpacity": 10,
+          "color": {"mode": "palette-classic"}
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Temp (°C)"},
+            "properties": [{"id": "unit", "value": "celsius"}]
+          }
+        ]
+      },
+      "description": "GPU utilization % and temperature trend"
+    },
+    {
+      "title": "vLLM Inference Latency",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 14},
+      "targets": [
+        {
+          "expr": "rate(vllm_inference_latency_ms_sum[5m]) / rate(vllm_inference_latency_ms_count[5m])",
+          "legendFormat": "avg {{model}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(vllm_inference_latency_ms_bucket[5m]))",
+          "legendFormat": "p95 {{model}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "lineWidth": 2,
+          "fillOpacity": 10,
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "description": "vLLM average and p95 inference latency per model"
+    },
+    {
+      "title": "vLLM Tokens Generated",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 14},
+      "targets": [
+        {
+          "expr": "rate(vllm_tokens_generated_total[5m])",
+          "legendFormat": "tokens/s {{model}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "lineWidth": 2,
+          "fillOpacity": 10,
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "description": "vLLM token generation rate per model"
+    },
+    {
+      "title": "vLLM Request Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 22},
+      "targets": [
+        {
+          "expr": "sum by (endpoint) (rate(vllm_requests_total[5m]))",
+          "legendFormat": "{{endpoint}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "lineWidth": 2,
+          "fillOpacity": 10,
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "description": "vLLM request rate by endpoint (/generate, /generate/fast, /generate/stream)"
+    },
+    {
+      "title": "vLLM Active Requests",
+      "type": "stat",
+      "gridPos": {"h": 6, "w": 4, "x": 8, "y": 22},
+      "targets": [{"expr": "vllm_active_requests", "legendFormat": "Active"}],
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [
+            {"color": "green", "value": null},
+            {"color": "yellow", "value": 4},
+            {"color": "red", "value": 8}
+          ]}
+        }
+      },
+      "description": "Currently processing vLLM inference requests"
+    },
+    {
+      "title": "Scalping Decision Latency",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 28},
+      "targets": [
+        {
+          "expr": "rate(scalping_decision_latency_ms_sum[5m]) / rate(scalping_decision_latency_ms_count[5m])",
+          "legendFormat": "avg"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(scalping_decision_latency_ms_bucket[5m]))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(scalping_decision_latency_ms_bucket[5m]))",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "lineWidth": 2,
+          "fillOpacity": 10,
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "description": "Scalping engine decision latency — target <5ms"
+    },
+    {
+      "title": "Scalping Signal Types",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 28},
+      "targets": [
+        {
+          "expr": "rate(scalping_signals_total[5m])",
+          "legendFormat": "{{signal}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "lineWidth": 2,
+          "fillOpacity": 15,
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "description": "Scalping signal detection rate by type (momentum, rejection, volume, trend)"
+    },
+    {
+      "title": "Scalping vs vLLM Latency Comparison",
+      "type": "bargauge",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 36},
+      "targets": [
+        {
+          "expr": "rate(scalping_decision_latency_ms_sum[5m]) / rate(scalping_decision_latency_ms_count[5m])",
+          "legendFormat": "Scalping (CPU)"
+        },
+        {
+          "expr": "rate(vllm_inference_latency_ms_sum{model=~\"Qwen.*\"}[5m]) / rate(vllm_inference_latency_ms_count{model=~\"Qwen.*\"}[5m])",
+          "legendFormat": "vLLM (GPU)"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {"mode": "palette-classic"},
+          "thresholds": {"steps": [
+            {"color": "green", "value": null},
+            {"color": "yellow", "value": 5},
+            {"color": "red", "value": 100}
+          ]}
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Scalping (CPU)"},
+            "properties": [{"id": "color", "value": {"fixedColor": "green", "mode": "fixed"}}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "vLLM (GPU)"},
+            "properties": [{"id": "color", "value": {"fixedColor": "blue", "mode": "fixed"}}]
+          }
+        ]
+      },
+      "description": "CPU scalping vs GPU vLLM latency comparison — shows fast-path advantage"
+    },
+    {
+      "title": "Pipeline Latency Breakdown",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 36},
+      "targets": [
+        {
+          "expr": "rate(pipeline_latency_ms_sum{path=\"fast\"}[5m]) / rate(pipeline_latency_ms_count{path=\"fast\"}[5m])",
+          "legendFormat": "Fast Path (scalping)"
+        },
+        {
+          "expr": "rate(pipeline_latency_ms_sum{path=\"heavy\"}[5m]) / rate(pipeline_latency_ms_count{path=\"heavy\"}[5m])",
+          "legendFormat": "Heavy Path (VLM+RAG+swarm)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "lineWidth": 2,
+          "fillOpacity": 10,
+          "color": {"mode": "palette-classic"}
+        }
+      },
+      "description": "Total pipeline latency by execution path"
+    },
+    {
+      "title": "Fast Path Ratio",
+      "type": "gauge",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 36},
+      "targets": [
+        {
+          "expr": "pipeline_fast_path_ratio * 100",
+          "legendFormat": "Ratio",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0, "max": 100,
+          "color": {"mode": "thresholds"},
+          "thresholds": {"steps": [
+            {"color": "red", "value": null},
+            {"color": "yellow", "value": 30},
+            {"color": "green", "value": 60},
+            {"color": "blue", "value": 80}
+          ]}
+        }
+      },
+      "description": "Percentage of pipeline runs taking the scalping fast path"
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "gpu",
+        "type": "query",
+        "query": "label_values(gpu_utilization_pct, gpu)",
+        "refresh": 2,
+        "current": {"text": "All", "value": "$__all"}
+      },
+      {
+        "name": "model",
+        "type": "query",
+        "query": "label_values(vllm_inference_latency_ms, model)",
+        "refresh": 2,
+        "current": {"text": "All", "value": "$__all"}
+      }
+    ]
+  }
+}

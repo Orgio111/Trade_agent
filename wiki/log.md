@@ -2,6 +2,18 @@
 
 > Append-only timeline of every operation on the wiki. Newest at top. Reverse chronological so the current state is the first thing you read.
 
+## [2026-07-01] ingest | Ultra-Low Latency Monitoring — Grafana Dashboard + Prometheus Metrics
+
+Created [[ultra-low-latency-monitoring]] (entity) — Dedicated monitoring stack for GPU, vLLM inference, and scalping engine:
+- Grafana dashboard with 16 panels: GPU utilization/VRAM/temp/power, vLLM latency/tokens/requests, scalping latency/signals, pipeline latency, fast-path ratio
+- Template variables for GPU name and vLLM model filtering
+- Prometheus metrics added to 3 source files: gpu_optimizer.py (6 metrics), local_inference_server.py (4 metrics), scalping_engine.py (2 metrics)
+- Recording rules: gpu_metrics (VRAM ratio, power efficiency, temp avg), inference_metrics (vLLM latency, throughput, request rate), scalping_metrics (avg latency, signal rate, vs vLLM ratio)
+- Graceful fallback: all metric imports use try/except — system works without prometheus_client
+- Key fixes applied: consolidated GPU_PROMETHEUS_AVAILABLE checks, moved VLLM_REQUESTS_TOTAL inside try block, changed VRAM panel from gauge to bargauge
+
+Updated [[index.md]]: 59 pages. Updated [[log.md]].
+
 ## [2026-07-01] ingest | Chart Segmentation Pipeline — OpenCV chart feature extraction
 
 Created [[chart-segmentation]] (entity) — Real-time chart image → structured market features using OpenCV:

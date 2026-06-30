@@ -2,6 +2,8 @@
 
 Analyzes crypto news headlines and social media text for sentiment.
 Hybrid dual-tier: local Ollama + cloud NIM/OpenRouter fallback.
+
+ALL cloud APIs are optional — works fully with local Ollama + keyword fallback.
 Weight in Go orchestrator: 0.10.
 """
 
@@ -14,7 +16,6 @@ import os
 import time
 from pathlib import Path
 
-import httpx
 import numpy as np
 
 from .base_brain import BaseBrain, BrainSignal
@@ -46,13 +47,10 @@ class FinBERTBrain(BaseBrain):
 
     Uses dual-tier inference:
       Tier 1: Local Ollama models (2 concurrent) for raw scoring
-      Tier 2: Cloud NIM/OpenRouter for consensus fallback
-    Outputs a bounded scalar between -1.0 (panic) and +1.0 (euphoria).
+      Tier 2: Cloud NIM/OpenRouter for consensus fallback (optional)
+      Tier 3: Keyword-based fallback (always available)
 
-    Features:
-      - Auto-fetches crypto news from CryptoCompare API
-      - Auto-loads OPENROUTER_API_KEY from .env
-      - Caches headlines per symbol (5-min TTL)
+    ALL tiers beyond Tier 1 are optional.
     """
 
     @property
@@ -64,18 +62,24 @@ class FinBERTBrain(BaseBrain):
         self.ollama_models = os.getenv(
             "OLLAMA_SENTIMENT_MODELS", os.getenv("OLLAMA_SENTIMENT_MODEL", "qwen2.5:3b,phi3:mini")
         ).split(",")
+        # Cloud tiers — all optional
         self.nim_key = os.getenv("NIM_API_KEY", os.getenv("NVIDIA_API_KEY", ""))
         self.nim_url = os.getenv("NIM_URL", "https://integrate.api.nvidia.com")
         self.nim_model = os.getenv("NIM_SENTIMENT_MODEL", "meta/llama-3.1-8b-instruct")
-        # Tier 3: OpenRouter — free model fallback (gemma-4-31b-it:free, no paid models)
         self.openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
         self.openrouter_model = os.getenv("OPENROUTER_SENTIMENT_MODEL", "google/gemma-4-31b-it:free")
         self.timeout = float(os.getenv("SENTIMENT_TIMEOUT", "8.0"))
-        self._http = httpx.AsyncClient(timeout=self.timeout)
+        self._http = None  # Lazy-init to avoid import at module level
         self._headlines: list[str] = []
-        # Cache for auto-fetched headlines
         self._headlines_cache: dict[str, list[str]] = {}
         self._headlines_cache_ts: dict[str, float] = {}
+
+    async def _get_http(self):
+        """Lazy-import httpx."""
+        if self._http is None:
+            import httpx
+            self._http = httpx.AsyncClient(timeout=self.timeout)
+        return self._http
 
     async def warmup(self) -> None:
         # Auto-discover available Ollama models
@@ -89,21 +93,23 @@ class FinBERTBrain(BaseBrain):
                     for m in self.ollama_models:
                         if m in available:
                             resolved.append(m)
-                        # try base name match (e.g. "phi3:mini" matches "phi3:mini")
                     if not resolved and available:
-                        # Fallback: use first available model
-                        resolved = available[:2]  # at most 2 for concurrency
+                        resolved = available[:2]
                         logger.warning(f"[finbert_nlp] Configured models not found, auto-selected {resolved}")
                     self.ollama_models = resolved or self.ollama_models
         except Exception:
-            pass  # Ollama offline, cloud tiers will handle
+            pass  # Ollama offline — keyword fallback will handle
+
         logger.info(f"[finbert_nlp] Ready (models={self.ollama_models})")
+        tiers = ["local_ollama"]
         if self.nim_key:
+            tiers.append("nim_cloud")
             logger.info(f"[finbert_nlp] NIM configured: {self.nim_url} model={self.nim_model}")
         if self.openrouter_key:
+            tiers.append("openrouter_cloud")
             logger.info(f"[finbert_nlp] OpenRouter key available, model={self.openrouter_model}")
-        elif not self.nim_key:
-            logger.warning("[finbert_nlp] No cloud LLM configured (NIM_API_KEY / OPENROUTER_API_KEY)")
+        if not self.nim_key and not self.openrouter_key:
+            logger.info("[finbert_nlp] Running in local-only mode (keyword fallback active)")
 
     async def compute_score(self, symbol: str) -> BrainSignal:
         # Auto-fetch headlines if empty
@@ -155,7 +161,7 @@ class FinBERTBrain(BaseBrain):
                 metadata={"tier": "local_single"},
             )
 
-        # Tier 2: Cloud fallback
+        # Tier 2: Cloud fallback (optional — only if keys configured)
         cloud_score, cloud_conf = await self._query_cloud(symbol)
         if cloud_score is not None:
             return BrainSignal(
@@ -166,7 +172,7 @@ class FinBERTBrain(BaseBrain):
                 metadata={"tier": "cloud"},
             )
 
-        # Total failure — produce a neutral score from keyword scan
+        # Tier 3: Keyword fallback (always available)
         keyword_score = self._keyword_fallback_score()
         if keyword_score != 0.0:
             return BrainSignal(
@@ -182,7 +188,7 @@ class FinBERTBrain(BaseBrain):
             symbol=symbol,
             score=0.0,
             confidence=0.05,
-            metadata={"tier": "failed", "reason": "all_tiers_unavailable"},
+            metadata={"tier": "neutral", "reason": "no_signal"},
         )
 
     def _auto_fetch_headlines(self, symbol: str) -> None:
@@ -195,7 +201,6 @@ class FinBERTBrain(BaseBrain):
 
         try:
             import requests
-            # Map symbol to CryptoCompare categories
             base = symbol.split("/")[0].upper() if "/" in symbol else symbol.upper()
             resp = requests.get(
                 f"https://min-api.cryptocompare.com/data/v2/news/?categories={base}",
@@ -239,7 +244,7 @@ class FinBERTBrain(BaseBrain):
         if not self._headlines:
             return 0.0
         bullish_words = {"surge", "rally", "bullish", "breakout", "moon", "pump",
-                         "soar", "gain", "rise", " ATH", "all-time high", "adoption"}
+                         "soar", "gain", "rise", "ath", "all-time high", "adoption"}
         bearish_words = {"crash", "dump", "bearish", "plunge", "fall", "drop",
                          "sell-off", "ban", "hack", "rug", "collapse", "fear"}
         score = 0.0
@@ -255,7 +260,7 @@ class FinBERTBrain(BaseBrain):
 
     def push_headlines(self, headlines: list[str]) -> None:
         """Push new headlines for next analysis cycle."""
-        self._headlines = headlines[-20:]  # keep last 20
+        self._headlines = headlines[-20:]
 
     async def _query_ollama(self, model: str, symbol: str) -> tuple[str | None, float]:
         """Query one Ollama model for sentiment."""
@@ -264,7 +269,8 @@ class FinBERTBrain(BaseBrain):
             headlines="\n".join(f"- {h}" for h in self._headlines[:10]),
         )
         try:
-            resp = await self._http.post(
+            http = await self._get_http()
+            resp = await http.post(
                 f"{self.ollama_url}/api/generate",
                 json={
                     "model": model.strip(),
@@ -276,7 +282,7 @@ class FinBERTBrain(BaseBrain):
             if resp.status_code == 200:
                 text = resp.json().get("response", "")
                 return self._parse_sentiment(text)
-        except (httpx.TimeoutException, httpx.ConnectError):
+        except Exception:
             logger.debug(f"[finbert_nlp] Ollama {model} timeout")
         return None, 0.0
 
@@ -287,10 +293,11 @@ class FinBERTBrain(BaseBrain):
             headlines="\n".join(f"- {h}" for h in self._headlines[:10]),
         )
 
-        # Tier 2: NIM (free NVIDIA credits)
+        # Tier 2: NIM (free NVIDIA credits) — optional
         if self.nim_key:
             try:
-                resp = await self._http.post(
+                http = await self._get_http()
+                resp = await http.post(
                     f"{self.nim_url}/v1/chat/completions",
                     json={
                         "model": self.nim_model,
@@ -306,15 +313,14 @@ class FinBERTBrain(BaseBrain):
                     if sentiment:
                         logger.info("[finbert_nlp] NIM tier OK")
                         return self._sentiment_to_score(sentiment, conf), conf
-                else:
-                    logger.debug(f"[finbert_nlp] NIM HTTP {resp.status_code}")
             except Exception as e:
                 logger.debug(f"[finbert_nlp] NIM error: {e}")
 
-        # Tier 3: OpenRouter free model
+        # Tier 3: OpenRouter free model — optional
         if self.openrouter_key:
             try:
-                resp = await self._http.post(
+                http = await self._get_http()
+                resp = await http.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     json={
                         "model": self.openrouter_model,
@@ -330,8 +336,6 @@ class FinBERTBrain(BaseBrain):
                     if sentiment:
                         logger.info("[finbert_nlp] OpenRouter free tier OK")
                         return self._sentiment_to_score(sentiment, conf), conf
-                else:
-                    logger.debug(f"[finbert_nlp] OpenRouter HTTP {resp.status_code}")
             except Exception as e:
                 logger.debug(f"[finbert_nlp] OpenRouter error: {e}")
 
@@ -377,4 +381,5 @@ class FinBERTBrain(BaseBrain):
         return base * confidence
 
     async def cooldown(self) -> None:
-        await self._http.aclose()
+        if self._http and not self._http.is_closed:
+            await self._http.aclose()

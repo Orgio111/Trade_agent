@@ -49,6 +49,30 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger("quantex.pipeline")
 
+# ── Prometheus Metrics (optional, graceful fallback) ────────
+try:
+    from prometheus_client import Counter, Histogram
+
+    PIPELINE_PATH_TOTAL = Counter(
+        "pipeline_path_total",
+        "Pipeline path selection count",
+        ["path"],  # "fast" or "heavy"
+    )
+    PIPELINE_LATENCY_MS = Histogram(
+        "pipeline_latency_ms",
+        "Total pipeline latency in milliseconds",
+        ["path"],  # "fast" or "heavy"
+        buckets=[5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000],
+    )
+    SCALPING_DECISIONS = Counter(
+        "scalping_decisions_total",
+        "Scalping engine decisions by action",
+        ["action"],  # "BUY", "SELL", "HOLD"
+    )
+    PROMETHEUS_AVAILABLE = True
+except ImportError:
+    PROMETHEUS_AVAILABLE = False
+
 # ── Configuration ───────────────────────────────────────────
 # Scalping fast-path confidence threshold (0-100).
 # If ScalpingEngine confidence > this value, skip VLM/RAG/swarm.
@@ -741,6 +765,15 @@ async def log_and_publish_node(state: TradingState) -> TradingState:
         }
 
         state.stage = PipelineStage.LOGGED.value
+
+        # ── Record Prometheus metrics ──
+        if PROMETHEUS_AVAILABLE:
+            is_fast = state.strategy_signal.get("source") == "scalping_fast_path"
+            path = "fast" if is_fast else "heavy"
+            PIPELINE_PATH_TOTAL.labels(path=path).inc()
+            PIPELINE_LATENCY_MS.labels(path=path).observe(total_latency)
+            action = state.scalping_decision.get("action", "HOLD")
+            SCALPING_DECISIONS.labels(action=action).inc()
 
     except Exception as e:
         state.errors.append(f"logging: {e}")

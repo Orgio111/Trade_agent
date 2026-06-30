@@ -178,20 +178,29 @@ class EnhancedRiskEngine:
         if state.open_positions >= self.max_concurrent:
             reject_reasons.append(f"Max positions: {state.open_positions} >= {self.max_concurrent}")
 
-        # ── 5. Minimum confidence ────────────────────────
-        if signal.confidence < self.min_confidence:
+        # ── 5. Minimum confidence (HOLD skips confidence check) ─
+        if signal.action == "HOLD":
+            # HOLD is always safe — it means "do nothing"
+            metrics.confidence_pass = True
+        elif signal.confidence < self.min_confidence:
             metrics.confidence_pass = False
             reject_reasons.append(f"Low confidence: {signal.confidence:.2f} < {self.min_confidence}")
 
-        # ── 6. HOLD always blocked ──────────────────────
+        # ── 6. HOLD always passes risk ──────────────────────
         if signal.action == "HOLD":
-            reject_reasons.append("Signal is HOLD")
+            max_size = 0.0
+            return RiskDecision(
+                allow=True,
+                reason="HOLD: no action needed",
+                adjusted_signal=signal,
+                max_size=max_size,
+            )
 
         # ── 7. ATR volatility filter ────────────────────
         if self.atr_enabled and indicators:
             atr_pct = indicators.get("atr_pct", 0.0)
             atr_mean_pct = indicators.get("atr_mean_pct", atr_pct)
-            if atr_mean_pct > 0 and atr_pct > atr_mean_pct * self.atr_block_mult:
+            if atr_mean_pct > 0 and atr_pct >= atr_mean_pct * self.atr_block_mult:
                 # ATR z-score calculation
                 atr_std = indicators.get("atr_std_pct", atr_mean_pct * 0.3)
                 if atr_std > 0:
