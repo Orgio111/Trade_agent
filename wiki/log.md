@@ -2,6 +2,59 @@
 
 > Append-only timeline of every operation on the wiki. Newest at top. Reverse chronological so the current state is the first thing you read.
 
+## [2026-07-01] ingest | Chart Segmentation Pipeline — OpenCV chart feature extraction
+
+Created [[chart-segmentation]] (entity) — Real-time chart image → structured market features using OpenCV:
+- Candle detection via HSV color segmentation (green/red masks → morphological close → contour detection)
+- Trend detection via polyfit slope on candle positions (image coordinate inversion)
+- Support/resistance via percentile clustering of candle extremes (20th/80th percentile)
+- Volume detection via bottom-region brightness analysis
+- Market structure (higher highs/lower lows) via half-comparison
+- Volatility classification via candle height coefficient of variation
+- Wick analysis for rejection detection (pin bar patterns)
+- Graceful OpenCV degradation (returns empty features if not installed)
+- Latency: 10-25ms CPU-only, deterministic
+- Design principle: "trading charts are structured time-series visuals, not natural images" — replaces full VLM for speed-critical scenarios
+
+Updated [[index.md]]: 2 sources, 58 pages.
+
+## [2026-07-01] ingest | Ultra-Low Latency Trading Stack — Scalping Engine, Chart Segmentation, GPU Inference, Dual-Path Pipeline
+
+Ingested 5 new entity/concept pages + updated 1 existing page into wiki:
+
+- [[scalping-engine]] (entity) — Ultra-fast CPU-only scalping engine: <5ms logic, 5-candle window, momentum breakout + rejection detection, strict JSON output ({action, confidence, size_pct, reason}), volatility-adaptive sizing.
+- [[chart-segmentation]] (entity) — OpenCV chart feature extraction: candle detection via color segmentation, trend lines (polyfit), S/R levels (percentile), volume spike detection, market structure (higher highs/lower lows).
+- [[local-inference-server]] (entity) — vLLM + FastAPI GPU inference server: quantized model shortcuts (Qwen/Mistral 7B Q4), SSE streaming, `/generate/fast` endpoint for scalping, async client class, Docker-ready.
+- [[gpu-optimizer]] (entity) — RTX 4050 optimization: GPU status monitoring via nvidia-smi, VRAM-based config scaling, CUDA env tuning, model recommendations by VRAM tier, WSL2 detection.
+- [[multi-agent-pipeline]] (concept, updated) — Added dual-path architecture: scalping fast-path (<5ms, confidence > threshold) skips VLM/RAG/swarm; heavy path (~500ms) runs full analysis. Configurable `SCALPING_CONFIDENCE_THRESHOLD` env var + per-pipeline override. New TradingState fields: scalping_confidence, scalping_action, scalping_decision, use_scalping_fast_path, scalping_confidence_threshold. Pipeline context now includes threshold metadata.
+- [[nats-langgraph-bridge]] (entity, updated) — Added ScalpDecisionEvent publishing when scalping fast-path triggers.
+
+Updated [[index.md]]: 2 sources, 57 pages. Cross-references added to [[multi-agent-pipeline]], [[nats-event-system]], [[scalping-engine]], [[chart-segmentation]], [[local-inference-server]], [[gpu-optimizer]].
+
+## [2026-07-01] ingest | Multi-Agent Orchestration — VLM, RAG, NATS Bridge, Pipeline Architecture
+
+Ingested 4 new entity/concept pages + updated 1 existing page into wiki:
+
+- [[vlm-agent]] (entity) — Vision Language Model chart analysis: matplotlib candlestick rendering → Ollama moondream → structured JSON (trend/pattern/levels/confidence). Parallel execution in LangGraph pipeline.
+- [[rag-agent]] (entity) — RAG pattern retrieval: NVIDIA NIM embeddings → Qdrant vector search → trade pattern statistics (win rate, avg PnL, confidence adjustment). Hash-based local fallback.
+- [[nats-langgraph-bridge]] (entity) — NATS↔LangGraph bridge: subscribes to `market.candle.>` events, triggers MultiAgentPipeline, publishes TradeSignalEvent/RiskApprovedEvent/RiskRejectedEvent/WSEvent back to NATS.
+- [[multi-agent-pipeline]] (concept) — Production LangGraph state machine: `data_ingest → feature_engine → [vlm ‖ rag] → swarm_strategy → risk_gate → execution → log_and_publish`. Parallel fan-out for VLM+RAG. Trace propagation via UUID. 10-gate risk check.
+- Updated [[nats-event-system]] (concept) — Added 7 new ACP v2 event types (ChartSnapshot, VLMAnalysis, RAGQuery, RAGResult, RiskCheck, RiskApproved, RiskRejected) + base event fields (priority, trace_id, context) + `agent` NATS stream.
+
+Updated [[index.md]]: 2 sources, 56 pages. Cross-references added to [[brain-ecosystem]], [[nats-event-system]], [[multi-agent-pipeline]], [[candle-buffer]], [[continual-learning-pipeline]], [[ensemble-meta-model]], [[local-trading-ai-architecture]].
+
+## [2026-07-01] ingest | Multi-Agent Orchestration — VLM, RAG, NATS Bridge, Pipeline Architecture
+
+Ingested 4 new entity/concept pages + updated 1 existing page into wiki:
+
+- [[vlm-agent]] (entity) — Vision Language Model chart analysis: matplotlib candlestick rendering → Ollama moondream → structured JSON (trend/pattern/levels/confidence). Parallel execution in LangGraph pipeline.
+- [[rag-agent]] (entity) — RAG pattern retrieval: NVIDIA NIM embeddings → Qdrant vector search → trade pattern statistics (win rate, avg PnL, confidence adjustment). Hash-based local fallback.
+- [[nats-langgraph-bridge]] (entity) — NATS↔LangGraph bridge: subscribes to `market.candle.>` events, triggers MultiAgentPipeline, publishes TradeSignalEvent/RiskApprovedEvent/RiskRejectedEvent/WSEvent back to NATS.
+- [[multi-agent-pipeline]] (concept) — Production LangGraph state machine: `data_ingest → feature_engine → [vlm ‖ rag] → swarm_strategy → risk_gate → execution → log_and_publish`. Parallel fan-out for VLM+RAG. Trace propagation via UUID. 10-gate risk check.
+- Updated [[nats-event-system]] (concept) — Added 7 new ACP v2 event types (ChartSnapshot, VLMAnalysis, RAGQuery, RAGResult, RiskCheck, RiskApproved, RiskRejected) + base event fields (priority, trace_id, context) + `agent` NATS stream.
+
+Updated [[index.md]]: 2 sources, 56 pages. Cross-references added to [[brain-ecosystem]], [[nats-event-system]], [[multi-agent-pipeline]], [[candle-buffer]], [[continual-learning-pipeline]], [[ensemble-meta-model]], [[local-trading-ai-architecture]].
+
 ## [2026-06-30] ingest | Infrastructure Overview — Docker Compose + K8s + Terraform deployment architecture
 
 Created [[infrastructure-overview]] (overview) — single source of truth for the full QUANTEX deployment architecture across 3 environments:

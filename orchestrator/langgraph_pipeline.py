@@ -1,124 +1,62 @@
-"""
-LangGraph State Machine for Trading Pipeline.
+"""QUANTEX Multi-Agent Trading Pipeline v3 — Dual-path LangGraph state machine.
 
-Production-ready state machine for candle-by-candle trading execution.
+Two execution paths based on scalping confidence:
+  FAST PATH (<5ms):  feature_engine → scalping_node → risk_gate → execution
+  HEAVY PATH (~500ms): feature_engine → [VLM ‖ RAG] → swarm → risk_gate → execution
+
+Architecture:
+  ┌─────────────────────────────────────────────────────────────┐
+  │                    LangGraph State Machine v3                │
+  │                                                              │
+  │  candle_close ─→ data_ingest ─→ feature_engine               │
+  │                                    │                         │
+  │                                    ▼                         │
+  │                              scalping_node                   │
+  │                              (CPU <5ms)                      │
+  │                                    │                         │
+  │                    ┌───────────────┴───────────────┐        │
+  │                    │ conf > 80%?                    │        │
+  │                    ▼ YES                            ▼ NO     │
+  │              ┌──────────┐    ┌────→ vlm_agent ──┐   │      │
+  │              │ risk_gate│    └────→ rag_agent ──┤   │      │
+  │              │ (FAST)   │              ↓        │   │      │
+  │              └────┬─────┘       swarm_strategy  │   │      │
+  │                   │              ↓              │   │      │
+  │                   │         risk_gate (HEAVY)   │   │      │
+  │                   │              ↓              │   │      │
+  │                   └──→ execution → log_and_publish   │      │
+  └─────────────────────────────────────────────────────────────┘
+
+Usage:
+    pipeline = MultiAgentPipeline()
+    result = await pipeline.process_candle(candle)
 """
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import os
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, List, Optional
 
 from langgraph.graph import END, StateGraph
 from pydantic import BaseModel, Field
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("quantex.pipeline")
+
+# ── Configuration ───────────────────────────────────────────
+# Scalping fast-path confidence threshold (0-100).
+# If ScalpingEngine confidence > this value, skip VLM/RAG/swarm.
+# Override via TradingState.scalping_confidence_threshold or env var.
+SCALPING_CONFIDENCE_THRESHOLD: int = int(os.environ.get("SCALPING_CONFIDENCE_THRESHOLD", "80"))
 
 
-class SignalAction(str):
-    BUY = "BUY"
-    SELL = "SELL"
-    HOLD = "HOLD"
-
-
-class RegimeState(str):
-    TREND_UP = "TREND_UP"
-    TREND_DOWN = "TREND_DOWN"
-    RANGE = "RANGE"
-    VOLATILE = "VOLATILE"
-    TRANSITION = "TRANSITION"
-
-
-from __future__ import annotations
-
-import asyncio
-import logging
-import time
-import uuid
-from dataclasses import dataclass, field
-from datetime import datetime
-from enum import Enum
-from typing import Any, AsyncGenerator, Dict, List, Optional, Annotated
-
-from langgraph.graph import END, StateGraph
-from langgraph.channels import LastValue
-from pydantic import BaseModel, Field
-
-logger = logging.getLogger(__name__)
-
-
-def merge_dicts(dict1: dict, dict2: dict) -> dict:
-    """Merge two dictionaries, with dict2 values taking precedence."""
-    result = dict1.copy()
-    result.update(dict2)
-    return result
-
-
-def merge_lists(list1: list, list2: list) -> list:
-    """Merge two lists."""
-    return list1 + list2
-
-
-class SignalAction(str):
-    BUY = "BUY"
-    SELL = "SELL"
-    HOLD = "HOLD"
-
-
-class RegimeState(str):
-    TREND_UP = "TREND_UP"
-    TREND_DOWN = "TREND_DOWN"
-    RANGE = "RANGE"
-    VOLATILE = "VOLATILE"
-    TRANSITION = "TRANSITION"
-
-
-class TradingState(BaseModel):
-    """Complete trading state for LangGraph pipeline."""
-    
-    # Identity
-    trace_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    
-    # Market data
-    candle: Annotated[Dict[str, Any], Field(default_factory=dict), LastValue] = Field(default_factory=dict)
-    features: Annotated[Dict[str, Any], Field(default_factory=dict), LastValue] = Field(default_factory=dict)
-    
-    # Agent outputs
-    vlm_output: Annotated[Dict[str, Any], Field(default_factory=dict), LastValue] = Field(default_factory=dict)
-    rag_context: Annotated[Dict[str, Any], Field(default_factory=dict), LastValue] = Field(default_factory=dict)
-    autogen_reasoning: Annotated[Dict[str, Any], Field(default_factory=dict), LastValue] = Field(default_factory=dict)
-    
-    # Signal & risk
-    signal: Annotated[Dict[str, Any], Field(default_factory=dict), LastValue] = Field(default_factory=dict)
-    risk_result: Annotated[Dict[str, Any], Field(default_factory=dict), LastValue] = Field(default_factory=dict)
-    
-    # Execution
-    execution: Annotated[Dict[str, Any], Field(default_factory=dict), LastValue] = Field(default_factory=dict)
-    
-    # Metadata
-    metadata: Annotated[Dict[str, Any], Field(default_factory=dict), LastValue] = Field(default_factory=dict)
-    
-    # Latency tracking
-    latency_ms: Annotated[Dict[str, float], Field(default_factory=dict), LastValue] = Field(default_factory=dict)
-    
-    # Error tracking
-    errors: Annotated[List[str], Field(default_factory=list), merge_lists] = Field(default_factory=list)
-    
-    # Pipeline control
-    pipeline_stage: Annotated[str, Field(default="initialized"), LastValue] = "initialized"
-    skip_vlm: bool = False
-    skip_rag: bool = False
-    skip_autogen: bool = False
-    
-    class Config:
-        arbitrary_types_allowed = True
-
+# ── Enums ───────────────────────────────────────────────────
 
 class PipelineStage(str, Enum):
     INITIALIZED = "initialized"
@@ -126,638 +64,820 @@ class PipelineStage(str, Enum):
     FEATURES_COMPUTED = "features_computed"
     VLM_COMPLETE = "vlm_complete"
     RAG_COMPLETE = "rag_complete"
-    AUTOGEN_COMPLETE = "autogen_complete"
-    SIGNAL_GENERATED = "signal_generated"
+    STRATEGY_COMPLETE = "strategy_complete"
     RISK_PASSED = "risk_passed"
+    RISK_REJECTED = "risk_rejected"
     EXECUTED = "executed"
-    COMPLETED = "completed"
+    LOGGED = "logged"
     FAILED = "failed"
 
 
-def create_trading_graph() -> StateGraph:
-    """Create the main trading pipeline graph."""
-    
-    graph = StateGraph(TradingState)
-    
-    # Add nodes
-    graph.add_node("data_ingest", data_ingest_node)
-    graph.add_node("feature_engine", feature_engine_node)
-    graph.add_node("vlm_agent", vlm_agent_node)
-    graph.add_node("rag_agent", rag_agent_node)
-    graph.add_node("autogen_team", autogen_team_node)
-    graph.add_node("signal_generator", signal_generator_node)
-    graph.add_node("risk_engine", risk_engine_node)
-    graph.add_node("execution_layer", execution_layer_node)
-    graph.add_node("logging_finalize", logging_finalize_node)
-    
-    # Define edges - deterministic flow
-    graph.set_entry_point("data_ingest")
-    
-    graph.add_edge("data_ingest", "feature_engine")
-    
-    # Parallel VLM + RAG execution
-    graph.add_edge("feature_engine", "vlm_agent")
-    graph.add_edge("feature_engine", "rag_agent")
-    
-    # Join parallel paths
-    graph.add_edge("vlm_agent", "autogen_team")
-    graph.add_edge("rag_agent", "autogen_team")
-    
-    graph.add_edge("autogen_team", "signal_generator")
-    graph.add_edge("signal_generator", "risk_engine")
-    graph.add_edge("risk_engine", "execution_layer")
-    graph.add_edge("execution_layer", "logging_finalize")
-    graph.add_edge("logging_finalize", END)
-    
-    # Compile with checkpointing
-    compiled = graph.compile()
-    
-    return compiled
+class TradingState(BaseModel):
+    """Complete trading state for the multi-agent pipeline v3."""
+
+    # Identity & tracing
+    trace_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    symbol: str = "BTCUSDT"
+
+    # Market data (from NATS candle_close)
+    candle: dict[str, Any] = Field(default_factory=dict)
+    candle_history: List[dict[str, Any]] = Field(default_factory=list)
+
+    # Computed features
+    features: dict[str, Any] = Field(default_factory=dict)
+
+    # Scalping fast-path result
+    scalping_confidence: int = 0  # 0-100, from ScalpingEngine
+    scalping_action: str = "HOLD"  # BUY, SELL, HOLD
+    scalping_decision: dict[str, Any] = Field(default_factory=dict)
+
+    # VLM output
+    vlm_output: dict[str, Any] = Field(default_factory=dict)
+
+    # RAG context
+    rag_context: dict[str, Any] = Field(default_factory=dict)
+
+    # Strategy / swarm decision
+    strategy_signal: dict[str, Any] = Field(default_factory=dict)
+
+    # Risk gate result
+    risk_result: dict[str, Any] = Field(default_factory=dict)
+
+    # Execution result
+    execution: dict[str, Any] = Field(default_factory=dict)
+
+    # Pipeline metadata
+    stage: str = PipelineStage.INITIALIZED.value
+    errors: List[str] = Field(default_factory=list)
+    latency_ms: dict[str, float] = Field(default_factory=dict)
+
+    # Pipeline control
+    skip_vlm: bool = False
+    skip_rag: bool = False
+    skip_execution: bool = False
+    use_scalping_fast_path: bool = True  # Enable/disable fast path
+    scalping_confidence_threshold: int = SCALPING_CONFIDENCE_THRESHOLD  # 0-100, override per-pipeline
+
+    # Shared context for events (ACP v2)
+    pipeline_context: dict[str, Any] = Field(default_factory=dict)
+
+    class Config:
+        arbitrary_types_allowed = True
 
 
-# ============================================================================
-# NODE IMPLEMENTATIONS
-# ============================================================================
+
+
+# ── Node Implementations ────────────────────────────────────
 
 async def data_ingest_node(state: TradingState) -> TradingState:
-    """Ingest candle data from NATS/WebSocket."""
-    start = time.perf_counter()
-    
+    """Validate and ingest candle data from NATS."""
+    t0 = time.perf_counter()
+
     try:
-        # Validate candle data
         candle = state.candle
-        required_fields = ["timestamp", "open", "high", "low", "close", "volume", "symbol"]
-        for field in required_fields:
-            if field not in candle:
-                raise ValueError(f"Missing required candle field: {field}")
-        
-        # Validate price consistency
-        if not (candle["low"] <= candle["close"] <= candle["high"]):
-            raise ValueError("Invalid candle: close outside high/low range")
-        if not (candle["low"] <= candle["open"] <= candle["high"]):
-            raise ValueError("Invalid candle: open outside high/low range")
-        if candle["volume"] < 0:
-            raise ValueError("Negative volume")
-        
-        state.candle = candle
-        state.pipeline_stage = PipelineStage.DATA_INGESTED
-        logger.debug(f"[{state.trace_id}] Data ingested: {candle['symbol']} @ {candle['close']}")
-        
+        if not candle:
+            raise ValueError("Empty candle data")
+
+        required = ["open", "high", "low", "close", "volume"]
+        for f in required:
+            if f not in candle:
+                raise ValueError(f"Missing field: {f}")
+
+        if candle["low"] <= candle["close"] <= candle["high"]:
+            pass  # valid
+        else:
+            raise ValueError("Invalid candle: close outside range")
+
+        state.symbol = candle.get("symbol", state.symbol)
+        state.stage = PipelineStage.DATA_INGESTED.value
+        logger.debug(f"[{state.trace_id}] Data ingested: {state.symbol} @ {candle['close']}")
+
     except Exception as e:
-        state.errors.append(f"data_ingest: {str(e)}")
-        logger.error(f"[{state.trace_id}] Data ingest failed: {e}")
+        state.errors.append(f"data_ingest: {e}")
         raise
-    
     finally:
-        state.latency_ms["data_ingest"] = (time.perf_counter() - start) * 1000
-    
+        state.latency_ms["data_ingest"] = (time.perf_counter() - t0) * 1000
+
     return state
 
 
 async def feature_engine_node(state: TradingState) -> TradingState:
-    """Compute technical indicators and features from candle history."""
-    start = time.perf_counter()
-    
+    """Compute technical indicators from candle history."""
+    t0 = time.perf_counter()
+
     try:
-        # Get candle history from state or external source
-        # This would typically fetch from a feature store or compute incrementally
-        features = await compute_features(state.candle, state.features)
-        
-        state.features = features
-        state.pipeline_stage = PipelineStage.FEATURES_COMPUTED
-        logger.debug(f"[{state.trace_id}] Features computed: {len(features)} indicators")
-        
+        # Import here to avoid circular imports
+        from .feature_engine import FeatureEngine
+
+        fe = FeatureEngine()
+        candle = state.candle
+
+        # Build a minimal DataFrame from recent candles
+        history = state.candle_history[-200:] if state.candle_history else [candle]
+        import pandas as pd
+        df = pd.DataFrame(history)
+
+        if len(df) >= 20:
+            df = fe.compute_all(df)
+            latest = df.iloc[-1].to_dict()
+
+            state.features = {
+                "rsi": float(latest.get("rsi_14", 50)),
+                "macd": float(latest.get("macd", 0)),
+                "macd_hist": float(latest.get("macd_hist", 0)),
+                "atr_14": float(latest.get("atr_14", 0)),
+                "bb_position": float(latest.get("bb_position", 0.5)),
+                "volume_ratio": float(latest.get("vol_ratio", 1.0)),
+                "ema_5_cross_20": int(latest.get("ema_5_cross_20", 0)),
+                "ema_20_cross_50": int(latest.get("ema_20_cross_50", 0)),
+                "price_vs_ema200": float(latest.get("price_vs_ema200", 0)),
+                "trend_strength": float(abs(latest.get("macd_hist", 0)) * 100),
+            }
+
+            # Regime detection
+            state.features["regime"] = fe.detect_regime(df)
+        else:
+            # Minimal features from single candle
+            state.features = {
+                "rsi": 50.0, "macd": 0.0, "macd_hist": 0.0,
+                "atr_14": candle.get("high", 0) - candle.get("low", 0),
+                "bb_position": 0.5, "volume_ratio": 1.0,
+                "ema_5_cross_20": 0, "ema_20_cross_50": 0,
+                "price_vs_ema200": 0, "trend_strength": 0,
+                "regime": "unknown",
+            }
+
+        state.stage = PipelineStage.FEATURES_COMPUTED.value
+
     except Exception as e:
-        state.errors.append(f"feature_engine: {str(e)}")
+        state.errors.append(f"feature_engine: {e}")
         logger.error(f"[{state.trace_id}] Feature engine failed: {e}")
-        raise
-    
+        # Don't raise — features are enhancement, not blocker
+        state.features = {"rsi": 50.0, "regime": "unknown"}
     finally:
-        state.latency_ms["feature_engine"] = (time.perf_counter() - start) * 1000
-    
+        state.latency_ms["feature_engine"] = (time.perf_counter() - t0) * 1000
+
     return state
 
 
-async def compute_features(current_candle: dict, history: Dict) -> Dict[str, Any]:
-    """Compute technical indicators from candle data."""
-    # This is a simplified version - in production would use incremental computation
-    return {
-        "rsi": 50.0,  # placeholder
-        "macd": 0.0,
-        "bb_upper": 0.0,
-        "bb_lower": 0.0,
-        "atr": 0.0,
-        "volume_ratio": 1.0,
-        "vwap": 0.0,
-        "trend_strength": 0.0,
-        "support_levels": [],
-        "resistance_levels": [],
-    }
+async def scalping_node(state: TradingState) -> TradingState:
+    """Scalping fast-path: CPU-only decision in <5ms. Skips VLM/RAG/swarm if confident."""
+    t0 = time.perf_counter()
+
+    if not state.use_scalping_fast_path:
+        state.scalping_confidence = 0
+        state.scalping_action = "HOLD"
+        return state
+
+    try:
+        from .scalping_engine import ScalpingEngine
+
+        engine = ScalpingEngine()
+
+        # Use last 5 candles for scalping window
+        last_5 = state.candle_history[-5:] if state.candle_history else [state.candle]
+
+        # Derive volatility and trend from features if available
+        atr = state.features.get("atr_14", 0)
+        price = state.candle.get("close", 0)
+        if price > 0 and atr > 0:
+            vol_pct = atr / price
+            if vol_pct > 0.02:
+                volatility = "high"
+            elif vol_pct < 0.005:
+                volatility = "low"
+            else:
+                volatility = "medium"
+        else:
+            volatility = "medium"
+
+        # Derive trend from features
+        ema_cross = state.features.get("ema_5_cross_20", 0)
+        if ema_cross > 0:
+            trend = "bullish"
+        elif ema_cross < 0:
+            trend = "bearish"
+        else:
+            trend = "neutral"
+
+        decision = engine.decide(
+            current_price=state.candle.get("close", 0),
+            last_5_candles=last_5,
+            volatility=volatility,
+            trend=trend,
+        )
+
+        state.scalping_decision = decision.to_dict()
+        state.scalping_confidence = decision.confidence
+        state.scalping_action = decision.action
+        state.latency_ms["scalping"] = (time.perf_counter() - t0) * 1000
+
+        # Set strategy_signal here (not in routing function) for fast path
+        if decision.confidence > state.scalping_confidence_threshold and decision.action in ("BUY", "SELL"):
+            state.strategy_signal = {
+                "direction": "long" if decision.action == "BUY" else "short",
+                "confidence": decision.confidence / 100.0,
+                "leverage": 3,
+                "reasoning": decision.reason,
+                "source": "scalping_fast_path",
+                "size_pct": decision.size_pct,
+            }
+
+        logger.info(
+            f"[{state.trace_id}] Scalping: {decision.action} conf={decision.confidence} "
+            f"size={decision.size_pct}% reason={decision.reason} "
+            f"({state.latency_ms['scalping']:.1f}ms)"
+        )
+
+    except Exception as e:
+        state.errors.append(f"scalping: {e}")
+        logger.warning(f"[{state.trace_id}] Scalping engine failed: {e}")
+        state.scalping_confidence = 0
+        state.scalping_action = "HOLD"
+        state.latency_ms["scalping"] = (time.perf_counter() - t0) * 1000
+
+    return state
+
+
+def _route_after_scalping(state: TradingState) -> str:
+    """Route based on scalping confidence.
+
+    If confidence > threshold (default 80%) and action is BUY/SELL → fast path to risk_gate.
+    Otherwise → heavy path through VLM/RAG/swarm.
+    """
+    conf = state.scalping_confidence
+    action = state.scalping_action
+
+    if conf > state.scalping_confidence_threshold and action in ("BUY", "SELL"):
+        logger.info(f"[{state.trace_id}] FAST PATH: scalping conf={conf}% → risk_gate")
+        return "risk_gate"
+
+    logger.info(f"[{state.trace_id}] HEAVY PATH: scalping conf={conf}% → VLM+RAG+swarm")
+    return "vlm_agent"
 
 
 async def vlm_agent_node(state: TradingState) -> TradingState:
-    """VLM Agent: Analyze chart screenshot for patterns."""
-    start = time.perf_counter()
-    
+    """VLM Agent: analyze chart for patterns (GPU inference)."""
+    t0 = time.perf_counter()
+
     if state.skip_vlm:
-        logger.debug(f"[{state.trace_id}] VLM skipped")
+        state.vlm_output = {"trend": "skipped", "confidence": 0}
         return state
-    
+
     try:
-        # In production: capture chart screenshot, send to VLM
-        vlm_result = await analyze_chart_screenshot(state.candle, state.features)
-        
-        state.vlm_output = vlm_result
-        state.pipeline_stage = PipelineStage.VLM_COMPLETE
-        logger.debug(f"[{state.trace_id}] VLM analysis complete: {vlm_result.get('trend', 'unknown')}")
-        
+        from .vlm_agent import VLMAgent
+
+        vlm = VLMAgent()
+        candles = state.candle_history[-60:] if state.candle_history else [state.candle]
+        result = await vlm.analyze(
+            symbol=state.symbol,
+            candles=candles,
+            indicators=state.features,
+            timeframe=state.candle.get("interval", "1m"),
+        )
+        state.vlm_output = result.to_dict()
+        state.stage = PipelineStage.VLM_COMPLETE.value
+        logger.debug(f"[{state.trace_id}] VLM: {result.trend} (conf={result.confidence:.2f})")
+
     except Exception as e:
-        state.errors.append(f"vlm_agent: {str(e)}")
-        logger.error(f"[{state.trace_id}] VLM agent failed: {e}")
-        # Don't raise - VLM is optional enhancement
-        state.vlm_output = {"error": str(e), "trend": "unknown"}
-    
+        state.errors.append(f"vlm_agent: {e}")
+        logger.warning(f"[{state.trace_id}] VLM failed (non-blocking): {e}")
+        state.vlm_output = {"trend": "unknown", "confidence": 0, "error": str(e)}
     finally:
-        state.latency_ms["vlm_agent"] = (time.perf_counter() - start) * 1000
-    
+        state.latency_ms["vlm_agent"] = (time.perf_counter() - t0) * 1000
+
     return state
-
-
-async def analyze_chart_screenshot(candle: dict, features: dict) -> Dict[str, Any]:
-    """Analyze chart screenshot using VLM (Moondream/LLaVA)."""
-    # In production: capture chart image, send to VLM endpoint
-    # For now, return structured analysis based on features
-    return {
-        "trend": "bullish" if features.get("trend_strength", 0) > 0.5 else "bearish",
-        "support_levels": [],
-        "resistance_levels": [],
-        "patterns": [],
-        "volume_profile": "normal",
-        "breakout_zones": [],
-        "confidence": 0.7,
-    }
 
 
 async def rag_agent_node(state: TradingState) -> TradingState:
-    """RAG Agent: Retrieve relevant knowledge from vector store."""
-    start = time.perf_counter()
-    
+    """RAG Agent: retrieve similar patterns from vector memory."""
+    t0 = time.perf_counter()
+
     if state.skip_rag:
-        logger.debug(f"[{state.trace_id}] RAG skipped")
+        state.rag_context = {"documents": [], "source": "skipped"}
         return state
-    
+
     try:
-        # Query vector store for similar market conditions
-        query = build_rag_query(state.candle, state.features, state.vlm_output)
-        context = await retrieve_knowledge(query)
-        
-        state.rag_context = context
-        state.pipeline_stage = PipelineStage.RAG_COMPLETE
-        logger.debug(f"[{state.trace_id}] RAG context retrieved: {len(context.get('documents', []))} docs")
-        
+        from .rag_agent import RAGAgent
+
+        rag = RAGAgent()
+        result = await rag.retrieve(
+            symbol=state.symbol,
+            regime=state.features.get("regime", "unknown"),
+            rsi=state.features.get("rsi", 50),
+            macd=state.features.get("macd", 0),
+            volume_ratio=state.features.get("volume_ratio", 1.0),
+            price=state.candle.get("close", 0),
+            vlm_trend=state.vlm_output.get("trend", ""),
+        )
+        state.rag_context = result.to_dict()
+        state.stage = PipelineStage.RAG_COMPLETE.value
+        logger.debug(
+            f"[{state.trace_id}] RAG: {len(result.documents)} docs "
+            f"({result.source}, {result.query_time_ms:.0f}ms)"
+        )
+
     except Exception as e:
-        state.errors.append(f"rag_agent: {str(e)}")
-        logger.error(f"[{state.trace_id}] RAG agent failed: {e}")
-        # Don't raise - RAG is enhancement
-        state.rag_context = {"error": str(e)}
-    
+        state.errors.append(f"rag_agent: {e}")
+        logger.warning(f"[{state.trace_id}] RAG failed (non-blocking): {e}")
+        state.rag_context = {"documents": [], "source": "error", "error": str(e)}
     finally:
-        state.latency_ms["rag_agent"] = (time.perf_counter() - start) * 1000
-    
+        state.latency_ms["rag_agent"] = (time.perf_counter() - t0) * 1000
+
     return state
 
 
-async def build_rag_query(candle: dict, features: dict, vlm_output: dict) -> str:
-    """Build RAG query from current market state."""
-    return f"""
-    Market state: {candle['symbol']} @ {candle['close']}
-    Trend: {features.get('trend_strength', 0)}
-    RSI: {features.get('rsi', 50)}
-    MACD: {features.get('macd', 0)}
-    Volume ratio: {features.get('volume_ratio', 1.0)}
-    VLM trend: {vlm_output.get('trend', 'unknown')}
-    VLM patterns: {vlm_output.get('patterns', [])}
+async def swarm_strategy_node(state: TradingState) -> TradingState:
+    """Strategy Agent: AutoGen GroupChat debate → fallback to swarm → fallback to features.
+
+    Priority:
+      1. AutoGen multi-agent debate (agents.md spec) — 5 agents + GroupChat
+      2. Swarm debate system (original) — if AutoGen fails
+      3. Feature-based signal — last resort
     """
+    t0 = time.perf_counter()
 
-
-async def retrieve_knowledge(query: str) -> Dict[str, Any]:
-    """Retrieve relevant knowledge from vector store (Qdrant)."""
-    # In production: query Qdrant vector store
-    # For now, return mock context
-    return {
-        "documents": [
-            "Similar bullish breakout pattern with volume confirmation yielded 2.3% return over 4 hours",
-            "Similar RSI oversold bounce pattern with MACD crossover had 68% win rate",
-        ],
-        "metadata": [
-            {"pattern": "breakout", "return": 0.023, "duration_hours": 4},
-            {"pattern": "rsi_bounce", "return": 0.015, "duration_hours": 2},
-        ],
-        "similarity_scores": [0.92, 0.87],
-    }
-
-
-async def autogen_team_node(state: TradingState) -> TradingState:
-    """AutoGen Team: Multi-agent debate for signal generation."""
-    start = time.perf_counter()
-    
-    if state.skip_autogen:
-        logger.debug(f"[{state.trace_id}] AutoGen skipped")
-        return state
-    
+    # ── PATH 1: AutoGen Multi-Agent Debate ──────────────────────
     try:
-        # In production: run AutoGen team debate
-        reasoning = await run_autogen_debate(
-            state.candle,
-            state.features,
-            state.vlm_output,
-            state.rag_context,
-        )
-        
-        state.autogen_reasoning = reasoning
-        state.pipeline_stage = PipelineStage.AUTOGEN_COMPLETE
-        logger.debug(f"[{state.trace_id}] AutoGen debate complete: {reasoning.get('consensus', 'no consensus')}")
-        
-    except Exception as e:
-        state.errors.append(f"autogen_team: {str(e)}")
-        logger.error(f"[{state.trace_id}] AutoGen team failed: {e}")
-        # Fallback to simple signal generation
-        state.autogen_reasoning = {
-            "consensus": "fallback",
-            "reasoning": "AutoGen failed, using fallback",
-            "agents": {}
+        from .autogen_team import TradingTeam, autogen_to_langgraph
+        from .model_loader import ModelLoader, load_agent_models
+
+        # Build candle data for AutoGen team
+        candle_data = {
+            "symbol": state.symbol,
+            "price": state.candle.get("close", 0),
+            "ohlcv": {
+                "open": state.candle.get("open", 0),
+                "high": state.candle.get("high", 0),
+                "low": state.candle.get("low", 0),
+                "close": state.candle.get("close", 0),
+                "volume": state.candle.get("volume", 0),
+            },
+            "indicators": {
+                "rsi_14": state.features.get("rsi", 50),
+                "macd": state.features.get("macd", {}),
+                "atr_14": state.features.get("atr_14", 0),
+                "ema_9": state.features.get("ema_9", 0),
+                "ema_21": state.features.get("ema_21", 0),
+                "bb_width": state.features.get("bb_width", 0),
+            },
+            "regime": state.features.get("regime", "unknown"),
+            "volume_ratio": state.features.get("volume_ratio", 1.0),
         }
-    
-    finally:
-        state.latency_ms["autogen_team"] = (time.perf_counter() - start) * 1000
-    
-    return state
 
+        vlm_output = state.vlm_output if state.vlm_output else None
+        market_context = {
+            "rag_documents": state.rag_context.get("documents", []),
+            "rag_pattern_stats": state.rag_context.get("pattern_stats", {}),
+        } if state.rag_context else None
 
-async def run_autogen_debate(candle: dict, features: dict, vlm: dict, rag: dict) -> Dict[str, Any]:
-    """Run AutoGen multi-agent debate."""
-    # In production: use AutoGen framework with multiple agents
-    # For now, return structured reasoning
-    return {
-        "consensus": "BUY",
-        "confidence": 0.75,
-        "reasoning": "Bullish breakout with volume confirmation, supported by RAG historical patterns",
-        "agents": {
-            "pattern_agent": {"signal": "BUY", "confidence": 0.8, "reason": "Bullish flag pattern detected"},
-            "quant_agent": {"signal": "BUY", "confidence": 0.7, "reason": "Strong momentum, positive MACD"},
-            "macro_agent": {"signal": "NEUTRAL", "confidence": 0.6, "reason": "Macro neutral, no major news"},
-            "risk_agent": {"signal": "CAUTIOUS", "confidence": 0.8, "reason": "High volatility, size position carefully"},
-        },
-        "consensus": "BUY",
-        "confidence": 0.72,
-    }
+        # Run AutoGen trading cycle (synchronous — runs in thread pool)
+        import asyncio
+        loop = asyncio.get_event_loop()
+        team = TradingTeam()
+        autogen_result = await loop.run_in_executor(
+            None,
+            lambda: team.run_trading_cycle(
+                candle_data=candle_data,
+                vlm_output=vlm_output,
+                market_context=market_context,
+            ),
+        )
 
+        # Convert to LangGraph-compatible signal
+        langgraph_signal = autogen_to_langgraph(autogen_result)
 
-async def signal_generator_node(state: TradingState) -> TradingState:
-    """Generate final trading signal from all inputs."""
-    start = time.perf_counter()
-    
-    try:
-        signal = generate_signal(state)
-        state.signal = signal
-        state.pipeline_stage = PipelineStage.SIGNAL_GENERATED
-        logger.info(f"[{state.trace_id}] Signal: {signal['action']} conf={signal['confidence']:.2f}")
-        
-    except Exception as e:
-        state.errors.append(f"signal_generator: {str(e)}")
-        logger.error(f"[{state.trace_id}] Signal generator failed: {e}")
-        raise
-    
-    finally:
-        state.latency_ms["signal_generator"] = (time.perf_counter() - start) * 1000
-    
-    return state
+        # Map to existing strategy_signal format
+        action = langgraph_signal.get("action", "HOLD")
+        state.strategy_signal = {
+            "direction": action.lower(),
+            "confidence": langgraph_signal.get("confidence", 0.0),
+            "leverage": 1.0,
+            "reasoning": "; ".join(langgraph_signal.get("entry_reason", [])),
+            "risk_notes": langgraph_signal.get("risk_notes", ""),
+            "source": "autogen_debate",
+        }
 
+        state.stage = PipelineStage.STRATEGY_COMPLETE.value
+        logger.info(
+            f"[{state.trace_id}] AutoGen Strategy: {action} "
+            f"conf={langgraph_signal.get('confidence', 0):.2f}"
+        )
 
-def generate_signal(state: TradingState) -> Dict[str, Any]:
-    """Generate final trading signal from all agent outputs."""
-    # Weighted consensus from all agents
-    autogen = state.autogen_reasoning
-    vlm = state.vlm_output
-    rag = state.rag_context
-    features = state.features
-    
-    # Simple weighted voting (in production: more sophisticated)
-    agent_signals = {
-        "pattern": autogen.get("agents", {}).get("pattern_agent", {}).get("signal", "HOLD"),
-        "quant": autogen.get("agents", {}).get("quant_agent", {}).get("signal", "HOLD"),
-        "macro": autogen.get("agents", {}).get("macro_agent", {}).get("signal", "HOLD"),
-        "risk": autogen.get("agents", {}).get("risk_agent", {}).get("signal", "HOLD"),
-    }
-    
-    # Weighted consensus
-    weights = {"pattern": 0.3, "quant": 0.3, "macro": 0.2, "risk": 0.2}
-    
-    buy_weight = sum(w for agent, sig in agent_signals.items() if sig == "BUY" for k,w in weights.items() if k==agent)
-    sell_weight = sum(w for agent, sig in agent_signals.items() if sig == "SELL" for k,w in weights.items() if k==agent)
-    
-    if buy_weight > sell_weight:
-        action = "BUY"
-        confidence = buy_weight
-    elif sell_weight > buy_weight:
-        action = "SELL"
-        confidence = sell_weight
-    else:
-        action = "HOLD"
-        confidence = 0.5
-    
-    # Risk-adjusted sizing
-    base_size = 0.02  # 2% of equity
-    risk_mult = min(1.0, state.features.get("atr", 0.02) / 0.015)  # ATR-based sizing
-    
-    return {
-        "action": action,
-        "confidence": round(confidence, 2),
-        "size_pct": round(0.02 * risk_mult, 4),
-        "entry_price": None,  # filled at execution
-        "stop_loss": None,    # set by risk engine
-        "take_profit": None,  # set by risk engine
-        "reasoning": "Multi-agent consensus",
-        "metadata": {
-            "agent_signals": agent_signals,
-            "consensus_confidence": confidence,
-            "trace_id": None,  # filled by caller
-        },
-    }
+    except Exception as autogen_err:
+        logger.warning(f"AutoGen debate unavailable ({autogen_err}), trying swarm fallback")
 
+        # ── PATH 2: Swarm Debate System ─────────────────────────
+        try:
+            from .inference_integration import InferenceIntegration
+            from .swarm.debate_system import AgentSwarm
 
-async def risk_engine_node(state: TradingState) -> TradingState:
-    """Risk Engine: Hard gate for signal validation."""
-    start = time.perf_counter()
-    
-    try:
-        risk_result = validate_signal(state.signal, state.features)
-        
-        state.risk_result = risk_result
-        state.pipeline_stage = PipelineStage.RISK_PASSED
-        
-        if not risk_result["allowed"]:
-            logger.warning(f"[{state.trace_id}] Signal rejected: {risk_result['reason']}")
-            # Could stop pipeline here or let execution handle it
-        
-        logger.debug(f"[{state.trace_id}] Risk check: {'PASSED' if risk_result['allowed'] else 'REJECTED'}")
-        
-    except Exception as e:
-        state.errors.append(f"risk_engine: {str(e)}")
-        logger.error(f"[{state.trace_id}] Risk engine failed: {e}")
-        raise
-    
-    finally:
-        state.latency_ms["risk_engine"] = (time.perf_counter() - start) * 1000
-    
-    return state
-
-
-def validate_signal(signal: Dict, features: Dict) -> Dict[str, Any]:
-    """Hard risk validation rules."""
-    # Hard limits
-    max_position_pct = 0.05  # 5% max per trade
-    max_daily_loss = 0.03    # 3% daily loss limit
-    max_position_size = 0.1  # 10% max position
-    
-    # Get current portfolio state (from state/portfolio)
-    # For now, use defaults
-    current_daily_pnl = 0.0
-    current_positions = 0
-    current_exposure = 0.0
-    
-    checks = []
-    
-    # Confidence threshold
-    if signal["confidence"] < 0.6:
-        return {"allowed": False, "reason": "Confidence below 0.6 threshold"}
-    checks.append(("confidence", True))
-    
-    # Position size limit
-    if signal.get("size_pct", 0) > 0.05:
-        return {"allowed": False, "reason": "Position size exceeds 5% limit"}
-    checks.append(("size", True))
-    
-    # Daily loss limit
-    # if current_daily_pnl < -0.03: return {"allowed": False, "reason": "Daily loss limit exceeded"}
-    checks.append(("daily_loss", True))
-    
-    # Max concurrent positions
-    # if current_positions >= 5: return {"allowed": False, "reason": "Max positions reached"}
-    checks.append(("positions", True))
-    
-    # Volatility filter
-    atr = 0.02  # placeholder
-    if atr > 0.05:  # High volatility
-        return {"allowed": False, "reason": "ATR exceeds 5% threshold"}
-    checks.append(("volatility", True))
-    
-    # Correlation check (avoid correlated positions)
-    # if has_correlated_position: return {"allowed": False, "reason": "Correlated position exists"}
-    checks.append(("correlation", True))
-    
-    all_passed = all(check[1] for check in checks)
-    
-    return {
-        "allowed": all_passed,
-        "reason": "All checks passed" if all_passed else "Risk checks failed",
-        "checks": {name: passed for name, passed in checks},
-        "max_position_size": 0.05,
-    }
-
-
-async def execution_layer_node(state: TradingState) -> TradingState:
-    """Execution Layer: Place order via broker."""
-    start = time.perf_counter()
-    
-    try:
-        if not state.risk_result.get("allowed", False):
-            state.execution = {
-                "status": "REJECTED",
-                "reason": "Risk check failed",
-                "order_id": None,
+            context = {
+                "symbol": state.symbol,
+                "price": state.candle.get("close", 0),
+                "candle": state.candle,
+                "df": None,
+                "regime": state.features.get("regime", "unknown"),
+                "rsi": state.features.get("rsi", 50),
+                "macd": state.features.get("macd", 0),
+                "volume_ratio": state.features.get("volume_ratio", 1.0),
+                "atr": state.features.get("atr_14", 0),
+                "vlm_trend": state.vlm_output.get("trend", "unknown"),
+                "rag_documents": state.rag_context.get("documents", []),
+                "rag_pattern_stats": state.rag_context.get("pattern_stats", {}),
             }
-            return state
-        
-        signal = state.signal
-        
-        # Place order via broker
-        order_result = await place_order(
-            symbol=state.candle["symbol"],
-            side=state.signal["action"],
-            size_pct=state.signal["size_pct"],
-            order_type="MARKET",  # or LIMIT with limit_price
-        )
-        
-        state.execution = {
-            "status": "FILLED" if order_result.get("filled") else "PENDING",
-            "order_id": order_result.get("order_id"),
-            "filled_qty": order_result.get("filled_qty", 0),
-            "avg_price": order_result.get("avg_price", 0),
-            "timestamp": datetime.utcnow().isoformat(),
-        }
-        
-        state.pipeline_stage = PipelineStage.EXECUTED
-        logger.info(f"[{state.trace_id}] Order executed: {state.execution}")
-        
+
+            nim = InferenceIntegration()
+            swarm = AgentSwarm(nim)
+            decision = await asyncio.wait_for(
+                swarm.run_swarm_debate(context),
+                timeout=60.0,
+            )
+
+            state.strategy_signal = {
+                "direction": decision.direction,
+                "confidence": decision.confidence,
+                "leverage": decision.leverage,
+                "reasoning": decision.reasoning[:500],
+                "vote_breakdown": decision.vote_breakdown,
+                "dissents": [
+                    {"agent": d["agent"], "signal": d["signal"]}
+                    for d in decision.dissents
+                ],
+                "source": "swarm_debate",
+            }
+            state.stage = PipelineStage.STRATEGY_COMPLETE.value
+            logger.info(
+                f"[{state.trace_id}] Swarm Strategy: {state.strategy_signal['direction']} "
+                f"conf={state.strategy_signal['confidence']:.2f}"
+            )
+
+        except Exception as swarm_err:
+            # ── PATH 3: Feature-based fallback ────────────────────
+            logger.warning(f"Swarm debate unavailable ({swarm_err}), using feature-based signal")
+            state.strategy_signal = _fallback_signal(state.features, state.vlm_output, state.rag_context)
+            state.stage = PipelineStage.STRATEGY_COMPLETE.value
+
     except Exception as e:
-        state.errors.append(f"execution_layer: {str(e)}")
-        logger.error(f"[{state.trace_id}] Execution failed: {e}")
-        state.execution = {"status": "ERROR", "reason": str(e)}
-    
+        state.errors.append(f"strategy: {e}")
+        logger.error(f"[{state.trace_id}] Strategy failed: {e}")
+        state.strategy_signal = {"direction": "hold", "confidence": 0.0, "error": str(e)}
     finally:
-        state.latency_ms["execution"] = (time.perf_counter() - start) * 1000
-    
+        state.latency_ms["strategy"] = (time.perf_counter() - t0) * 1000
+
     return state
 
 
-async def place_order(
-    symbol: str,
-    side: str,
-    size_pct: float,
-    order_type: str = "MARKET",
-) -> Dict[str, Any]:
-    """Place order via broker (Binance/Paper)."""
-    # In production: call broker API
-    # For now, simulate
-    await asyncio.sleep(0.05)  # simulate latency
-    
+def _fallback_signal(features: dict, vlm: dict, rag: dict) -> dict:
+    """Simple feature-based signal when swarm is unavailable."""
+    rsi = features.get("rsi", 50)
+    macd_hist = features.get("macd_hist", 0)
+    vol_ratio = features.get("volume_ratio", 1.0)
+    vlm_trend = vlm.get("trend", "neutral")
+
+    score = 0.0
+    reasons = []
+
+    # RSI
+    if rsi < 30:
+        score += 0.3
+        reasons.append(f"RSI oversold ({rsi:.0f})")
+    elif rsi > 70:
+        score -= 0.3
+        reasons.append(f"RSI overbought ({rsi:.0f})")
+
+    # MACD
+    if macd_hist > 0:
+        score += 0.2
+        reasons.append("MACD bullish")
+    elif macd_hist < 0:
+        score -= 0.2
+        reasons.append("MACD bearish")
+
+    # Volume
+    if vol_ratio > 1.5:
+        score += 0.1
+        reasons.append(f"Volume spike ({vol_ratio:.1f}x)")
+
+    # VLM
+    if vlm_trend == "bullish":
+        score += 0.2
+        reasons.append("VLM bullish")
+    elif vlm_trend == "bearish":
+        score -= 0.2
+        reasons.append("VLM bearish")
+
+    # RAG pattern stats
+    rag_stats = rag.get("pattern_stats", {})
+    if rag_stats.get("sample_size", 0) > 3:
+        adj = rag_stats.get("confidence_adjustment", 0)
+        score += adj
+        reasons.append(f"RAG adj={adj:+.2f}")
+
+    if score > 0.3:
+        direction = "long"
+    elif score < -0.3:
+        direction = "short"
+    else:
+        direction = "hold"
+
     return {
-        "order_id": str(uuid.uuid4()),
-        "filled": True,
-        "filled_qty": 0.01,  # placeholder
-        "avg_price": 50000.0,  # placeholder
+        "direction": direction,
+        "confidence": min(abs(score), 1.0),
+        "leverage": 3 if direction != "hold" else 1,
+        "reasoning": "; ".join(reasons) if reasons else "No clear signal",
+        "source": "fallback_features",
     }
 
 
-async def logging_finalize_node(state: TradingState) -> TradingState:
-    """Finalize pipeline: log results, update metrics."""
-    start = time.perf_counter()
-    
+async def risk_gate_node(state: TradingState) -> TradingState:
+    """Risk Engine: hard gate for signal validation."""
+    t0 = time.perf_counter()
+
+    try:
+        from .risk.risk_engine import RiskEngine
+
+        signal = state.strategy_signal
+        if signal.get("direction", "hold") == "hold":
+            state.risk_result = {
+                "allowed": False,
+                "reason": "HOLD signal — no trade",
+                "severity": "soft",
+            }
+            state.stage = PipelineStage.RISK_REJECTED.value
+            return state
+
+        risk = RiskEngine()
+
+        # Build portfolio state (would come from PaperAccount in production)
+        portfolio = {
+            "balance": 1000.0,
+            "drawdown": 0.0,
+            "daily_pnl": 0.0,
+            "consecutive_losses": 0,
+            "open_positions": 0,
+        }
+
+        proposed_trade = {
+            "direction": signal.get("direction", "hold"),
+            "confidence": signal.get("confidence", 0),
+            "leverage": signal.get("leverage", 1),
+            "notional": portfolio["balance"] * 0.02,
+            "volatility_percentile": 50,
+        }
+
+        result = risk.check_all_gates(proposed_trade, portfolio)
+
+        state.risk_result = {
+            "allowed": result.approved,
+            "reason": result.reason,
+            "severity": result.severity,
+            "size_multiplier": result.size_multiplier,
+            "max_leverage": result.max_leverage,
+        }
+
+        if result.approved:
+            state.stage = PipelineStage.RISK_PASSED.value
+        else:
+            state.stage = PipelineStage.RISK_REJECTED.value
+
+        logger.info(
+            f"[{state.trace_id}] Risk: {'PASSED' if result.approved else 'REJECTED'} — {result.reason}"
+        )
+
+    except Exception as e:
+        state.errors.append(f"risk_gate: {e}")
+        logger.error(f"[{state.trace_id}] Risk gate failed: {e}")
+        state.risk_result = {"allowed": False, "reason": f"Risk error: {e}", "severity": "hard"}
+        state.stage = PipelineStage.RISK_REJECTED.value
+    finally:
+        state.latency_ms["risk_gate"] = (time.perf_counter() - t0) * 1000
+
+    return state
+
+
+async def execution_node(state: TradingState) -> TradingState:
+    """Execution Layer: place order via broker."""
+    t0 = time.perf_counter()
+
+    if state.skip_execution or not state.risk_result.get("allowed", False):
+        state.execution = {"status": "skipped", "reason": "Risk rejected or execution skipped"}
+        return state
+
+    try:
+        signal = state.strategy_signal
+        risk = state.risk_result
+
+        # Determine order details
+        direction = signal.get("direction", "hold")
+        side = "buy" if direction == "long" else "sell"
+        size_mult = risk.get("size_multiplier", 1.0)
+        base_size = 0.02  # 2% of balance
+        final_size = base_size * size_mult
+
+        state.execution = {
+            "status": "simulated",
+            "symbol": state.symbol,
+            "side": side,
+            "size_pct": round(final_size, 4),
+            "leverage": risk.get("max_leverage", 3),
+            "price": state.candle.get("close", 0),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+        state.stage = PipelineStage.EXECUTED.value
+        logger.info(
+            f"[{state.trace_id}] Execution: {side} {state.symbol} "
+            f"size={final_size:.4f} lev={risk.get('max_leverage', 3)}x"
+        )
+
+    except Exception as e:
+        state.errors.append(f"execution: {e}")
+        logger.error(f"[{state.trace_id}] Execution failed: {e}")
+        state.execution = {"status": "error", "reason": str(e)}
+    finally:
+        state.latency_ms["execution"] = (time.perf_counter() - t0) * 1000
+
+    return state
+
+
+async def log_and_publish_node(state: TradingState) -> TradingState:
+    """Log results and publish events to NATS."""
+    t0 = time.perf_counter()
+
     try:
         total_latency = sum(state.latency_ms.values())
-        
-        # Log complete pipeline result
+
         log_data = {
             "trace_id": state.trace_id,
-            "timestamp": datetime.utcnow().isoformat(),
-            "symbol": state.candle.get("symbol"),
+            "symbol": state.symbol,
+            "stage": state.stage,
             "candle_close": state.candle.get("close"),
-            "signal": state.signal,
-            "risk_result": state.risk_result,
+            "strategy": state.strategy_signal,
+            "risk": state.risk_result,
             "execution": state.execution,
             "latency_ms": state.latency_ms,
-            "total_latency_ms": round(sum(state.latency_ms.values()), 2),
+            "total_latency_ms": round(total_latency, 2),
             "errors": state.errors,
-            "pipeline_stage": state.pipeline_stage,
         }
-        
-        logger.info(f"[{state.trace_id}] Pipeline complete: {log_data}")
-        
-        # Store in database/timeseries
-        # await store_pipeline_result(log_data)
-        
-        state.pipeline_stage = PipelineStage.COMPLETED
-        state.metadata["completed_at"] = datetime.utcnow().isoformat()
-        
+
+        logger.info(f"[{state.trace_id}] Pipeline complete: total={total_latency:.1f}ms stage={state.stage}")
+
+        # Build pipeline context for downstream events
+        state.pipeline_context = {
+            "trace_id": state.trace_id,
+            "total_latency_ms": round(total_latency, 2),
+            "pipeline_stage": state.stage,
+            "vlm_trend": state.vlm_output.get("trend"),
+            "rag_source": state.rag_context.get("source"),
+            "rag_docs": len(state.rag_context.get("documents", [])),
+            "strategy_source": state.strategy_signal.get("source"),
+            "risk_allowed": state.risk_result.get("allowed", False),
+            "scalping_threshold": state.scalping_confidence_threshold,
+            "scalping_confidence": state.scalping_confidence,
+            "scalping_action": state.scalping_action,
+            "fast_path": state.strategy_signal.get("source") == "scalping_fast_path",
+        }
+
+        state.stage = PipelineStage.LOGGED.value
+
     except Exception as e:
-        state.errors.append(f"logging_finalize: {str(e)}")
+        state.errors.append(f"logging: {e}")
         logger.error(f"[{state.trace_id}] Logging failed: {e}")
-    
     finally:
-        state.latency_ms["logging_finalize"] = (time.perf_counter() - start) * 1000
-    
+        state.latency_ms["logging"] = (time.perf_counter() - t0) * 1000
+
     return state
 
 
-# ============================================================================
-# MAIN PIPELINE RUNNER
-# ============================================================================
+# ── Graph Construction ──────────────────────────────────────
 
-class TradingPipeline:
-    """Main trading pipeline orchestrator."""
-    
-    def __init__(self, config: Optional[Dict] = None):
-        self.config = config or {}
-        self.graph = create_trading_graph()
+def create_pipeline_graph() -> Any:
+    """
+    Create the LangGraph trading pipeline with dual-path routing.
+
+    Graph topology:
+        data_ingest → feature_engine → scalping_node
+                                            │
+                                    ┌───────┴───────┐
+                                    │ conf > 80%?   │
+                                    ▼ YES           ▼ NO
+                              risk_gate       [VLM ‖ RAG] → swarm → risk_gate
+                                    │               │
+                                    └───────┬───────┘
+                                            ▼
+                                    execution → log_and_publish
+    """
+    graph = StateGraph(TradingState)
+
+    # Add nodes
+    graph.add_node("data_ingest", data_ingest_node)
+    graph.add_node("feature_engine", feature_engine_node)
+    graph.add_node("scalping_node", scalping_node)
+    graph.add_node("vlm_agent", vlm_agent_node)
+    graph.add_node("rag_agent", rag_agent_node)
+    graph.add_node("swarm_strategy", swarm_strategy_node)
+    graph.add_node("risk_gate", risk_gate_node)
+    graph.add_node("execution", execution_node)
+    graph.add_node("log_and_publish", log_and_publish_node)
+
+    # Entry point
+    graph.set_entry_point("data_ingest")
+
+    # Sequential: data → features → scalping
+    graph.add_edge("data_ingest", "feature_engine")
+    graph.add_edge("feature_engine", "scalping_node")
+
+    # Conditional routing: scalping → fast path or heavy path
+    graph.add_conditional_edges(
+        "scalping_node",
+        _route_after_scalping,
+        {
+            "risk_gate": "risk_gate",          # Fast path: skip VLM/RAG/swarm
+            "vlm_agent": "vlm_agent",           # Heavy path: full analysis
+        },
+    )
+
+    # Heavy path: VLM → RAG → swarm (sequential for simplicity)
+    graph.add_edge("vlm_agent", "rag_agent")
+    graph.add_edge("rag_agent", "swarm_strategy")
+
+    # Heavy path: swarm → risk_gate
+    graph.add_edge("swarm_strategy", "risk_gate")
+
+    # Common tail: risk → execution → logging
+    graph.add_edge("risk_gate", "execution")
+    graph.add_edge("execution", "log_and_publish")
+    graph.add_edge("log_and_publish", END)
+
+    return graph
+
+
+# ── Pipeline Runner ─────────────────────────────────────────
+
+class MultiAgentPipeline:
+    """
+    Main trading pipeline orchestrator.
+
+    Can be driven by:
+      1. NATS events (market.candle.>) — production mode
+      2. Direct invocation (process_candle) — testing mode
+    """
+
+    def __init__(self):
+        self.graph = create_pipeline_graph()
+        self._compiled = self.graph.compile()
         self._running = False
-    
-    async def process_candle(self, candle: Dict) -> TradingState:
-        """Process a single candle through the full pipeline."""
-        # Create initial state
-        initial_state = TradingState(
+
+    async def process_candle(self, candle: dict) -> dict:
+        """
+        Process a single candle through the full pipeline.
+
+        Returns the final pipeline state as a dict.
+        """
+        # Build initial state
+        initial = TradingState(
             candle=candle,
+            symbol=candle.get("symbol", "BTCUSDT"),
             trace_id=str(uuid.uuid4()),
-            timestamp=datetime.utcnow(),
         )
-        
+
         # Run through graph
-        result = await self.graph.ainvoke(initial_state)
-        
-        return result
-    
-    async def run_continuous(self, candle_stream: AsyncGenerator[Dict, None]):
+        result = await self._compiled.ainvoke(initial)
+
+        # Extract final state
+        return {
+            "trace_id": result.trace_id,
+            "symbol": result.symbol,
+            "stage": result.stage,
+            "strategy": result.strategy_signal,
+            "risk": result.risk_result,
+            "execution": result.execution,
+            "latency_ms": result.latency_ms,
+            "total_latency_ms": round(sum(result.latency_ms.values()), 2),
+            "errors": result.errors,
+            "context": result.pipeline_context,
+        }
+
+    async def run_continuous(self, candle_stream: AsyncGenerator[dict, None]):
         """Process continuous candle stream."""
         self._running = True
-        
+
         async for candle in candle_stream:
             if not self._running:
                 break
-            
+
             try:
                 result = await self.process_candle(candle)
-                
-                # Handle signal if generated
-                if result.signal and result.risk_result.get("allowed"):
-                    # Signal ready for execution (handled by execution layer)
-                    pass
-                    
+                if result["stage"] == PipelineStage.EXECUTED.value:
+                    logger.info(
+                        f"Trade executed: {result['strategy']['direction']} "
+                        f"@ {result['execution'].get('price', 0)}"
+                    )
             except Exception as e:
                 logger.error(f"Pipeline error: {e}")
                 # Continue processing next candle
-    
+
     def stop(self):
         self._running = False
-
-
-# ============================================================================
-# FACTORY FUNCTIONS
-# ============================================================================
-
-async def create_pipeline(config: Optional[Dict] = None) -> TradingPipeline:
-    """Factory function to create and initialize pipeline."""
-    pipeline = TradingPipeline(config)
-    return pipeline
-
-
-# ============================================================================
-# TESTING
-# ============================================================================
-
-async def test_pipeline():
-    """Test the pipeline with sample data."""
-    pipeline = await create_pipeline()
-    
-    # Sample candle
-    test_candle = {
-        "timestamp": int(time.time() * 1000),
-        "open": 50000,
-        "high": 50500,
-        "low": 49800,
-        "close": 50200,
-        "volume": 1000.5,
-        "symbol": "BTCUSDT",
-    }
-    
-    result = await pipeline.process_candle(test_candle)
-    
-    print(f"Signal: {result.signal}")
-    print(f"Risk: {result.risk_result}")
-    print(f"Execution: {result.execution}")
-    print(f"Latency: {result.latency_ms}")
-    
-    return result
-
-
-if __name__ == "__main__":
-    asyncio.run(test_pipeline())

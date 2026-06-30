@@ -26,7 +26,8 @@ NATS JetStream is the nervous system. When a brain computes a score, it publishe
 | `portfolio` | `portfolio.<type>` | PnL, Balance, Position, Order, Risk | file, 30d |
 | `rl` | `rl.<type>.<agent>` | Reward, Weight, Training, Evaluation | file, 14d |
 | `ws` | `ws.<type>` | Update, Signal, Portfolio | memory |
-| `system` | `system.<type>` | Health, Error, Warning, Info, Deploy | memory, 7d |
+| `system` | `system.<type>` | Health, Error, Warning, Info, Risk check/approve/reject | memory, 7d |
+| `agent` | `agent.<type>.<symbol>` | ChartSnapshot, VLMAnalysis, RAGQuery, RAGResult | memory, 3d |
 
 ## Event Types
 
@@ -41,6 +42,29 @@ NATS JetStream is the nervous system. When a brain computes a score, it publishe
 | `RLEvent` | agent_id, reward, weights, metrics | RL engine → NATS |
 | `WSEvent` | event_type, payload (flexible data) | NATS → WebSocket → Frontend |
 | `SystemEvent` | level, message, component | Any component → NATS |
+| `ChartSnapshotEvent` | symbol, image_url, timeframe, indicators | VLM input → agent.vlm.chart_snapshot |
+| `VLMAnalysisEvent` | symbol, trend, pattern, support, resistance, confidence | VLM output → agent.vlm.analysis |
+| `RAGQueryEvent` | symbol, query, top_k, filters | RAG input → agent.rag.query |
+| `RAGResultEvent` | symbol, documents, query_time_ms | RAG output → agent.rag.result |
+| `RiskCheckEvent` | symbol, signal, confidence, drawdown, volatility | Risk input → system.risk.check |
+| `RiskApprovedEvent` | symbol, signal, approved_size, max_leverage | Risk pass → system.risk.approved |
+| `RiskRejectedEvent` | symbol, signal, reason, severity, cooldown | Risk block → system.risk.rejected |
+
+## Base Event Fields (ACP v2)
+
+All events inherit from `QuantexEvent` with these base fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | str | UUID (8 chars) |
+| `timestamp` | float | Unix timestamp |
+| `source` | str | Component name |
+| `category` | str | Event category |
+| `subject` | str | Full NATS subject |
+| `priority` | str | `low`, `medium`, `high`, `critical` |
+| `trace_id` | str | Session/correlation ID for end-to-end tracing |
+| `context` | dict | Shared state (session_state, market_regime, last_signal) |
+| `metadata` | dict | Arbitrary key-value metadata |
 
 ## Data Flow
 
@@ -70,6 +94,7 @@ NATS_STREAMS = {
     "rl": {"subjects": ["rl.>"], "storage": "file", ...},
     "ws": {"subjects": ["ws.>"], "storage": "memory", ...},
     "system": {"subjects": ["system.>"], "storage": "memory", ...},
+    "agent": {"subjects": ["agent.>"], "storage": "memory", "max_age_days": 3},
 }
 ```
 
@@ -124,6 +149,10 @@ event = quantex_event(data)
 
 - [[real-time-trading-dashboard]] — WebSocket routing of NATS events to UI
 - [[brain-ecosystem]] — the 12 brains that produce signal events
+- [[multi-agent-pipeline]] — LangGraph pipeline that publishes ACP v2 events
+- [[nats-langgraph-bridge]] — bridge that subscribes candle events and triggers pipeline
+- [[vlm-agent]] — VLM chart analysis agent (publishes to agent.vlm.*)
+- [[rag-agent]] — RAG pattern retrieval agent (publishes to agent.rag.*)
 - [[odoo-erp-trading-integration]] — Odoo ERP events flow through this system
 - [[signal-aggregation-logic]] — how aggregated signals are computed
 

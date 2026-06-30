@@ -2,7 +2,7 @@
 
 > Content catalog for the trading & quant second brain. Organized by category. ZCode updates this on every ingest. **Read this first** when answering a query — then drill into pages.
 >
-> **State:** 2 sources · 51 pages · last updated 2026-06-30
+> **State:** 2 sources · 58 pages · last updated 2026-07-01
 
 ---
 
@@ -12,6 +12,7 @@ _Synthesis pages — the big picture of a topic._
 - [[brain-ecosystem]] — single source of truth for all 12 brain weights, tiers, registration files, and aggregation flow. (stable, updated 2026-06-30)
 - [[infrastructure-overview]] — full deployment architecture: Docker Compose (13 services), Kubernetes (25 resources), Terraform (Hetzner), Nginx reverse proxy, monitoring stack. (stable, updated 2026-06-30)
 - [[infrastructure-overview]] — full deployment architecture: Docker Compose (13 services), Kubernetes (25 resources), Terraform (Hetzner), Nginx reverse proxy, monitoring stack. (stable, updated 2026-06-30)
+- [[multi-agent-pipeline]] — dual-path LangGraph state machine: scalping fast-path (<5ms) + heavy path (VLM→RAG→swarm), configurable threshold, conditional routing. (stable, updated 2026-07-01)
 
 ## Concepts
 _Methods and ideas, synthesized across all sources._
@@ -27,7 +28,7 @@ _Methods and ideas, synthesized across all sources._
 - [[incremental-candle-state]] — 4-level incremental state management for O(1) per-tick candle processing. (stable, updated 2026-06-30)
 - [[microstructure]] — market microstructure concepts: OFI, tick-rule, CVD. (stable, updated 2026-06-30)
 - [[model-sequential-loading]] — VRAM-aware sequential model loading for RTX 4050 6GB. (stable, updated 2026-06-30)
-- [[nats-event-system]] — NATS JetStream event backbone: 9 event types, subject-based routing, stream configuration. (stable, updated 2026-06-30)
+- [[nats-event-system]] — NATS JetStream event backbone: 16 event types (incl. ACP v2), subject-based routing, stream configuration, base event fields (priority, trace_id, context). (stable, updated 2026-07-01)
 - [[broker-abstraction-layer]] — Unified broker interface: Binance/FIX/Paper behind BaseBroker ABC. (stable, updated 2026-06-30)
 - [[real-time-trading-dashboard]] — Next.js + WebSocket + NATS dashboard architecture for 12-brain trading cockpit. (1 source, updated 2026-06-30)
 - [[attention-based-regime-detection]] — using Transformer attention weights (entropy, pattern shape) for automatic market regime classification. (research, updated 2026-06-26)
@@ -72,6 +73,13 @@ _Instruments, venues, tools, people, firms._
 - [[polymarket-brain]] — brain #11; Polymarket 5-formula alpha pipeline (Bayesian/Longshot/EV/Kelly/Nash), weight 0.05. (active, updated 2026-06-30)
 - [[odoo-erp-brain]] — brain #12; Odoo ERP business intelligence via XML-RPC, weight 0.05. (active, updated 2026-06-30)
 - [[neural-network-brain]] — brain #10; custom LSTM for temporal patterns, weight 0.05. (stable, updated 2026-06-26)
+- [[vlm-agent]] — VLM chart analysis agent: matplotlib rendering → Ollama moondream → structured JSON output. (active, updated 2026-07-01)
+- [[rag-agent]] — RAG pattern retrieval agent: NIM embeddings → Qdrant vector search → trade pattern statistics. (active, updated 2026-07-01)
+- [[nats-langgraph-bridge]] — NATS↔LangGraph bridge: subscribes candle events, triggers pipeline, publishes results including ScalpDecisionEvent. (active, updated 2026-07-01)
+- [[scalping-engine]] — ultra-fast CPU-only scalping engine: <5ms logic, 5-candle window, momentum/rejection detection, strict JSON output. (active, updated 2026-07-01)
+- [[chart-segmentation]] — OpenCV chart feature extraction: candle detection, trend lines, S/R levels, volume analysis. (active, updated 2026-07-01)
+- [[local-inference-server]] — vLLM + FastAPI GPU inference server for RTX 4050: quantized models, SSE streaming, /generate/fast endpoint. (active, updated 2026-07-01)
+- [[gpu-optimizer]] — RTX 4050 optimization: GPU status monitoring, VRAM-based config, CUDA env tuning, model recommendations. (active, updated 2026-07-01)
 
 ## Comparisons
 _Analyses and side-by-side comparisons (often filed from queries)._

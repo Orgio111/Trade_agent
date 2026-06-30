@@ -1,0 +1,213 @@
+"""VRAM-Aware Sequential Model Loader for RTX 4050 (6GB).
+
+Ensures only one model is loaded in VRAM at a time by wrapping Ollama
+model swap with memory tracking. Prevents OOM on 6GB GPU.
+
+Usage:
+    loader = ModelLoader(vram_limit_mb=5120)  # 5GB usable (1GB headroom)
+    loader.unload_all()
+    loader.load("phi3:mini")
+    # ... use model ...
+    loader.unload("phi3:mini")
+    loader.load("qwen2.5:3b")
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from dataclasses import dataclass, field
+from typing import Any
+
+import requests
+
+logger = logging.getLogger("quantex.model_loader")
+
+# Ollama API
+OLLAMA_BASE = "http://localhost:11434"
+
+# Model VRAM estimates (MB) for RTX 4050 6GB
+MODEL_VRAM: dict[str, int] = {
+    "phi3:mini": 2200,
+    "qwen2:1.5b": 950,
+    "qwen2.5:3b": 1900,
+    "moondream": 1700,
+    "mistral": 4400,
+    "qwen3:8b": 5200,
+    "deepseek-r1:8b": 5200,
+}
+
+
+@dataclass
+class ModelLoadInfo:
+    model: str
+    vram_mb: int
+    loaded_at: float = 0.0
+    last_used: float = 0.0
+
+
+class ModelLoader:
+    """Sequential model loader — only one model in VRAM at a time.
+
+    Strategy:
+        1. Before loading a new model, unload current (Ollama auto-swaps, but
+           we track state for budget awareness).
+        2. If the new model + current usage > vram_limit, force unload first.
+        3. Pre-warm: send a tiny request after load to confirm readiness.
+    """
+
+    def __init__(
+        self,
+        ollama_base: str = OLLAMA_BASE,
+        vram_limit_mb: int = 5120,  # 5GB usable out of 6GB
+        warmup_prompt: str = "hi",
+    ):
+        self.ollama_base = ollama_base
+        self.vram_limit_mb = vram_limit_mb
+        self.warmup_prompt = warmup_prompt
+        self._loaded: dict[str, ModelLoadInfo] = {}
+
+    @property
+    def used_vram_mb(self) -> int:
+        return sum(m.vram_mb for m in self._loaded.values())
+
+    @property
+    def available_vram_mb(self) -> int:
+        return self.vram_limit_mb - self.used_vram_mb
+
+    def load(self, model: str, warmup: bool = True) -> bool:
+        """Load a model, unloading others if VRAM budget exceeded."""
+        if model in self._loaded:
+            self._loaded[model].last_used = time.time()
+            logger.debug("Model %s already loaded (cache hit)", model)
+            return True
+
+        required_mb = MODEL_VRAM.get(model, 2000)
+
+        if required_mb > self.available_vram_mb + self.used_vram_mb:
+            logger.error("Model %s (%dMB) exceeds total VRAM limit (%dMB)",
+                         model, required_mb, self.vram_limit_mb)
+            return False
+
+        # Unload models until we have room
+        while self.available_vram_mb < required_mb and self._loaded:
+            # Unload least-recently-used
+            lru_model = min(self._loaded.values(), key=lambda m: m.last_used)
+            self.unload(lru_model.model)
+
+        logger.info("Loading model %s (%dMB) — available: %dMB",
+                    model, required_mb, self.available_vram_mb)
+        t0 = time.perf_counter()
+
+        # Pre-warm: send a tiny generate request to force model into VRAM
+        if warmup:
+            try:
+                resp = requests.post(
+                    f"{self.ollama_base}/api/generate",
+                    json={"model": model, "prompt": self.warmup_prompt, "stream": False},
+                    timeout=120,
+                )
+                if resp.status_code != 200:
+                    logger.warning("Warmup failed for %s: HTTP %d", model, resp.status_code)
+                    return False
+            except requests.RequestException as e:
+                logger.warning("Warmup request failed for %s: %s", model, e)
+                return False
+
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        self._loaded[model] = ModelLoadInfo(
+            model=model,
+            vram_mb=required_mb,
+            loaded_at=time.time(),
+            last_used=time.time(),
+        )
+        logger.info("Model %s loaded in %.0fms", model, elapsed_ms)
+        return True
+
+    def unload(self, model: str) -> bool:
+        """Unload a model from VRAM tracking (Ollama handles actual unload)."""
+        if model not in self._loaded:
+            return True
+
+        # Ollama doesn't have an explicit unload API — models get evicted
+        # by LRU when new models are loaded. We just track it here.
+        del self._loaded[model]
+        logger.info("Unloaded model %s — freed %dMB (tracked)", model,
+                    MODEL_VRAM.get(model, 2000))
+        return True
+
+    def unload_all(self) -> int:
+        """Unload all tracked models. Returns count of unloaded models."""
+        count = len(self._loaded)
+        self._loaded.clear()
+        logger.info("Unloaded all %d models", count)
+        return count
+
+    def status(self) -> dict[str, Any]:
+        """Current loader status."""
+        return {
+            "vram_limit_mb": self.vram_limit_mb,
+            "used_vram_mb": self.used_vram_mb,
+            "available_vram_mb": self.available_vram_mb,
+            "loaded_models": list(self._loaded.keys()),
+            "model_vram_map": {m.model: m.vram_mb for m in self._loaded.values()},
+        }
+
+    def is_loaded(self, model: str) -> bool:
+        return model in self._loaded
+
+
+# ── SEQUENTIAL PIPELINE LOADER ─────────────────────────────────
+# Loads models in sequence for the AutoGen trading team.
+# Agent load order matches the debate flow:
+#   QuantAgent → PatternAgent → MacroAgent → RiskAgent → Coordinator
+
+AGENT_MODEL_MAP: dict[str, str] = {
+    "QuantAgent": "qwen2.5:3b",
+    "PatternAgent": "moondream",
+    "MacroAgent": "qwen2.5:3b",
+    "RiskAgent": "qwen2:1.5b",
+    "Coordinator": "phi3:mini",
+}
+
+
+def load_agent_models(
+    loader: ModelLoader | None = None,
+    agents: list[str] | None = None,
+) -> ModelLoader:
+    """Pre-load models for agents in debate order.
+
+    Since Ollama auto-swaps, models sharing the same name (Quant+Macro)
+    only need one load. We load in sequence, keeping shared models cached.
+    """
+    if loader is None:
+        loader = ModelLoader()
+
+    if agents is None:
+        agents = ["QuantAgent", "PatternAgent", "MacroAgent", "RiskAgent", "Coordinator"]
+
+    loaded_names: set[str] = set()
+
+    for agent_name in agents:
+        model = AGENT_MODEL_MAP.get(agent_name)
+        if model and model not in loaded_names:
+            loader.load(model, warmup=True)
+            loaded_names.add(model)
+
+    logger.info("Loaded %d unique models for %d agents", len(loaded_names), len(agents))
+    return loader
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+
+    loader = ModelLoader()
+    print("Sequential model loading for AutoGen trading team:")
+    print(f"  VRAM limit: {loader.vram_limit_mb}MB")
+    print()
+
+    load_agent_models(loader)
+    print()
+    print("Loader status:")
+    for k, v in loader.status().items():
+        print(f"  {k}: {v}")

@@ -138,6 +138,9 @@ class QuantexEvent:
       - source:     Component that created the event (e.g., "custom_nn", "orchestrator")
       - category:   Event category (determines NATS subject prefix)
       - subject:    Full NATS subject for publishing
+      - priority:   Event priority ("low", "medium", "high", "critical")
+      - trace_id:   Session/correlation ID for end-to-end tracing
+      - context:    Shared context (session_state, market_regime, last_signal, etc.)
       - metadata:   Arbitrary key-value metadata
     """
 
@@ -146,6 +149,9 @@ class QuantexEvent:
     source: str = "unknown"
     category: str = ""
     subject: str = ""
+    priority: str = "medium"  # low, medium, high, critical
+    trace_id: str = ""
+    context: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -170,8 +176,15 @@ class QuantexEvent:
 
     @classmethod
     def from_dict(cls, data: dict) -> "QuantexEvent":
-        """Create event from dictionary."""
-        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+        """Create event from dictionary.
+
+        Uses dataclasses.fields() which properly walks the class hierarchy
+        to collect all fields (parent + child), so base fields like id,
+        timestamp, source, etc. are preserved during deserialization.
+        """
+        from dataclasses import fields as dc_fields
+        all_field_names = {f.name for f in dc_fields(cls)}
+        return cls(**{k: v for k, v in data.items() if k in all_field_names})
 
 
 # ── Signal Events ───────────────────────────────────────────
@@ -425,9 +438,309 @@ class WSEvent(QuantexEvent):
         self.subject = f"ws.{self.event_type}"
 
 
+# ── VLM (Vision Language Model) Events ─────────────────────
+
+class VLMEventType(str, Enum):
+    """Types of VLM (vision) events."""
+    CHART_SNAPSHOT = "chart_snapshot"
+    VLM_ANALYSIS = "vlm_analysis"
+
+
+@dataclass
+class ChartSnapshotEvent(QuantexEvent):
+    """
+    Chart image captured for VLM analysis.
+
+    NATS Subject: agent.vlm.chart_snapshot.<symbol>
+
+    Attributes:
+        symbol:    Trading pair
+        image_url: Path/URL to chart image
+        timeframe: Candle interval used for chart
+        indicators: List of indicators overlaid on chart
+    """
+    symbol: str = ""
+    image_url: str = ""
+    timeframe: str = "1m"
+    indicators: list[str] = field(default_factory=list)
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.category = "agent"
+        self.event_type = VLMEventType.CHART_SNAPSHOT.value
+        self.priority = "medium"
+        self.subject = f"agent.vlm.chart_snapshot.{self.symbol}"
+
+
+@dataclass
+class VLMAnalysisEvent(QuantexEvent):
+    """
+    VLM analysis result — chart pattern recognition output.
+
+    NATS Subject: agent.vlm.analysis.<symbol>
+
+    Attributes:
+        symbol:      Trading pair
+        trend:       "bullish", "bearish", "neutral"
+        pattern:     Detected chart pattern (e.g., "ascending_triangle")
+        support:     Key support level
+        resistance:  Key resistance level
+        confidence:  Analysis confidence (0-1)
+        reasoning:   Human-readable reasoning
+    """
+    symbol: str = ""
+    trend: str = "neutral"
+    pattern: str = ""
+    support: float = 0.0
+    resistance: float = 0.0
+    confidence: float = 0.0
+    reasoning: str = ""
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.category = "agent"
+        self.event_type = VLMEventType.VLM_ANALYSIS.value
+        self.priority = "medium"
+        self.subject = f"agent.vlm.analysis.{self.symbol}"
+
+
+# ── RAG (Retrieval Augmented Generation) Events ─────────────
+
+class RAGEventType(str, Enum):
+    """Types of RAG events."""
+    QUERY = "rag_query"
+    RESULT = "rag_result"
+
+
+@dataclass
+class RAGQueryEvent(QuantexEvent):
+    """
+    RAG query request — search vector store for similar patterns.
+
+    NATS Subject: agent.rag.query.<symbol>
+
+    Attributes:
+        symbol: Trading pair
+        query:  Natural language query string
+        top_k:  Number of results to return
+        filters: Optional metadata filters
+    """
+    symbol: str = ""
+    query: str = ""
+    top_k: int = 5
+    filters: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.category = "agent"
+        self.event_type = RAGEventType.QUERY.value
+        self.priority = "low"
+        self.subject = f"agent.rag.query.{self.symbol}"
+
+
+@dataclass
+class RAGResultEvent(QuantexEvent):
+    """
+    RAG retrieval result — documents found from vector search.
+
+    NATS Subject: agent.rag.result.<symbol>
+
+    Attributes:
+        symbol:    Trading pair
+        documents: List of retrieved documents with scores
+        metadata:  Pattern metadata (return, duration, etc.)
+        query_time_ms: Retrieval latency
+    """
+    symbol: str = ""
+    documents: list[dict] = field(default_factory=list)
+    query_time_ms: float = 0.0
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.category = "agent"
+        self.event_type = RAGEventType.RESULT.value
+        self.priority = "low"
+        self.subject = f"agent.rag.result.{self.symbol}"
+
+
+# ── Risk Decision Events ────────────────────────────────────
+
+class RiskEventType(str, Enum):
+    """Types of risk decision events."""
+    CHECK = "risk_check"
+    APPROVED = "risk_approved"
+    REJECTED = "risk_rejected"
+
+
+@dataclass
+class RiskCheckEvent(QuantexEvent):
+    """
+    Risk check request — proposed trade submitted for evaluation.
+
+    NATS Subject: system.risk.check
+
+    Attributes:
+        symbol:            Trading pair
+        signal:            Proposed signal direction
+        confidence:        Signal confidence
+        entry_price:       Proposed entry price
+        stop_loss:         Proposed stop loss
+        position_size_pct: Proposed position size as % of equity
+        max_position_size: Max allowed position size
+        current_exposure:  Current portfolio exposure
+        drawdown:          Current drawdown
+        volatility:        Current volatility regime
+    """
+    symbol: str = ""
+    signal: str = "hold"
+    confidence: float = 0.0
+    entry_price: float = 0.0
+    stop_loss: float = 0.0
+    position_size_pct: float = 0.0
+    max_position_size: float = 0.0
+    current_exposure: float = 0.0
+    drawdown: float = 0.0
+    volatility: str = "normal"
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.category = EventCategory.SYSTEM.value
+        self.event_type = RiskEventType.CHECK.value
+        self.priority = "high"
+        self.subject = "system.risk.check"
+
+
+@dataclass
+class RiskApprovedEvent(QuantexEvent):
+    """
+    Risk approved — trade cleared for execution.
+
+    NATS Subject: system.risk.approved
+
+    Attributes:
+        symbol:        Trading pair
+        signal:        Approved signal direction
+        approved_size: Adjusted/approved position size
+        max_leverage:  Max allowed leverage
+        risk_score:    Composite risk score (0-1)
+        reasoning:     Risk evaluation reasoning
+    """
+    symbol: str = ""
+    signal: str = "hold"
+    approved_size: float = 0.0
+    max_leverage: int = 1
+    risk_score: float = 0.0
+    reasoning: str = ""
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.category = EventCategory.SYSTEM.value
+        self.event_type = RiskEventType.APPROVED.value
+        self.priority = "high"
+        self.subject = "system.risk.approved"
+
+
+@dataclass
+class RiskRejectedEvent(QuantexEvent):
+    """
+    Risk rejected — trade blocked by risk engine.
+
+    NATS Subject: system.risk.rejected
+
+    Attributes:
+        symbol:  Trading pair
+        signal:  Rejected signal direction
+        reason:  Rejection reason
+        severity: "hard" (absolute block) or "soft" (size reduction)
+        cooldown_minutes: How long to wait before retry
+    """
+    symbol: str = ""
+    signal: str = "hold"
+    reason: str = ""
+    severity: str = "hard"
+    cooldown_minutes: int = 0
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.category = EventCategory.SYSTEM.value
+        self.event_type = RiskEventType.REJECTED.value
+        self.priority = "critical"
+        self.subject = "system.risk.rejected"
+
+
 # ── System Events ───────────────────────────────────────────
 
 @dataclass
+# ── Scalping Events ──────────────────────────────────────────
+
+class ScalpingEventType(str, Enum):
+    """Types of scalping decision events."""
+    DECISION = "scalp_decision"
+    EXECUTED = "scalp_executed"
+
+
+@dataclass
+class ScalpDecisionEvent(QuantexEvent):
+    """
+    Scalping engine decision — ultra-fast CPU-only signal.
+
+    NATS Subject: signals.scalp.<symbol>
+
+    Attributes:
+        symbol:     Trading pair
+        action:     "BUY", "SELL", or "HOLD"
+        confidence: 0-100
+        size_pct:   0-5 (position size as % of equity)
+        reason:     Short keyword reason
+        volatility: Current volatility level
+        latency_ms: Decision latency in milliseconds
+    """
+    symbol: str = ""
+    action: str = "HOLD"
+    confidence: int = 0
+    size_pct: float = 0.0
+    reason: str = ""
+    volatility: str = "medium"
+    latency_ms: float = 0.0
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.category = EventCategory.SIGNALS.value
+        self.event_type = ScalpingEventType.DECISION.value
+        self.priority = "high"
+        self.subject = f"signals.scalp.{self.symbol}"
+
+
+@dataclass
+class ScalpExecutedEvent(QuantexEvent):
+    """
+    Scalping execution confirmation.
+
+    NATS Subject: signals.scalp.executed.<symbol>
+
+    Attributes:
+        symbol:     Trading pair
+        action:     Executed action
+        price:      Fill price
+        size_pct:   Executed size
+        fill_ms:    Execution latency
+    """
+    symbol: str = ""
+    action: str = "HOLD"
+    price: float = 0.0
+    size_pct: float = 0.0
+    fill_ms: float = 0.0
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.category = EventCategory.SIGNALS.value
+        self.event_type = ScalpingEventType.EXECUTED.value
+        self.priority = "high"
+        self.subject = f"signals.scalp.executed.{self.symbol}"
+
+
+# ── System Events ───────────────────────────────────────────
+
 class SystemEvent(QuantexEvent):
     """
     System/infrastructure event.
@@ -475,6 +788,10 @@ def quantex_event(data: dict) -> QuantexEvent:
             return AggregatedSignalEvent.from_dict(data)
         elif event_type == SignalEventType.EXECUTED.value:
             return ExecutedSignalEvent.from_dict(data)
+        elif event_type == ScalpingEventType.DECISION.value:
+            return ScalpDecisionEvent.from_dict(data)
+        elif event_type == ScalpingEventType.EXECUTED.value:
+            return ScalpExecutedEvent.from_dict(data)
 
     elif category == EventCategory.MARKET.value:
         if event_type == MarketEventType.ORDERBOOK.value:
@@ -491,7 +808,23 @@ def quantex_event(data: dict) -> QuantexEvent:
         return WSEvent.from_dict(data)
 
     elif category == EventCategory.SYSTEM.value:
+        if event_type == RiskEventType.CHECK.value:
+            return RiskCheckEvent.from_dict(data)
+        elif event_type == RiskEventType.APPROVED.value:
+            return RiskApprovedEvent.from_dict(data)
+        elif event_type == RiskEventType.REJECTED.value:
+            return RiskRejectedEvent.from_dict(data)
         return SystemEvent.from_dict(data)
+
+    elif category == "agent":
+        if event_type == VLMEventType.CHART_SNAPSHOT.value:
+            return ChartSnapshotEvent.from_dict(data)
+        elif event_type == VLMEventType.VLM_ANALYSIS.value:
+            return VLMAnalysisEvent.from_dict(data)
+        elif event_type == RAGEventType.QUERY.value:
+            return RAGQueryEvent.from_dict(data)
+        elif event_type == RAGEventType.RESULT.value:
+            return RAGResultEvent.from_dict(data)
 
     # Fallback
     return QuantexEvent.from_dict(data)
@@ -576,5 +909,12 @@ NATS_STREAMS: dict[str, dict] = {
         "max_age_days": 7,
         "max_size_gb": 1,
         "description": "System events (health, errors, warnings)",
+    },
+    "agent": {
+        "subjects": ["agent.>"],
+        "storage": "memory",
+        "max_age_days": 3,
+        "max_size_gb": 2,
+        "description": "Agent events (VLM analysis, RAG queries, inter-agent communication)",
     },
 }
