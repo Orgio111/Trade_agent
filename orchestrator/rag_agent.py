@@ -5,7 +5,7 @@ Queries Qdrant vector store for historically similar trade setups,
 provides context to the strategy agent for informed decisions.
 
 ALL external APIs are optional — works fully with local-only inference.
-Embeddings: NIM cloud (optional) → hash-based fallback (always available).
+Embedding fallback chain: NIM cloud → sentence-transformers (local) → hash-based.
 Vector store: Qdrant (optional) → in-memory fallback (always available).
 
 Usage:
@@ -31,7 +31,18 @@ DEFAULT_QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 DEFAULT_NIM_URL = os.getenv("NVIDIA_NIM_URL", "https://integrate.api.nvidia.com/v1")
 DEFAULT_NIM_KEY = os.getenv("NVIDIA_API_KEY", "")
 EMBEDDING_MODEL = "nvidia/nv-embedqa-e5-v5"
-EMBEDDING_DIM = 1536
+EMBEDDING_MODEL = "nvidia/nv-embedqa-e5-v5"
+EMBEDDING_DIM = 1536  # NIM model dimension (cloud only)
+
+# Local embedding model (sentence-transformers) — runs on CPU, ~80MB download
+LOCAL_EMBEDDING_MODEL = os.getenv(
+    "RAG_EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"
+)
+LOCAL_EMBEDDING_DIM = 384  # all-MiniLM-L6-v2 outputs 384-dim vectors
+
+# Canonical embedding dimension — all backends must produce vectors of this size.
+# When local embedder is available, use its dimension (384). Otherwise fallback to 1536.
+DEFAULT_EMBEDDING_DIM = int(os.getenv("RAG_EMBEDDING_DIM", str(LOCAL_EMBEDDING_DIM)))
 
 
 @dataclass
@@ -55,13 +66,83 @@ class RAGContext:
         }
 
 
+class LocalEmbedder:
+    """
+    Local sentence-transformers embedding backend.
+
+    Loads a small model (~80MB) on first use and caches it.
+    Produces real semantic embeddings that capture meaning,
+    unlike the hash-based fallback which produces random vectors.
+
+    Supported models:
+      - sentence-transformers/all-MiniLM-L6-v2 (384-dim, 80MB, fast)
+      - sentence-transformers/all-mpnet-base-v2 (768-dim, 400MB, better quality)
+    """
+
+    def __init__(self, model_name: str = LOCAL_EMBEDDING_MODEL):
+        self.model_name = model_name
+        self._model = None
+        self._dim = LOCAL_EMBEDDING_DIM
+
+    def _load_model(self):
+        """Lazy-load sentence-transformers model."""
+        if self._model is not None:
+            return
+        try:
+            from sentence_transformers import SentenceTransformer
+            logger.info(f"Loading local embedding model: {self.model_name}")
+            self._model = SentenceTransformer(self.model_name)
+            self._dim = self._model.get_sentence_embedding_dimension()
+            logger.info(
+                f"Local embedding model loaded: {self.model_name} "
+                f"(dim={self._dim})"
+            )
+        except ImportError:
+            raise ImportError(
+                "sentence-transformers not installed. "
+                "Install with: pip install sentence-transformers"
+            )
+        except Exception as e:
+            raise RuntimeError(f"Failed to load embedding model: {e}")
+
+    def embed(self, text: str) -> list[float]:
+        """Generate embedding for a single text."""
+        self._load_model()
+        embedding = self._model.encode(text, normalize_embeddings=True)
+        return embedding.tolist()
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        """Generate embeddings for multiple texts."""
+        self._load_model()
+        embeddings = self._model.encode(texts, normalize_embeddings=True)
+        return [e.tolist() for e in embeddings]
+
+    @property
+    def dim(self) -> int:
+        return self._dim
+
+    @property
+    def is_available(self) -> bool:
+        """Check if sentence-transformers is importable."""
+        try:
+            import sentence_transformers
+            return True
+        except ImportError:
+            return False
+
+
 class RAGAgent:
     """
     RAG Agent for trade pattern retrieval.
 
-    All external APIs are optional:
-      - Qdrant: optional, falls back to in-memory cosine similarity
-      - NIM embeddings: optional, falls back to hash-based embeddings
+    Embedding fallback chain:
+      1. NIM cloud (optional, best quality, needs API key)
+      2. sentence-transformers local (optional, good quality, CPU, ~80MB)
+      3. Hash-based (always available, low quality, random vectors)
+
+    Vector store fallback chain:
+      1. Qdrant (optional, best performance)
+      2. In-memory cosine similarity (always available)
     """
 
     def __init__(
@@ -79,10 +160,27 @@ class RAGAgent:
         self.top_k = top_k
         self._connected = False
         self._local_store: list[dict] = []  # In-memory fallback
-        self._embedding_backend = "hash"  # Track which embedding backend is active
+        self._embedding_backend = "hash"  # Track which backend is active
+
+        # Local embedding backend (lazy-init)
+        self._local_embedder: LocalEmbedder | None = None
 
         # Lazy-import httpx only when needed
         self._http = None
+
+    def _get_local_embedder(self) -> LocalEmbedder | None:
+        """Get or create local embedder (lazy)."""
+        if self._local_embedder is None:
+            embedder = LocalEmbedder()
+            if embedder.is_available:
+                self._local_embedder = embedder
+                logger.info("Local sentence-transformers embedding available")
+            else:
+                logger.info(
+                    "sentence-transformers not installed — "
+                    "install for better embeddings: pip install sentence-transformers"
+                )
+        return self._local_embedder
 
     async def _get_http(self):
         """Lazy-import httpx."""
@@ -106,7 +204,7 @@ class RAGAgent:
         """
         Retrieve similar trade patterns from vector memory.
 
-        Works without any API keys — uses hash-based embeddings and local store.
+        Works without any API keys — uses local embeddings and local store.
         """
         start = time.perf_counter()
         k = top_k or self.top_k
@@ -116,7 +214,7 @@ class RAGAgent:
             symbol, regime, rsi, macd, volume_ratio, price, vlm_trend, extra_context,
         )
 
-        # Generate embedding (NIM cloud → hash fallback)
+        # Generate embedding (NIM → local sentence-transformers → hash)
         embedding = await self._embed(query_text)
 
         # Search Qdrant → local fallback
@@ -215,9 +313,33 @@ class RAGAgent:
             parts.append(extra)
         return " | ".join(parts)
 
+    def _get_canonical_dim(self) -> int:
+        """Get the canonical embedding dimension for this session."""
+        embedder = self._get_local_embedder()
+        if embedder is not None:
+            return embedder.dim
+        return DEFAULT_EMBEDDING_DIM
+
+    def _normalize_dim(self, vector: list[float], target_dim: int) -> list[float]:
+        """Pad or truncate a vector to the target dimension."""
+        if len(vector) == target_dim:
+            return vector
+        if len(vector) > target_dim:
+            return vector[:target_dim]
+        return vector + [0.0] * (target_dim - len(vector))
+
     async def _embed(self, text: str) -> list[float]:
-        """Generate embedding. NIM cloud (optional) → hash-based (always available)."""
-        # Try NIM cloud first
+        """
+        Generate embedding with 3-tier fallback.
+        All outputs are normalized to the canonical dimension.
+
+          1. NIM cloud (optional, 1536-dim → truncated to canonical)
+          2. sentence-transformers local (optional, 384-dim canonical)
+          3. Hash-based (always available, canonical dim)
+        """
+        target_dim = self._get_canonical_dim()
+
+        # ── Tier 1: NIM cloud ──
         if self.nim_key:
             try:
                 http = await self._get_http()
@@ -235,19 +357,35 @@ class RAGAgent:
                 )
                 resp.raise_for_status()
                 data = resp.json()
+                raw = data["data"][0]["embedding"]
                 self._embedding_backend = "nim"
-                return data["data"][0]["embedding"]
+                return self._normalize_dim(raw, target_dim)
             except Exception as e:
-                logger.debug(f"NIM embedding failed: {e}, using hash fallback")
+                logger.debug(f"NIM embedding failed: {e}")
 
-        # Hash-based fallback (deterministic, no API needed)
+        # ── Tier 2: Local sentence-transformers ──
+        embedder = self._get_local_embedder()
+        if embedder is not None:
+            try:
+                embedding = embedder.embed(text)
+                self._embedding_backend = "local_st"
+                logger.debug(
+                    f"Local embedding: dim={len(embedding)}, "
+                    f"backend=sentence-transformers"
+                )
+                return self._normalize_dim(embedding, target_dim)
+            except Exception as e:
+                logger.debug(f"Local embedding failed: {e}")
+
+        # ── Tier 3: Hash-based fallback (always available) ──
         self._embedding_backend = "hash"
-        return self._hash_embedding(text)
+        return self._hash_embedding(text, target_dim)
 
-    def _hash_embedding(self, text: str) -> list[float]:
-        """Deterministic hash-based embedding (no API needed)."""
+    def _hash_embedding(self, text: str, dim: int | None = None) -> list[float]:
+        """Deterministic hash-based embedding (no API needed, low quality)."""
+        d = dim or self._get_canonical_dim()
         rng = np.random.RandomState(abs(hash(text)) % (2**31))
-        emb = rng.normal(0, 0.1, EMBEDDING_DIM).tolist()
+        emb = rng.normal(0, 0.1, d).tolist()
         mag = np.linalg.norm(emb)
         return [v / mag for v in emb] if mag > 0 else emb
 
@@ -271,10 +409,11 @@ class RAGAgent:
         if not self._local_store:
             return []
 
+        target_dim = self._get_canonical_dim()
         q = np.array(query_vector)
         scored = []
         for pt in self._local_store:
-            v = np.array(pt.get("vector", [0.0] * EMBEDDING_DIM))
+            v = np.array(pt.get("vector", [0.0] * target_dim))
             sim = float(np.dot(q, v) / (np.linalg.norm(q) * np.linalg.norm(v) + 1e-10))
             scored.append({"score": sim, "payload": pt.get("payload", {})})
         scored.sort(key=lambda x: x["score"], reverse=True)

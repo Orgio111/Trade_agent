@@ -112,8 +112,8 @@ class FinBERTBrain(BaseBrain):
             logger.info("[finbert_nlp] Running in local-only mode (keyword fallback active)")
 
     async def compute_score(self, symbol: str) -> BrainSignal:
-        # Auto-fetch headlines if empty
-        self._auto_fetch_headlines(symbol)
+        # Auto-fetch headlines if empty (now async)
+        await self._auto_fetch_headlines(symbol)
 
         if not self._headlines:
             return BrainSignal(
@@ -191,8 +191,8 @@ class FinBERTBrain(BaseBrain):
             metadata={"tier": "neutral", "reason": "no_signal"},
         )
 
-    def _auto_fetch_headlines(self, symbol: str) -> None:
-        """Fetch crypto news headlines from CryptoCompare API."""
+    async def _auto_fetch_headlines(self, symbol: str) -> None:
+        """Fetch crypto news headlines from CryptoCompare API (async)."""
         now = time.time()
         cache_ts = self._headlines_cache_ts.get(symbol, 0)
         if (now - cache_ts) < 300 and symbol in self._headlines_cache:
@@ -200,11 +200,11 @@ class FinBERTBrain(BaseBrain):
             return
 
         try:
-            import requests
+            http = await self._get_http()
             base = symbol.split("/")[0].upper() if "/" in symbol else symbol.upper()
-            resp = requests.get(
+            resp = await http.get(
                 f"https://min-api.cryptocompare.com/data/v2/news/?categories={base}",
-                timeout=5,
+                timeout=5.0,
             )
             if resp.status_code == 200:
                 articles = resp.json().get("Data", [])[:20]
@@ -221,10 +221,10 @@ class FinBERTBrain(BaseBrain):
 
         # Fallback: CoinGecko trending
         try:
-            import requests
-            resp = requests.get(
+            http = await self._get_http()
+            resp = await http.get(
                 "https://api.coingecko.com/api/v3/search/trending",
-                timeout=5,
+                timeout=5.0,
             )
             if resp.status_code == 200:
                 coins = resp.json().get("coins", [])[:10]

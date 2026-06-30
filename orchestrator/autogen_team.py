@@ -279,6 +279,18 @@ class TradingTeam:
 
     # ── Main execution (agents.md section 7) ───────────────────
 
+    async def async_run_trading_cycle(
+        self,
+        candle_data: dict[str, Any],
+        vlm_output: dict[str, Any] | None = None,
+        market_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Async wrapper — runs sync trading cycle in thread pool."""
+        import asyncio
+        return await asyncio.to_thread(
+            self.run_trading_cycle, candle_data, vlm_output, market_context,
+        )
+
     def run_trading_cycle(
         self,
         candle_data: dict[str, Any],

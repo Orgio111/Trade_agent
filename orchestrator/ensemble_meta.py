@@ -300,28 +300,43 @@ class EnsembleMetaModel:
         }
 
     def _get_smc_signal(self, df) -> dict:
-        """Get Smart Money Concepts signal from market structure."""
+        """Get Smart Money Concepts signal from market structure.
+
+        Uses the full MarketStructureEngine (swing points, BOS/CHOCH,
+        liquidity sweeps, order blocks, FVG, Wyckoff phases) when available,
+        falls back to simplified inline detection.
+        """
         if len(df) < 50:
             return {"direction": "hold", "confidence": 0.0, "reason": "insufficient_data"}
 
-        close = df["close"].values
-        high = df["high"].values
-        low = df["low"].values
+        # ── Full MarketStructureEngine path ──
+        try:
+            from .market_structure import MarketStructureEngine
+            ms = MarketStructureEngine
+            result = ms.get_market_structure_signal(df, df.iloc[-1])
+            return {
+                "direction": result["direction"],
+                "confidence": result["confidence"],
+                "reason": f"SMC: {result['reasoning'][:200]}",
+                "bullish_score": result.get("bullish_score", 0),
+                "bearish_score": result.get("bearish_score", 0),
+                "wyckoff_phase": result.get("wyckoff_phase", "unknown"),
+            }
+        except Exception:
+            pass
 
+        # ── Fallback: simplified inline SMC ──
         recent = df.tail(20)
         prev = df.tail(40).head(20)
 
-        # Detect swing highs/lows
         prev_high = prev["high"].max()
         prev_low = prev["low"].min()
         curr_high = recent["high"].max()
         curr_low = recent["low"].min()
 
-        # Break of Structure (BOS)
-        bos_up = curr_high > prev_high  # Bullish BOS
-        bos_down = curr_low < prev_low  # Bearish BOS
+        bos_up = curr_high > prev_high
+        bos_down = curr_low < prev_low
 
-        # Fair Value Gap detection (simplified)
         fvg_up = False
         fvg_down = False
         for i in range(2, len(recent)):
@@ -330,15 +345,14 @@ class EnsembleMetaModel:
             if recent["high"].iloc[i] < recent["low"].iloc[i - 2]:
                 fvg_down = True
 
-        # Consolidate signal
         if bos_up and not bos_down:
-            return {"direction": "long", "confidence": 0.65, "reason": "SMC: Bullish BOS"}
+            return {"direction": "long", "confidence": 0.65, "reason": "SMC: Bullish BOS (fallback)"}
         elif bos_down and not bos_up:
-            return {"direction": "short", "confidence": 0.65, "reason": "SMC: Bearish BOS"}
+            return {"direction": "short", "confidence": 0.65, "reason": "SMC: Bearish BOS (fallback)"}
         elif fvg_up and not fvg_down:
-            return {"direction": "long", "confidence": 0.55, "reason": "SMC: FVG up"}
+            return {"direction": "long", "confidence": 0.55, "reason": "SMC: FVG up (fallback)"}
         elif fvg_down and not fvg_up:
-            return {"direction": "short", "confidence": 0.55, "reason": "SMC: FVG down"}
+            return {"direction": "short", "confidence": 0.55, "reason": "SMC: FVG down (fallback)"}
 
         return {"direction": "hold", "confidence": 0.2, "reason": "SMC: no clear setup"}
 

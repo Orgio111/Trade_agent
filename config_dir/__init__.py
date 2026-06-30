@@ -47,8 +47,8 @@ class RiskConfig:
 
 @dataclass(frozen=True)
 class InferenceConfig:
-    primary_provider: str = "nvidia_nim"
-    fallback_providers: tuple[str, ...] = ("local_ollama",)
+    primary_provider: str = "local_ollama"
+    fallback_providers: tuple[str, ...] = ("nvidia_nim", "groq", "openrouter")
     budget_tier: str = "free"
     cache_enabled: bool = True
     cache_similarity_threshold: float = 0.92

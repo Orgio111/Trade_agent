@@ -19,8 +19,6 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-import requests
-
 logger = logging.getLogger("quantex.model_loader")
 
 # Ollama API
@@ -122,20 +120,21 @@ class ModelLoader:
         # Pre-warm: send a tiny generate request to force model into VRAM
         if warmup:
             try:
-                resp = requests.post(
-                    f"{self.ollama_base}/api/generate",
-                    json={
-                        "model": model,
-                        "prompt": self.warmup_prompt,
-                        "stream": False,
-                        "options": {"keep_alive": ka},
-                    },
-                    timeout=120,
-                )
-                if resp.status_code != 200:
-                    logger.warning("Warmup failed for %s: HTTP %d", model, resp.status_code)
-                    return False
-            except requests.RequestException as e:
+                import httpx
+                with httpx.Client(timeout=120.0) as _http:
+                    resp = _http.post(
+                        f"{self.ollama_base}/api/generate",
+                        json={
+                            "model": model,
+                            "prompt": self.warmup_prompt,
+                            "stream": False,
+                            "options": {"keep_alive": ka},
+                        },
+                    )
+                    if resp.status_code != 200:
+                        logger.warning("Warmup failed for %s: HTTP %d", model, resp.status_code)
+                        return False
+            except Exception as e:
                 logger.warning("Warmup request failed for %s: %s", model, e)
                 return False
 

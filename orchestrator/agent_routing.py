@@ -214,31 +214,30 @@ LOCAL_MISTRAL = ModelConfig(
 #   - All: OpenRouter as universal fallback (200+ models, highest availability)
 
 AGENT_PROVIDER_CHAINS: dict[str, list[str]] = {
-    # ═══ Reasoning agents — quality first, speed second ═══
-    # Uses NVIDIA NIM for highest quality analysis, falls back to Groq, then OpenRouter
-    "supervisor":        ["nvidia_nim", "groq", "openrouter"],
-    "market_analyst":    ["nvidia_nim", "groq", "openrouter"],
-    "deepseek_analyst":  ["nvidia_nim", "groq", "openrouter"],
-    "swing_agent":       ["nvidia_nim", "groq", "openrouter"],
+    # ═══ LOCAL-FIRST: local_ollama always Tier 0 (zero API cost, offline) ═══
+    # Cloud APIs are optional fallbacks when local is unavailable
 
-    # ═══ Ultra-fast agents — speed first, any provider ═══
-    # Groq LPU inference (800+ tok/s) for latency-sensitive decisions
-    "scalping_agent":    ["groq", "openrouter", "nvidia_nim"],
-    "execution_agent":   ["groq", "openrouter", "nvidia_nim"],
-    "anomaly_agent":     ["groq", "openrouter", "nvidia_nim"],
+    # ═══ Reasoning agents — local first, quality second ═══
+    "supervisor":        ["local_ollama", "nvidia_nim", "groq", "openrouter"],
+    "market_analyst":    ["local_ollama", "nvidia_nim", "groq", "openrouter"],
+    "deepseek_analyst":  ["local_ollama", "nvidia_nim", "groq", "openrouter"],
+    "swing_agent":       ["local_ollama", "nvidia_nim", "groq", "openrouter"],
 
-    # ═══ Risk & safety — structured, reliable, moderate speed ═══
-    # Groq first for fast risk checks, then OpenRouter for thorough analysis
-    "risk_guardian":     ["groq", "openrouter", "nvidia_nim"],
+    # ═══ Ultra-fast agents — local first, speed second ═══
+    "scalping_agent":    ["local_ollama", "groq", "openrouter", "nvidia_nim"],
+    "execution_agent":   ["local_ollama", "groq", "openrouter", "nvidia_nim"],
+    "anomaly_agent":     ["local_ollama", "groq", "openrouter", "nvidia_nim"],
 
-    # ═══ Classification — cheap, fast, low-stakes ═══
-    # OpenRouter free tier is sufficient for classification tasks
-    "sentiment_agent":   ["openrouter", "groq", "nvidia_nim"],
-    "regime_agent":      ["openrouter", "groq", "nvidia_nim"],
-    "memory":            ["openrouter", "groq", "nvidia_nim"],
+    # ═══ Risk & safety — local first ═══
+    "risk_guardian":     ["local_ollama", "groq", "openrouter", "nvidia_nim"],
+
+    # ═══ Classification — local first, cheap second ═══
+    "sentiment_agent":   ["local_ollama", "openrouter", "groq", "nvidia_nim"],
+    "regime_agent":      ["local_ollama", "openrouter", "groq", "nvidia_nim"],
+    "memory":            ["local_ollama", "openrouter", "groq", "nvidia_nim"],
 
     # ═══ Default fallback for any unregistered agent ═══
-    "default":           ["groq", "nvidia_nim", "openrouter"],
+    "default":           ["local_ollama", "groq", "nvidia_nim", "openrouter"],
 }
 
 # Agent → InferenceRouter task_type override

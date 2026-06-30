@@ -1,6 +1,8 @@
 """Brain #3: LLM Regime Detection via Ollama / NIM / OpenRouter.
 
-Uses local LLMs (Llama3/Phi-3) to classify market regime from news+price context.
+Uses local LLMs (qwen2.5:3b) to classify market regime from news+price context.
+
+ALL cloud APIs are optional — works fully with local Ollama + rule-based fallback.
 Weight in Go orchestrator: 0.15.
 """
 
@@ -13,7 +15,6 @@ import os
 import time
 from pathlib import Path
 
-import httpx
 import numpy as np
 
 from .base_brain import BaseBrain, BrainSignal
@@ -47,11 +48,11 @@ Market context:
 class LLMRegimeBrain(BaseBrain):
     """Dual-tier LLM regime detection brain.
 
-    Tier 1 (local): Ollama Llama3/Phi-3 for low-latency regime classification.
-    Tier 2 (cloud): NVIDIA NIM / OpenRouter for consensus if local fails or times out.
+    Tier 1 (local): Ollama for low-latency regime classification.
+    Tier 2 (cloud): NVIDIA NIM / OpenRouter for consensus fallback (optional).
+    Tier 3 (rule-based): Technical indicator-based regime detection (always available).
 
-    Auto-fetches Binance market data for real context building.
-    Auto-loads OPENROUTER_API_KEY from .env if available.
+    ALL tiers beyond Tier 1 are optional.
     """
 
     @property
@@ -61,29 +62,35 @@ class LLMRegimeBrain(BaseBrain):
     def __init__(self) -> None:
         self.ollama_url = os.getenv("OLLAMA_URL", os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
         self.ollama_model = os.getenv("OLLAMA_REGIME_MODEL", "qwen2.5:3b")
-        # Tier 2: NIM — free credits, 2nd priority after local Ollama
+        # Cloud tiers — all optional
         self.nim_key = os.getenv("NIM_API_KEY", os.getenv("NVIDIA_API_KEY", ""))
         self.nim_url = os.getenv("NIM_URL", "https://integrate.api.nvidia.com")
         self.nim_model = os.getenv("NIM_REGIME_MODEL", "meta/llama-3.1-8b-instruct")
-        # Tier 3: OpenRouter — free model fallback (gemma-4-31b-it:free, no paid models)
         self.openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
         self.openrouter_model = os.getenv("OPENROUTER_REGIME_MODEL", "google/gemma-4-31b-it:free")
         self.timeout = float(os.getenv("LLM_REGIME_TIMEOUT", "8.0"))
-        self._http = httpx.AsyncClient(timeout=self.timeout)
+        self._http = None  # Lazy-init
         # Cache for Binance market data
         self._market_cache: dict[str, dict] = {}
         self._cache_ttl = 300.0  # 5 minutes
         self._cache_ts: dict[str, float] = {}
 
+    async def _get_http(self):
+        """Lazy-import httpx."""
+        if self._http is None:
+            import httpx
+            self._http = httpx.AsyncClient(timeout=self.timeout)
+        return self._http
+
     async def warmup(self) -> None:
-        """Verify LLM tiers are reachable. Auto-discover available Ollama models."""
-        # Tier 1: Ollama — auto-discover if default model missing
+        """Verify LLM tiers are reachable."""
+        # Tier 1: Ollama
         try:
-            resp = await self._http.get(f"{self.ollama_url}/api/tags")
+            http = await self._get_http()
+            resp = await http.get(f"{self.ollama_url}/api/tags")
             if resp.status_code == 200:
                 models = [m["name"] for m in resp.json().get("models", [])]
                 if self.ollama_model not in models and models:
-                    # Auto-switch to first available model
                     old = self.ollama_model
                     self.ollama_model = models[0]
                     logger.warning(f"[llm_regime] Model {old} not found, auto-selected {self.ollama_model}")
@@ -96,13 +103,16 @@ class LLMRegimeBrain(BaseBrain):
         except Exception as e:
             logger.warning(f"[llm_regime] Ollama unreachable: {e}")
 
-        # Tier 2: Report cloud availability
+        # Report cloud availability
+        tiers = ["local_ollama"]
         if self.nim_key:
+            tiers.append("nim_cloud")
             logger.info(f"[llm_regime] NIM configured: {self.nim_url} model={self.nim_model}")
         if self.openrouter_key:
+            tiers.append("openrouter_cloud")
             logger.info(f"[llm_regime] OpenRouter key available, model={self.openrouter_model}")
         if not self.nim_key and not self.openrouter_key:
-            logger.warning("[llm_regime] No cloud LLM configured (NIM_API_KEY / NVIDIA_API_KEY, OPENROUTER_API_KEY)")
+            logger.info("[llm_regime] Running in local-only mode (rule-based fallback active)")
 
     async def compute_score(self, symbol: str) -> BrainSignal:
         """Classify market regime and map to directional score."""
@@ -111,9 +121,13 @@ class LLMRegimeBrain(BaseBrain):
         # Tier 1: Local Ollama
         regime, confidence = await self._query_ollama(context)
 
-        # Tier 2: Cloud fallback if local fails or low confidence
+        # Tier 2: Cloud fallback (optional — only if keys configured)
         if regime is None and (self.nim_key or self.openrouter_key):
             regime, confidence = await self._query_cloud(context)
+
+        # Tier 3: Rule-based fallback (always available)
+        if regime is None:
+            regime, confidence = self._rule_based_regime(context)
 
         if regime is None:
             return BrainSignal(
@@ -121,7 +135,7 @@ class LLMRegimeBrain(BaseBrain):
                 symbol=symbol,
                 score=0.0,
                 confidence=0.1,
-                metadata={"fallback": True, "reason": "llm_unavailable"},
+                metadata={"fallback": True, "reason": "all_tiers_unavailable"},
             )
 
         # Map regime to score
@@ -135,16 +149,47 @@ class LLMRegimeBrain(BaseBrain):
             metadata={"regime": regime, "model": self.ollama_model if regime else "none"},
         )
 
+    def _rule_based_regime(self, context: dict) -> tuple[str | None, float]:
+        """Rule-based regime detection using technical indicators (always available)."""
+        price_change = context.get("price_change_pct", 0)
+        vol_ratio = context.get("vol_ratio", 1.0)
+        rsi = context.get("rsi", 50)
+
+        # Log if using default values (no Binance data)
+        if price_change == 0 and vol_ratio == 1.0 and rsi == 50:
+            logger.debug("[llm_regime] Rule-based using default context (no Binance data)")
+
+        # Crisis detection
+        if price_change < -10 and vol_ratio > 3.0:
+            return "crisis", 0.7
+
+        # High volatility
+        if vol_ratio > 2.5 or abs(price_change) > 8:
+            return "volatile", 0.6
+
+        # Strong trending
+        if price_change > 5 and rsi > 60:
+            return "trending_up", 0.5
+        if price_change < -5 and rsi < 40:
+            return "trending_down", 0.5
+
+        # Mild trending
+        if price_change > 2:
+            return "trending_up", 0.3
+        if price_change < -2:
+            return "trending_down", 0.3
+
+        # Default: ranging
+        return "ranging", 0.4
+
     def _build_context(self, symbol: str) -> dict:
         """Build context dict from real Binance market data."""
-        # Check cache first
         now = time.time()
         cached = self._market_cache.get(symbol)
         cache_ts = self._cache_ts.get(symbol, 0)
         if cached and (now - cache_ts) < self._cache_ttl:
             return cached
 
-        # Fetch fresh data from Binance
         context = {
             "symbol": symbol,
             "price_change_pct": 0.0,
@@ -161,7 +206,7 @@ class LLMRegimeBrain(BaseBrain):
                 closes = [bar[4] for bar in ohlcv]
                 volumes = [bar[5] for bar in ohlcv]
 
-                # Price change over last 24h (24 bars on 1h)
+                # Price change over last 24h
                 if len(closes) >= 24:
                     pct = (closes[-1] - closes[-24]) / closes[-24] * 100
                     context["price_change_pct"] = round(pct, 2)
@@ -184,7 +229,7 @@ class LLMRegimeBrain(BaseBrain):
                     rs = avg_gain / avg_loss
                     context["rsi"] = round(float(100 - 100 / (1 + rs)), 0)
 
-                # Try to fetch headlines from crypto news API
+                # Try to fetch headlines (optional)
                 try:
                     import requests
                     resp = requests.get(
@@ -210,7 +255,8 @@ class LLMRegimeBrain(BaseBrain):
         """Query local Ollama for regime classification."""
         prompt = REGIME_PROMPT.format(**context)
         try:
-            resp = await self._http.post(
+            http = await self._get_http()
+            resp = await http.post(
                 f"{self.ollama_url}/api/generate",
                 json={
                     "model": self.ollama_model,
@@ -222,7 +268,7 @@ class LLMRegimeBrain(BaseBrain):
             if resp.status_code == 200:
                 text = resp.json().get("response", "")
                 return self._parse_regime_response(text)
-        except (httpx.TimeoutException, httpx.ConnectError) as e:
+        except Exception as e:
             logger.debug(f"[llm_regime] Ollama timeout/error: {e}")
         return None, 0.0
 
@@ -230,10 +276,11 @@ class LLMRegimeBrain(BaseBrain):
         """Query NIM (tier 2) or OpenRouter free (tier 3) as cloud fallback."""
         prompt = REGIME_PROMPT.format(**context)
 
-        # Tier 2: NIM (free NVIDIA credits)
+        # Tier 2: NIM (free NVIDIA credits) — optional
         if self.nim_key:
             try:
-                resp = await self._http.post(
+                http = await self._get_http()
+                resp = await http.post(
                     f"{self.nim_url}/v1/chat/completions",
                     json={
                         "model": self.nim_model,
@@ -247,15 +294,14 @@ class LLMRegimeBrain(BaseBrain):
                     text = resp.json()["choices"][0]["message"]["content"]
                     logger.info("[llm_regime] NIM tier OK")
                     return self._parse_regime_response(text)
-                else:
-                    logger.debug(f"[llm_regime] NIM HTTP {resp.status_code}")
             except Exception as e:
                 logger.debug(f"[llm_regime] NIM error: {e}")
 
-        # Tier 3: OpenRouter free model
+        # Tier 3: OpenRouter free model — optional
         if self.openrouter_key:
             try:
-                resp = await self._http.post(
+                http = await self._get_http()
+                resp = await http.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     json={
                         "model": self.openrouter_model,
@@ -269,8 +315,6 @@ class LLMRegimeBrain(BaseBrain):
                     text = resp.json()["choices"][0]["message"]["content"]
                     logger.info("[llm_regime] OpenRouter free tier OK")
                     return self._parse_regime_response(text)
-                else:
-                    logger.debug(f"[llm_regime] OpenRouter HTTP {resp.status_code}")
             except Exception as e:
                 logger.debug(f"[llm_regime] OpenRouter error: {e}")
 
@@ -279,7 +323,6 @@ class LLMRegimeBrain(BaseBrain):
     def _parse_regime_response(self, text: str) -> tuple[str | None, float]:
         """Extract regime JSON from LLM response."""
         try:
-            # Find JSON in response
             start = text.find("{")
             end = text.rfind("}") + 1
             if start >= 0 and end > start:
@@ -320,4 +363,5 @@ class LLMRegimeBrain(BaseBrain):
         return mapping.get(regime, 0.0)
 
     async def cooldown(self) -> None:
-        await self._http.aclose()
+        if self._http and not self._http.is_closed:
+            await self._http.aclose()

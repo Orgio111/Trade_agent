@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import warnings
+import zipfile
 from pathlib import Path
 
 import numpy as np
@@ -216,7 +217,7 @@ def main():
     total_reward = 0
     n_trades = 0
     for _ in range(500):
-        action, _ = loaded.predict(obs, deterministic=True)
+        action, _ = model.predict(obs, deterministic=True)
         obs, reward, terminated, truncated, _ = env.step(int(action))
         total_reward += reward
         if int(action) != 0:

@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import logging
 import sys
@@ -80,33 +81,34 @@ DEMO_VLM: dict[str, Any] = {
 
 # ── Candle fetcher (Binance public API) ─────────────────────
 
-def _fetch_latest_candle(symbol: str = "BTCUSDT", interval: str = "1m") -> dict:
-    """Fetch latest candle from Binance public API (no auth needed)."""
-    import requests
+async def _fetch_latest_candle(symbol: str = "BTCUSDT", interval: str = "1m") -> dict:
+    """Fetch latest candle from Binance public API (async, no auth needed)."""
+    import httpx
 
     url = "https://fapi.binance.com/fapi/v1/klines"
     params = {"symbol": symbol, "interval": interval, "limit": 2}
     try:
-        resp = requests.get(url, params=params, timeout=10)
-        resp.raise_for_status()
-        klines = resp.json()
-        if len(klines) < 2:
-            raise ValueError("No kline data returned")
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            klines = resp.json()
+            if len(klines) < 2:
+                raise ValueError("No kline data returned")
 
-        k = klines[-2]  # last completed candle
-        return {
-            "symbol": symbol,
-            "price": float(k[4]),  # close
-            "ohlcv": {
-                "open": float(k[1]),
-                "high": float(k[2]),
-                "low": float(k[3]),
-                "close": float(k[4]),
-                "volume": float(k[5]),
-            },
-            "indicators": {},  # indicators filled by feature pipeline
-            "regime": "unknown",
-        }
+            k = klines[-2]  # last completed candle
+            return {
+                "symbol": symbol,
+                "price": float(k[4]),  # close
+                "ohlcv": {
+                    "open": float(k[1]),
+                    "high": float(k[2]),
+                    "low": float(k[3]),
+                    "close": float(k[4]),
+                    "volume": float(k[5]),
+                },
+                "indicators": {},  # indicators filled by feature pipeline
+                "regime": "unknown",
+            }
     except Exception as e:
         logging.getLogger(__name__).warning(f"Failed to fetch candle: {e}. Using demo data.")
         return DEMO_CANDLE
@@ -117,6 +119,7 @@ def _fetch_latest_candle(symbol: str = "BTCUSDT", interval: str = "1m") -> dict:
 
 def cmd_single(args):
     """Execute one trading cycle."""
+    import asyncio
     from orchestrator.autogen_executor import AutoGenSignalExecutor
 
     _setup_logging(args.log_level, args.log_file)
@@ -133,9 +136,9 @@ def cmd_single(args):
         model_warmup=not args.no_warmup,
     )
 
-    # Get candle data
+    # Get candle data (async fetch)
     if args.live_data:
-        candle = _fetch_latest_candle(args.symbol, args.interval)
+        candle = asyncio.run(_fetch_latest_candle(args.symbol, args.interval))
         logger.info(f"Fetched live candle: {candle['symbol']} @ {candle['price']}")
     else:
         candle = DEMO_CANDLE
@@ -151,16 +154,11 @@ def cmd_single(args):
         _save_result(result, args.output)
 
 
-def cmd_daemon(args):
-    """Continuous trading loop."""
+async def _async_cmd_daemon(args):
+    """Async daemon trading loop."""
     from orchestrator.autogen_executor import AutoGenSignalExecutor
 
-    _setup_logging(args.log_level, args.log_file)
     logger = logging.getLogger("autogen_trader")
-
-    logger.info("=== AutoGen Trader — Daemon Mode ===")
-    logger.info(f"Paper mode: {args.paper}, Interval: {args.interval}s")
-
     executor = AutoGenSignalExecutor(
         paper_mode=args.paper,
         config_path=args.config,
@@ -176,31 +174,38 @@ def cmd_daemon(args):
             logger.info(f"\n{'='*50} Cycle #{cycle} {'='*50}")
 
             if args.live_data:
-                candle = _fetch_latest_candle(args.symbol, args.interval)
+                candle = await _fetch_latest_candle(args.symbol, args.interval)
             else:
                 candle = DEMO_CANDLE
 
             result = executor.execute_cycle(candle_data=candle, vlm_output=DEMO_VLM, indicators=candle.get("indicators", {}))
             _print_result(result, verbose=False)
 
-            # Check if we should stop
             if result.status == "error" and args.stop_on_error:
                 logger.error("Stopping on error")
                 break
 
-            # Status summary every 10 cycles
             if cycle % 10 == 0:
                 status = executor.get_status()
                 logger.info(f"Account: equity={status['account']['equity']:.2f}, "
                           f"positions={status['account']['open_positions']}, "
                           f"streak={status['account']['loss_streak']}")
 
-            time.sleep(args.interval)
+            await asyncio.sleep(args.interval)
 
     except KeyboardInterrupt:
         logger.info("\nDaemon stopped by user")
         status = executor.get_status()
         logger.info(f"Final status: {json.dumps(status, indent=2, default=str)}")
+
+
+def cmd_daemon(args):
+    """Continuous trading loop."""
+    _setup_logging(args.log_level, args.log_file)
+    logger = logging.getLogger("autogen_trader")
+    logger.info("=== AutoGen Trader — Daemon Mode ===")
+    logger.info(f"Paper mode: {args.paper}, Interval: {args.interval}s")
+    asyncio.run(_async_cmd_daemon(args))
 
 
 def cmd_backtest(args):
@@ -239,19 +244,41 @@ def cmd_backtest(args):
         _save_result(report, args.output)
 
 
-def cmd_status(args):
-    """Show system status."""
-    _setup_logging("WARNING")
-    import requests as req
+async def _async_cmd_status(args):
+    """Async system status check."""
+    import httpx
 
     # Check Ollama
     try:
-        r = req.get("http://localhost:11434/api/tags", timeout=5)
-        models = [m["name"] for m in r.json().get("models", [])]
-        ollama_status = f"running ({len(models)} models)"
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get("http://localhost:11434/api/tags")
+            models = [m["name"] for m in r.json().get("models", [])]
+            ollama_status = f"running ({len(models)} models)"
     except Exception:
         models = []
         ollama_status = "NOT running"
+
+    # Check config
+    config = _load_config(args.config)
+
+    print(f"""
+╔══════════════════════════════════════════════════╗
+║        AutoGen Trader — System Status            ║
+╠══════════════════════════════════════════════════╣
+║  Ollama:      {ollama_status:<35s}║
+║  Models:      {', '.join(models[:4]) + ('...' if len(models)>4 else ''):<35s}║
+║  Config:      {args.config:<35s}║
+║  Paper mode:  {config.get('system', {}).get('paper_mode', True):<35s}║
+║  Symbol:      {config.get('system', {}).get('symbol', 'BTCUSDT'):<35s}║
+║  Timeframe:   {config.get('system', {}).get('timeframe', '1m'):<35s}║
+╚══════════════════════════════════════════════════╝
+""")
+
+
+def cmd_status(args):
+    """Show system status."""
+    _setup_logging("WARNING")
+    asyncio.run(_async_cmd_status(args))
 
     # Check config
     config = _load_config(args.config)

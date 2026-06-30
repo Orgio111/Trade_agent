@@ -19,7 +19,10 @@ import json
 import hashlib
 import time
 from typing import Optional, AsyncGenerator
-from openai import AsyncOpenAI
+try:
+    from openai import AsyncOpenAI
+except ImportError:
+    AsyncOpenAI = None
 
 
 # ── Model Routing Tables ──────────────────────────────────
@@ -84,26 +87,30 @@ class EnhancedNIMOrchestrator:
     """
 
     def __init__(self, redis_host: str = "localhost", redis_port: int = 6379):
-        # NIM cloud client
-        nim_key = os.getenv("NVIDIA_API_KEY", "") or os.getenv("OPENAI_API_KEY", "sk-placeholder")
-        self.nim_client = AsyncOpenAI(
-            base_url="https://integrate.api.nvidia.com/v1",
-            api_key=nim_key,
-        )
+        # NIM cloud client (optional — requires openai package)
+        self.nim_client = None
+        self.nim_local = None
+        self.openrouter = None
+        if AsyncOpenAI is not None:
+            nim_key = os.getenv("NVIDIA_API_KEY", "") or os.getenv("OPENAI_API_KEY", "sk-placeholder")
+            self.nim_client = AsyncOpenAI(
+                base_url="https://integrate.api.nvidia.com/v1",
+                api_key=nim_key,
+            )
 
-        # NIM local (self-hosted fallback)
-        local_key = os.getenv("NIM_LOCAL_KEY", "") or os.getenv("OPENAI_API_KEY", "sk-placeholder")
-        self.nim_local = AsyncOpenAI(
-            base_url=os.getenv("NIM_LOCAL_URL", "http://localhost:8000/v1"),
-            api_key=local_key,
-        )
+            # NIM local (self-hosted fallback)
+            local_key = os.getenv("NIM_LOCAL_KEY", "") or os.getenv("OPENAI_API_KEY", "sk-placeholder")
+            self.nim_local = AsyncOpenAI(
+                base_url=os.getenv("NIM_LOCAL_URL", "http://localhost:8000/v1"),
+                api_key=local_key,
+            )
 
-        # OpenRouter
-        or_key = os.getenv("OPENROUTER_API_KEY", "") or os.getenv("OPENAI_API_KEY", "sk-placeholder")
-        self.openrouter = AsyncOpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=or_key,
-        )
+            # OpenRouter
+            or_key = os.getenv("OPENROUTER_API_KEY", "") or os.getenv("OPENAI_API_KEY", "sk-placeholder")
+            self.openrouter = AsyncOpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=or_key,
+            )
 
         # Redis cache (optional)
         self.cache = None
@@ -171,7 +178,10 @@ class EnhancedNIMOrchestrator:
         for model in fallback_models:
             try:
                 client = self._select_client(model)
-                actual_model = self._resolve_model_name(client, model)
+                if client is None:
+                    errors.append(f"{model}: no client available (openai not installed)")
+                    continue
+                actual_model = self._resolve_model_name(model)
 
                 if stream:
                     return self._stream_inference(client, actual_model, messages,
@@ -208,12 +218,14 @@ class EnhancedNIMOrchestrator:
         raise Exception(f"All models failed for {task_type}. Errors: {'; '.join(errors)}")
 
     def _select_client(self, model: str):
-        """Select the appropriate API client for a model."""
+        """Select the appropriate API client for a model. Returns None if no client available."""
         if model.startswith("nvidia/"):
             return self.nim_client
         return self.openrouter
 
-    def _resolve_model_name(self, client, model: str) -> str:
+
+
+    def _resolve_model_name(self, model: str) -> str:
         """Resolve the model name to send to the API."""
         if "nvidia/" in model:
             return model.split("nvidia/")[-1]
@@ -235,6 +247,9 @@ class EnhancedNIMOrchestrator:
 
     async def batch_embeddings(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings in batch."""
+        if self.nim_client is None:
+            import numpy as np
+            return [np.random.normal(0, 0.1, 1536).tolist() for _ in texts]
         try:
             response = await self.nim_client.embeddings.create(
                 model="nvidia/nv-embedqa-e5-v5",

@@ -131,13 +131,14 @@ class RouterConfig:
     })
 
     provider_priority: dict = field(default_factory=lambda: {
-        TaskType.REASONING.value:   ["groq", "nvidia_nim", "openrouter"],
-        TaskType.ANALYSIS.value:    ["nvidia_nim", "groq", "openrouter"],
-        TaskType.FAST.value:        ["groq", "nvidia_nim", "openrouter"],
-        TaskType.CLASSIFY.value:    ["openrouter", "nvidia_nim", "groq"],
-        TaskType.CODING.value:      ["openrouter", "groq", "nvidia_nim"],
-        TaskType.EMBEDDING.value:   ["nvidia_nim", "openrouter", "groq"],
-        TaskType.URGENT.value:      ["groq", "openrouter", "nvidia_nim"],
+        # LOCAL-FIRST: local_ollama is always Tier 0 (zero API cost, offline)
+        TaskType.REASONING.value:   ["local_ollama", "groq", "nvidia_nim", "openrouter"],
+        TaskType.ANALYSIS.value:    ["local_ollama", "nvidia_nim", "groq", "openrouter"],
+        TaskType.FAST.value:        ["local_ollama", "groq", "nvidia_nim", "openrouter"],
+        TaskType.CLASSIFY.value:    ["local_ollama", "openrouter", "nvidia_nim", "groq"],
+        TaskType.CODING.value:      ["local_ollama", "openrouter", "groq", "nvidia_nim"],
+        TaskType.EMBEDDING.value:   ["local_ollama", "nvidia_nim", "openrouter", "groq"],
+        TaskType.URGENT.value:      ["local_ollama", "groq", "openrouter", "nvidia_nim"],
     })
 
     timeout_per_provider: dict = field(default_factory=lambda: {
@@ -401,13 +402,13 @@ class InferenceRouter:
 
             if preferred:
                 chain = [preferred]
-                chain += [p for p in self.config.provider_priority.get(task.task_type, ["groq", "nvidia_nim", "openrouter"]) if p != preferred]
+                chain += [p for p in self.config.provider_priority.get(task.task_type, ["local_ollama", "groq", "nvidia_nim", "openrouter"]) if p != preferred]
                 return chain
 
         # 3. Default: task-type-based routing
         return list(self.config.provider_priority.get(
             task.task_type,
-            ["groq", "nvidia_nim", "openrouter"],
+            ["local_ollama", "groq", "nvidia_nim", "openrouter"],
         ))
 
     async def _call_provider(

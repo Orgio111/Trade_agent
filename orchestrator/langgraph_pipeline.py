@@ -456,17 +456,12 @@ async def swarm_strategy_node(state: TradingState) -> TradingState:
             "rag_pattern_stats": state.rag_context.get("pattern_stats", {}),
         } if state.rag_context else None
 
-        # Run AutoGen trading cycle (synchronous — runs in thread pool)
-        import asyncio
-        loop = asyncio.get_event_loop()
+        # Run AutoGen trading cycle (async wrapper handles thread pool internally)
         team = TradingTeam()
-        autogen_result = await loop.run_in_executor(
-            None,
-            lambda: team.run_trading_cycle(
-                candle_data=candle_data,
-                vlm_output=vlm_output,
-                market_context=market_context,
-            ),
+        autogen_result = await team.async_run_trading_cycle(
+            candle_data=candle_data,
+            vlm_output=vlm_output,
+            market_context=market_context,
         )
 
         # Convert to LangGraph-compatible signal

@@ -47,6 +47,24 @@ from .microstructure import SpoofingDetector, HiddenLiquidityDetector, DeltaCVDT
 from .execution import ExecutionOrchestrator, TWAPExecutor, VWAPExecutor, IcebergExecutor, SmartOrderRouter, SlippageEstimator, get_execution_plan, ExecutionPlan
 from .agent_routing import AgentModelRouter, TaskRouter, AGENT_MODEL_MAP, AGENT_PROVIDER_CHAINS, AGENT_TASK_TYPE_OVERRIDES
 
+# Optional integrations — lazy-imported to avoid crashing on missing deps
+try:
+    from .continual_learning import ContinualLearningPipeline
+except ImportError:
+    ContinualLearningPipeline = None
+try:
+    from .hmm_regime import HMMRegimeDetector
+except ImportError:
+    HMMRegimeDetector = None
+try:
+    from .portfolio_optimizer import PortfolioOptimizer
+except ImportError:
+    PortfolioOptimizer = None
+try:
+    from .model_loader import ModelLoader
+except ImportError:
+    ModelLoader = None
+
 # Trinity Layer A: Brain registry + NATS runner
 from .brains import BRAIN_REGISTRY, BaseBrain
 from .brains.base_brain import BrainRunner, BrainNATSPublisher
@@ -114,6 +132,13 @@ execution_orch: ExecutionOrchestrator | None = None
 agent_router: AgentModelRouter | None = None
 task_router: TaskRouter | None = None
 timesfm_forecaster: TimesFMForecaster | None = None
+
+# New integrations (type annotations use Any since classes may be None if imports failed)
+from typing import Any
+continual_learning: Any = None
+hmm_detector: Any = None
+portfolio_optimizer: Any = None
+model_loader: Any = None
 
 # Trinity Layer A: Brain runner instances
 brain_publisher: BrainNATSPublisher | None = None
@@ -209,6 +234,7 @@ async def lifespan(app: FastAPI):
     global execution_orch, agent_router, task_router
     global timesfm_forecaster
     global brain_publisher, brain_runners, brain_runner_tasks
+    global continual_learning, hmm_detector, portfolio_optimizer, model_loader
 
     # Phase 1-3 components (nim_enhanced kept for NeMoDistiller backward compat)
     nim = InferenceIntegration(budget_tier=os.getenv("INFERENCE_BUDGET_TIER", "free"))
@@ -275,6 +301,38 @@ async def lifespan(app: FastAPI):
 
     # TimesFM forecaster (model weights load lazily on first forecast)
     timesfm_forecaster = TimesFMForecaster()
+
+    # New integrations (graceful fallback if deps missing)
+    if HMMRegimeDetector is not None:
+        hmm_detector = HMMRegimeDetector(n_regimes=4)
+    if PortfolioOptimizer is not None:
+        portfolio_optimizer = PortfolioOptimizer()
+    if ModelLoader is not None:
+        model_loader = ModelLoader()
+
+    # Continual learning pipeline — depends on ml_engine
+    def _ppo_train_fn(train_data):
+        """PPO retrain callable for continual learning."""
+        try:
+            from .retrain_finrl import TradingEnv
+            from stable_baselines3 import PPO as SB3PPO
+            prices = train_data["close"].values.astype(float)
+            env = TradingEnv(prices)
+            model = SB3PPO("MlpPolicy", env, verbose=0, seed=42)
+            model.learn(total_timesteps=50_000)
+            return model
+        except Exception as e:
+            print(f"Warning: PPO retrain failed: {e}")
+            return None
+
+    if ContinualLearningPipeline is not None:
+        continual_learning = ContinualLearningPipeline(
+            ml_engine=ml_engine,
+            ppo_train_fn=_ppo_train_fn,
+            min_trades_before_retrain=20,
+            win_rate_threshold=0.45,
+            retrain_interval_hours=24,
+        )
 
     # ── Trinity Layer A: Brain Runners ────────────────────────────────
     # Each brain runs independently, publishing signals to NATS JetStream "signals.raw"
@@ -1608,6 +1666,129 @@ async def get_brains_status():
             for brain_id, brain_class in sorted(BRAIN_REGISTRY.items())
         },
     }
+
+
+# ── API: Continual Learning ──────────────────────────────────────────
+
+@app.get("/api/v1/continual-learning/status")
+async def continual_learning_status():
+    """Check continual learning pipeline status and whether retrain is needed."""
+    if not continual_learning:
+        return {"error": "Not initialized"}
+    return continual_learning.get_status()
+
+
+@app.post("/api/v1/continual-learning/check")
+async def continual_learning_check():
+    """Run daily retrain check. Returns should_retrain + reason."""
+    if not continual_learning:
+        return {"error": "Not initialized"}
+    if not ml_engine:
+        return {"error": "ML engine not initialized"}
+    # Fetch recent data for training
+    try:
+        end = datetime.now()
+        start = end - timedelta(days=30)
+        data = await DataLoader.from_binance_api(
+            symbol="BTCUSDT", interval="1h", start_time=start, end_time=end,
+        )
+        if data.empty:
+            data = DataLoader.generate_mock_data(periods=720, start_price=50000.0)
+    except Exception:
+        data = DataLoader.generate_mock_data(periods=720, start_price=50000.0)
+    result = await continual_learning.run_daily_check(data)
+    return result
+
+
+@app.post("/api/v1/continual-learning/record")
+async def continual_learning_record(data: dict):
+    """Record a trade outcome for performance tracking."""
+    if not continual_learning:
+        return {"error": "Not initialized"}
+    pnl = data.get("pnl", 0.0)
+    continual_learning.tracker.record_trade(pnl)
+    return {"status": "ok", "total_trades": len(continual_learning.tracker._trades)}
+
+
+# ── API: HMM Regime ────────────────────────────────────────────────
+
+@app.post("/api/v1/hmm/predict")
+async def hmm_predict(params: dict = {}):
+    """Predict current market regime using HMM."""
+    if not hmm_detector:
+        return {"error": "Not initialized"}
+    import pandas as pd
+    symbol = params.get("symbol", "BTCUSDT")
+    days = params.get("days", 30)
+    end = datetime.now()
+    start = end - timedelta(days=days)
+    try:
+        df = await DataLoader.from_binance_api(
+            symbol=symbol, interval="1h", start_time=start, end_time=end,
+        )
+        source = "Binance API"
+    except Exception:
+        df = DataLoader.generate_mock_data(periods=days * 24, start_price=50000.0)
+        source = "Mock"
+    if df.empty:
+        return {"error": "No data"}
+
+    hmm_detector.fit(df, force=params.get("force", False))
+    result = hmm_detector.predict(df)
+    signal = hmm_detector.get_regime_signal(df)
+    return {"symbol": symbol, "data_source": source, "regime": result, "signal": signal}
+
+
+# ── API: Portfolio Optimizer ─────────────────────────────────────────
+
+@app.post("/api/v1/portfolio/kelly")
+async def portfolio_kelly(data: dict):
+    """Calculate Half-Kelly position size."""
+    if not portfolio_optimizer:
+        return {"error": "Not initialized"}
+    return portfolio_optimizer.kelly_size(
+        win_rate=data.get("win_rate", 0.55),
+        avg_win=data.get("avg_win", 2.0),
+        avg_loss=data.get("avg_loss", 1.0),
+        half_kelly=data.get("half_kelly", True),
+        max_fraction=data.get("max_fraction", 0.25),
+    )
+
+
+@app.post("/api/v1/portfolio/trade-size")
+async def portfolio_trade_size(data: dict):
+    """Compute optimal trade dollar amount with Kelly + risk constraints."""
+    if not portfolio_optimizer:
+        return {"error": "Not initialized"}
+    return portfolio_optimizer.compute_trade_size(
+        balance=data.get("balance", 1000.0),
+        win_rate=data.get("win_rate", 0.55),
+        avg_win=data.get("avg_win", 2.0),
+        avg_loss=data.get("avg_loss", 1.0),
+        max_risk_pct=data.get("max_risk_pct", 0.02),
+    )
+
+
+# ── API: Model Loader ───────────────────────────────────────────────
+
+@app.get("/api/v1/model-loader/status")
+async def get_model_loader_status():
+    """VRAM-aware model loader status."""
+    if not model_loader:
+        return {"error": "Not initialized"}
+    return {
+        "loader": model_loader.status(),
+        "warmup_times": model_loader.warmup_times,
+    }
+
+
+@app.post("/api/v1/model-loader/warmup")
+async def warmup_models(models: list[str] = Query(None)):
+    """Pre-warm Ollama models sequentially."""
+    if not model_loader:
+        return {"error": "Not initialized"}
+    results = model_loader.warm_all(models)
+    return {"results": results, "loader": model_loader.status()}
 
 
 # ── Metrics ─────────────────────────────────────────────────────────
