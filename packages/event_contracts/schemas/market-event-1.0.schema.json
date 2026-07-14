@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantex.local/contracts/market-event-1.0.schema.json",
+  "title": "MarketEvent 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "trace_id",
+    "event_type",
+    "venue",
+    "market_type",
+    "instrument_id",
+    "exchange_ts",
+    "received_ts",
+    "source_mode",
+    "ingest_run_id",
+    "payload",
+    "payload_checksum",
+    "quality_flags"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "event_id": {"type": "string", "format": "uuid"},
+    "trace_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "event_type": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_.-]*$",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "venue": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$",
+      "minLength": 1,
+      "maxLength": 32
+    },
+    "market_type": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$",
+      "minLength": 1,
+      "maxLength": 32
+    },
+    "instrument_id": {
+      "type": "string",
+      "pattern": "^[A-Z0-9][A-Z0-9_:/.-]*$",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "exchange_ts": {"type": "string", "format": "date-time"},
+    "received_ts": {"type": "string", "format": "date-time"},
+    "sequence_start": {
+      "oneOf": [
+        {"type": "integer", "minimum": 0},
+        {"type": "null"}
+      ]
+    },
+    "sequence_end": {
+      "oneOf": [
+        {"type": "integer", "minimum": 0},
+        {"type": "null"}
+      ]
+    },
+    "source_mode": {
+      "enum": ["historical", "replay", "paper_live", "live"]
+    },
+    "ingest_run_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "payload": {"$ref": "candle-payload-1.0.schema.json"},
+    "payload_checksum": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "quality_flags": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+      "uniqueItems": true
+    }
+  }
+}

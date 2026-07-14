@@ -3,8 +3,8 @@ title: "Scalping Engine"
 type: entity
 tags: [scalping, cpu-only, low-latency, momentum, rejection, fast-path]
 created: 2026-07-01
-updated: 2026-07-01
-status: active
+updated: 2026-07-14
+status: draft
 ---
 
 # Scalping Engine
@@ -134,5 +134,5 @@ When the scalping fast-path triggers, the bridge publishes:
 - [[multi-agent-pipeline]] — dual-path architecture that uses the scalping engine
 - [[nats-langgraph-bridge]] — publishes scalping events to NATS
 - [[nats-event-system]] — ScalpDecisionEvent and ScalpExecutedEvent event types
-- [[feature-engine]] — provides volatility/trend inputs to scalping node
-- [[risk-engine]] — risk gate that validates scalping signals before execution
+- feature-engine — missing wiki page; feature contract still needs documentation
+- risk-engine — missing wiki page; canonical risk implementation is not yet selected

@@ -5,6 +5,10 @@ Hybrid dual-tier: local Ollama + cloud NIM/OpenRouter fallback.
 
 ALL cloud APIs are optional — works fully with local Ollama + keyword fallback.
 Weight in Go orchestrator: 0.10.
+
+Data pipeline:
+  1. Headlines: CryptoCompare API → CoinGecko trending fallback
+  2. Sentiment: Local Ollama (2 concurrent) → Cloud NIM → Cloud OpenRouter → Keywords
 """
 
 from __future__ import annotations
@@ -31,6 +35,19 @@ try:
         load_dotenv(_env_file, override=False)
 except ImportError:
     pass
+
+
+# ── Import guards (cached at module level) ─────────────
+def _has_httpx() -> bool:
+    try:
+        import httpx  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+_HTTPX_AVAILABLE: bool = _has_httpx()
+
 
 SENTIMENT_PROMPT = """Analyze the sentiment of these crypto market headlines for {symbol}.
 
@@ -73,16 +90,23 @@ class FinBERTBrain(BaseBrain):
         self._headlines: list[str] = []
         self._headlines_cache: dict[str, list[str]] = {}
         self._headlines_cache_ts: dict[str, float] = {}
+        self._cache_ttl = 300.0  # 5 minutes
 
     async def _get_http(self):
         """Lazy-import httpx."""
         if self._http is None:
+            if not _HTTPX_AVAILABLE:
+                return None
             import httpx
             self._http = httpx.AsyncClient(timeout=self.timeout)
         return self._http
 
     async def warmup(self) -> None:
         # Auto-discover available Ollama models
+        if not _HTTPX_AVAILABLE:
+            logger.warning("[finbert_nlp] httpx not installed, HTTP calls disabled")
+            return
+
         try:
             import httpx
             async with httpx.AsyncClient(timeout=5) as cx:
@@ -95,19 +119,19 @@ class FinBERTBrain(BaseBrain):
                             resolved.append(m)
                     if not resolved and available:
                         resolved = available[:2]
-                        logger.warning(f"[finbert_nlp] Configured models not found, auto-selected {resolved}")
+                        logger.warning("[finbert_nlp] Configured models not found, auto-selected %s", resolved)
                     self.ollama_models = resolved or self.ollama_models
         except Exception:
             pass  # Ollama offline — keyword fallback will handle
 
-        logger.info(f"[finbert_nlp] Ready (models={self.ollama_models})")
+        logger.info("[finbert_nlp] Ready (models=%s)", self.ollama_models)
         tiers = ["local_ollama"]
         if self.nim_key:
             tiers.append("nim_cloud")
-            logger.info(f"[finbert_nlp] NIM configured: {self.nim_url} model={self.nim_model}")
+            logger.info("[finbert_nlp] NIM configured: %s model=%s", self.nim_url, self.nim_model)
         if self.openrouter_key:
             tiers.append("openrouter_cloud")
-            logger.info(f"[finbert_nlp] OpenRouter key available, model={self.openrouter_model}")
+            logger.info("[finbert_nlp] OpenRouter key available, model=%s", self.openrouter_model)
         if not self.nim_key and not self.openrouter_key:
             logger.info("[finbert_nlp] Running in local-only mode (keyword fallback active)")
 
@@ -148,7 +172,11 @@ class FinBERTBrain(BaseBrain):
                 symbol=symbol,
                 score=float(np.clip(avg_score, -1.0, 1.0)),
                 confidence=avg_conf,
-                metadata={"tier": "local", "scores": [round(s, 4) for s in local_scores]},
+                metadata={
+                    "tier": "local",
+                    "scores": [round(s, 4) for s in local_scores],
+                    "headlines_count": len(self._headlines),
+                },
             )
 
         # Single local result
@@ -158,7 +186,7 @@ class FinBERTBrain(BaseBrain):
                 symbol=symbol,
                 score=float(np.clip(local_scores[0], -1.0, 1.0)),
                 confidence=0.4,
-                metadata={"tier": "local_single"},
+                metadata={"tier": "local_single", "headlines_count": len(self._headlines)},
             )
 
         # Tier 2: Cloud fallback (optional — only if keys configured)
@@ -169,7 +197,7 @@ class FinBERTBrain(BaseBrain):
                 symbol=symbol,
                 score=float(np.clip(cloud_score, -1.0, 1.0)),
                 confidence=cloud_conf,
-                metadata={"tier": "cloud"},
+                metadata={"tier": "cloud", "headlines_count": len(self._headlines)},
             )
 
         # Tier 3: Keyword fallback (always available)
@@ -180,7 +208,7 @@ class FinBERTBrain(BaseBrain):
                 symbol=symbol,
                 score=float(np.clip(keyword_score, -1.0, 1.0)),
                 confidence=0.2,
-                metadata={"tier": "keyword_fallback"},
+                metadata={"tier": "keyword_fallback", "headlines_count": len(self._headlines)},
             )
 
         return BrainSignal(
@@ -192,52 +220,68 @@ class FinBERTBrain(BaseBrain):
         )
 
     async def _auto_fetch_headlines(self, symbol: str) -> None:
-        """Fetch crypto news headlines from CryptoCompare API (async)."""
+        """Fetch crypto news headlines (async, non-blocking).
+
+        Sources (in order):
+          1. CryptoCompare API (crypto news)
+          2. CoinGecko trending (fallback)
+        """
         now = time.time()
         cache_ts = self._headlines_cache_ts.get(symbol, 0)
-        if (now - cache_ts) < 300 and symbol in self._headlines_cache:
-            self._headlines = self._headlines_cache[symbol]
-            return
 
-        try:
-            http = await self._get_http()
-            base = symbol.split("/")[0].upper() if "/" in symbol else symbol.upper()
-            resp = await http.get(
-                f"https://min-api.cryptocompare.com/data/v2/news/?categories={base}",
-                timeout=5.0,
-            )
-            if resp.status_code == 200:
-                articles = resp.json().get("Data", [])[:20]
-                headlines = [a.get("title", "") for a in articles if a.get("title")]
-                if headlines:
-                    self._headlines = headlines
-                    self._headlines_cache[symbol] = headlines
-                    self._headlines_cache_ts[symbol] = now
-                    logger.info("[finbert_nlp] Fetched %d headlines for %s from CryptoCompare",
-                                len(headlines), symbol)
-                    return
-        except Exception as e:
-            logger.debug(f"[finbert_nlp] CryptoCompare fetch failed: {e}")
+        # Return cached if fresh (< 5 min) and non-empty
+        if (now - cache_ts) < self._cache_ttl and symbol in self._headlines_cache:
+            cached = self._headlines_cache[symbol]
+            if cached:
+                self._headlines = cached
+                return
 
-        # Fallback: CoinGecko trending
-        try:
-            http = await self._get_http()
-            resp = await http.get(
-                "https://api.coingecko.com/api/v3/search/trending",
-                timeout=5.0,
-            )
-            if resp.status_code == 200:
-                coins = resp.json().get("coins", [])[:10]
-                headlines = [f"{c['item'].get('name', 'Crypto')} trending #{i+1}"
-                             for i, c in enumerate(coins) if c.get("item", {}).get("name")]
-                if headlines:
-                    self._headlines = headlines
-                    self._headlines_cache[symbol] = headlines
-                    self._headlines_cache_ts[symbol] = now
-                    logger.info("[finbert_nlp] Fetched %d trending from CoinGecko", len(headlines))
+        # ── Source 1: CryptoCompare ──────────────────────────────
+        if _HTTPX_AVAILABLE:
+            try:
+                http = await self._get_http()
+                if http is None:
                     return
-        except Exception as e:
-            logger.debug(f"[finbert_nlp] CoinGecko fetch failed: {e}")
+                base = symbol.split("/")[0].upper() if "/" in symbol else symbol.upper()
+                resp = await http.get(
+                    f"https://min-api.cryptocompare.com/data/v2/news/?categories={base}",
+                    timeout=5.0,
+                )
+                if resp.status_code == 200:
+                    articles = resp.json().get("Data", [])[:20]
+                    headlines = [a.get("title", "") for a in articles if a.get("title")]
+                    if headlines:
+                        self._headlines = headlines
+                        self._headlines_cache[symbol] = headlines
+                        self._headlines_cache_ts[symbol] = now
+                        logger.info("[finbert_nlp] Fetched %d headlines for %s from CryptoCompare",
+                                    len(headlines), symbol)
+                        return
+            except Exception as e:
+                logger.debug("[finbert_nlp] CryptoCompare fetch failed: %s", e)
+
+        # ── Source 2: CoinGecko trending (fallback) ──────────────
+        if _HTTPX_AVAILABLE:
+            try:
+                http = await self._get_http()
+                if http is None:
+                    return
+                resp = await http.get(
+                    "https://api.coingecko.com/api/v3/search/trending",
+                    timeout=5.0,
+                )
+                if resp.status_code == 200:
+                    coins = resp.json().get("coins", [])[:10]
+                    headlines = [f"{c['item'].get('name', 'Crypto')} trending #{i+1}"
+                                 for i, c in enumerate(coins) if c.get("item", {}).get("name")]
+                    if headlines:
+                        self._headlines = headlines
+                        self._headlines_cache[symbol] = headlines
+                        self._headlines_cache_ts[symbol] = now
+                        logger.info("[finbert_nlp] Fetched %d trending from CoinGecko", len(headlines))
+                        return
+            except Exception as e:
+                logger.debug("[finbert_nlp] CoinGecko fetch failed: %s", e)
 
     def _keyword_fallback_score(self) -> float:
         """Simple keyword-based sentiment when LLM is unavailable."""
@@ -264,12 +308,16 @@ class FinBERTBrain(BaseBrain):
 
     async def _query_ollama(self, model: str, symbol: str) -> tuple[str | None, float]:
         """Query one Ollama model for sentiment."""
+        if not _HTTPX_AVAILABLE:
+            return None, 0.0
         prompt = SENTIMENT_PROMPT.format(
             symbol=symbol,
             headlines="\n".join(f"- {h}" for h in self._headlines[:10]),
         )
         try:
             http = await self._get_http()
+            if http is None:
+                return None, 0.0
             resp = await http.post(
                 f"{self.ollama_url}/api/generate",
                 json={
@@ -283,11 +331,13 @@ class FinBERTBrain(BaseBrain):
                 text = resp.json().get("response", "")
                 return self._parse_sentiment(text)
         except Exception:
-            logger.debug(f"[finbert_nlp] Ollama {model} timeout")
+            logger.debug("[finbert_nlp] Ollama %s timeout", model)
         return None, 0.0
 
     async def _query_cloud(self, symbol: str) -> tuple[float | None, float]:
         """Query NIM (tier 2) or OpenRouter free (tier 3) for consensus sentiment."""
+        if not _HTTPX_AVAILABLE:
+            return None, 0.0
         prompt = SENTIMENT_PROMPT.format(
             symbol=symbol,
             headlines="\n".join(f"- {h}" for h in self._headlines[:10]),
@@ -297,6 +347,8 @@ class FinBERTBrain(BaseBrain):
         if self.nim_key:
             try:
                 http = await self._get_http()
+                if http is None:
+                    return None, 0.0
                 resp = await http.post(
                     f"{self.nim_url}/v1/chat/completions",
                     json={
@@ -314,12 +366,14 @@ class FinBERTBrain(BaseBrain):
                         logger.info("[finbert_nlp] NIM tier OK")
                         return self._sentiment_to_score(sentiment, conf), conf
             except Exception as e:
-                logger.debug(f"[finbert_nlp] NIM error: {e}")
+                logger.debug("[finbert_nlp] NIM error: %s", e)
 
         # Tier 3: OpenRouter free model — optional
         if self.openrouter_key:
             try:
                 http = await self._get_http()
+                if http is None:
+                    return None, 0.0
                 resp = await http.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     json={
@@ -337,7 +391,7 @@ class FinBERTBrain(BaseBrain):
                         logger.info("[finbert_nlp] OpenRouter free tier OK")
                         return self._sentiment_to_score(sentiment, conf), conf
             except Exception as e:
-                logger.debug(f"[finbert_nlp] OpenRouter error: {e}")
+                logger.debug("[finbert_nlp] OpenRouter error: %s", e)
 
         return None, 0.0
 

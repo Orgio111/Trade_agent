@@ -2,6 +2,14 @@
 
 > Append-only timeline of every operation on the wiki. Newest at top. Reverse chronological so the current state is the first thing you read.
 
+## [2026-07-14] lint | Architecture-plan wiki consistency
+
+Verified [[trade-project-full-integration-build-plan]] has no broken wikilinks and all 59 content pages remain indexed by category. Removed two index entries whose files are absent, converted seven current-content broken links to explicit missing-component text, flagged five missing pages, and downgraded unverified pipeline/latency entities from active to draft. Historical log links remain unchanged because the log is append-only.
+
+## [2026-07-14] query | Trade Project Full Integration and Build Plan
+
+Created [[trade-project-full-integration-build-plan]] from a repository audit and current primary documentation. The decision replaces the default 21-service topology with a three-worker event-driven core, keeps AI outside deterministic risk/execution, consolidates PostgreSQL/Redis/pgvector memory, defines validation and promotion gates, and provides a Phase 0–8 roadmap plus a seven-day vertical slice. Added contradiction notices to [[infrastructure-overview]], [[multi-agent-pipeline]], [[nats-event-system]], and [[local-trading-ai-architecture]]; fixed a duplicate index entry.
+
 ## [2026-07-01] ingest | Ultra-Low Latency Monitoring — Grafana Dashboard + Prometheus Metrics
 
 Created [[ultra-low-latency-monitoring]] (entity) — Dedicated monitoring stack for GPU, vLLM inference, and scalping engine:

@@ -31,7 +31,8 @@ from orchestrator.brains.base_brain import BrainSignal
 class TestLLMRegimeBinanceFetch:
     """Verify Binance market data fetch for regime context building."""
 
-    def test_build_context_with_ohlcv(self):
+    @pytest.mark.asyncio
+    async def test_build_context_with_ohlcv(self):
         """_build_context should compute price_change_pct, vol_ratio, rsi from Binance."""
         brain = LLMRegimeBrain()
 
@@ -51,14 +52,15 @@ class TestLLMRegimeBinanceFetch:
         mock_exchange.fetch_ohlcv.return_value = fake_ohlcv
 
         with patch.dict("sys.modules", {"ccxt": MagicMock(binance=MagicMock(return_value=mock_exchange))}):
-            ctx = brain._build_context("BTC/USDT")
+            ctx = await brain._build_context("BTC/USDT")
 
         assert ctx["symbol"] == "BTC/USDT"
         # Price should be rising over 24 bars
         assert ctx["price_change_pct"] > 0
         assert ctx["rsi"] > 0
 
-    def test_build_context_caches_result(self):
+    @pytest.mark.asyncio
+    async def test_build_context_caches_result(self):
         """Second call within TTL should return cached data."""
         brain = LLMRegimeBrain()
 
@@ -67,14 +69,15 @@ class TestLLMRegimeBinanceFetch:
         mock_exchange.fetch_ohlcv.return_value = fake_ohlcv
 
         with patch.dict("sys.modules", {"ccxt": MagicMock(binance=MagicMock(return_value=mock_exchange))}):
-            ctx1 = brain._build_context("BTC/USDT")
-            ctx2 = brain._build_context("BTC/USDT")
+            ctx1 = await brain._build_context("BTC/USDT")
+            ctx2 = await brain._build_context("BTC/USDT")
 
         # fetch_ohlcv should only be called once (cached second time)
         assert mock_exchange.fetch_ohlcv.call_count == 1
         assert ctx1 == ctx2
 
-    def test_build_context_binance_failure_returns_defaults(self):
+    @pytest.mark.asyncio
+    async def test_build_context_binance_failure_returns_defaults(self):
         """If Binance fails entirely, sensible defaults should be returned."""
         brain = LLMRegimeBrain()
 
@@ -82,7 +85,7 @@ class TestLLMRegimeBinanceFetch:
         mock_ccxt.binance.side_effect = Exception("network error")
 
         with patch.dict("sys.modules", {"ccxt": mock_ccxt}):
-            ctx = brain._build_context("BTC/USDT")
+            ctx = await brain._build_context("BTC/USDT")
 
         assert ctx["symbol"] == "BTC/USDT"
         assert ctx["price_change_pct"] == 0.0
@@ -231,7 +234,8 @@ class TestLLMRegimeScoring:
 class TestFinBERTNewsFetch:
     """Verify crypto news headline fetching."""
 
-    def test_auto_fetch_from_cryptocompare(self):
+    @pytest.mark.asyncio
+    async def test_auto_fetch_from_cryptocompare(self):
         brain = FinBERTBrain()
 
         mock_resp = MagicMock()
@@ -243,24 +247,24 @@ class TestFinBERTNewsFetch:
             ]
         }
 
-        mock_requests = MagicMock()
-        mock_requests.get.return_value = mock_resp
+        mock_http = AsyncMock()
+        mock_http.get = AsyncMock(return_value=mock_resp)
+        brain._http = mock_http
 
-        with patch.dict("sys.modules", {"requests": mock_requests}):
-            brain._auto_fetch_headlines("BTC/USDT")
+        with patch.object(brain, "_get_http", new_callable=AsyncMock, return_value=mock_http):
+            await brain._auto_fetch_headlines("BTC/USDT")
 
         assert len(brain._headlines) == 2
         assert "surges" in brain._headlines[0]
 
-    def test_auto_fetch_coingecko_fallback(self):
+    @pytest.mark.asyncio
+    async def test_auto_fetch_coingecko_fallback(self):
         """When CryptoCompare fails, CoinGecko trending should be used."""
         brain = FinBERTBrain()
 
-        # CryptoCompare: raise exception
-        # CoinGecko: return valid data
         call_count = [0]
 
-        def mock_get(url, **kwargs):
+        async def mock_get(url, **kwargs):
             call_count[0] += 1
             if "cryptocompare" in url:
                 return MagicMock(status_code=500)
@@ -275,16 +279,18 @@ class TestFinBERTNewsFetch:
             }
             return resp
 
-        mock_requests = MagicMock()
-        mock_requests.get = mock_get
+        mock_http = AsyncMock()
+        mock_http.get = mock_get
+        brain._http = mock_http
 
-        with patch.dict("sys.modules", {"requests": mock_requests}):
-            brain._auto_fetch_headlines("BTC/USDT")
+        with patch.object(brain, "_get_http", new_callable=AsyncMock, return_value=mock_http):
+            await brain._auto_fetch_headlines("BTC/USDT")
 
         # Should have CoinGecko headlines
         assert len(brain._headlines) >= 1
 
-    def test_auto_fetch_caches(self):
+    @pytest.mark.asyncio
+    async def test_auto_fetch_caches(self):
         """Second call within TTL should use cached headlines."""
         brain = FinBERTBrain()
 
@@ -292,15 +298,16 @@ class TestFinBERTNewsFetch:
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"Data": [{"title": "Test headline"}]}
 
-        mock_requests = MagicMock()
-        mock_requests.get.return_value = mock_resp
+        mock_http = AsyncMock()
+        mock_http.get = AsyncMock(return_value=mock_resp)
+        brain._http = mock_http
 
-        with patch.dict("sys.modules", {"requests": mock_requests}):
-            brain._auto_fetch_headlines("BTC/USDT")
-            brain._auto_fetch_headlines("BTC/USDT")  # should use cache
+        with patch.object(brain, "_get_http", new_callable=AsyncMock, return_value=mock_http):
+            await brain._auto_fetch_headlines("BTC/USDT")
+            await brain._auto_fetch_headlines("BTC/USDT")  # should use cache
 
         # Only one actual HTTP call (cache hit on 2nd)
-        assert mock_requests.get.call_count == 1
+        assert mock_http.get.call_count == 1
 
     @pytest.mark.asyncio
     async def test_no_headlines_returns_low_confidence(self):
@@ -575,6 +582,7 @@ class TestFinRLPPO:
 
         # Mock sb3 components
         mock_ppo = MagicMock()
+        mock_ppo.predict.return_value = (np.array([0]), None)  # HOLD
         mock_env = MagicMock()
 
         mock_sb3 = MagicMock()

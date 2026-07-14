@@ -3,8 +3,8 @@ title: "NATS↔LangGraph Bridge"
 type: entity
 tags: [nats, langgraph, bridge, event-driven, pipeline-trigger, candle-subscriber]
 created: 2026-07-01
-updated: 2026-07-01
-status: active
+updated: 2026-07-14
+status: draft
 ---
 
 # NATS↔LangGraph Bridge
@@ -80,7 +80,7 @@ bridge.get_stats()
 
 - [[multi-agent-pipeline]] — the LangGraph pipeline that the bridge triggers
 - [[nats-event-system]] — NATS event types used by the bridge
-- [[candle-buffer]] — hot candle state maintained by the bridge
+- candle-buffer — missing wiki page; hot-state contract still needs documentation
 - [[brain-ecosystem]] — 12 brains that also publish to NATS (separate from LangGraph pipeline)
 
 ## Sources

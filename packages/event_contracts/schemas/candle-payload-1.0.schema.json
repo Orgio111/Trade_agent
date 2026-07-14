@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quantex.local/contracts/candle-payload-1.0.schema.json",
+  "title": "CandlePayload 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "interval",
+    "open_time",
+    "close_time",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume"
+  ],
+  "properties": {
+    "interval": {
+      "type": "string",
+      "pattern": "^[0-9]+[smhdwM]$",
+      "minLength": 1,
+      "maxLength": 32
+    },
+    "open_time": {"type": "string", "format": "date-time"},
+    "close_time": {"type": "string", "format": "date-time"},
+    "open": {"$ref": "#/$defs/decimal"},
+    "high": {"$ref": "#/$defs/decimal"},
+    "low": {"$ref": "#/$defs/decimal"},
+    "close": {"$ref": "#/$defs/decimal"},
+    "volume": {"$ref": "#/$defs/decimal"},
+    "quote_volume": {
+      "oneOf": [
+        {"$ref": "#/$defs/decimal"},
+        {"type": "null"}
+      ]
+    },
+    "trade_count": {
+      "oneOf": [
+        {"type": "integer", "minimum": 0},
+        {"type": "null"}
+      ]
+    }
+  },
+  "$defs": {
+    "decimal": {
+      "type": "string",
+      "pattern": "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?$"
+    }
+  }
+}

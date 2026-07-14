@@ -140,14 +140,16 @@ class ReconciliationEngine:
 
         # Update guardrail state
         if self._registry:
-            total_pnl = sum([entry.get("daily_pnl", 0.0) for meta in self._registry._metas.values()
-                            for name, meta in self._registry._metas.items()])
+            total_pnl = sum(state.daily_pnl for state in self._registry._states.values())
             daily_drawdown = -min(0.0, total_pnl)
-
-            self._registry.update_state("moss_composite",
-                                        daily_pnl=total_pnl,
-                                        daily_drawdown_pct=daily_drawdown,
-                                        consecutive_losses=max(0, self._registry.get_state("moss_composite").consecutive_losses - 1))
+            composite_state = self._registry.get_state("moss_composite")
+            if composite_state is not None:
+                self._registry.update_state(
+                    "moss_composite",
+                    daily_pnl=total_pnl,
+                    daily_drawdown_pct=daily_drawdown,
+                    consecutive_losses=max(0, composite_state.consecutive_losses - 1),
+                )
 
         report = ReconciliationReport(
             matched_positions=len(matched),

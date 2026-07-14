@@ -9,7 +9,8 @@ tags:
   - nginx
   - deployment
 created: 2026-06-30
-updated: 2026-06-30
+updated: 2026-07-14
+status: draft
 ---
 
 # Infrastructure Overview
@@ -292,9 +293,14 @@ cd deployment/terraform && terraform destroy
 
 ## Related
 
+- [[trade-project-full-integration-build-plan]] — current audited target architecture and migration plan
 - [[nats-event-system]] — NATS JetStream event backbone details
 - [[vllm-inference-provider]] — vLLM GPU inference provider
 - [[brain-ecosystem]] — Brain weights stored in ConfigMap
 - [[real-time-trading-dashboard]] — Frontend dashboard architecture
 - [[ppo-portfolio-manager]] — RL training (Ray Cluster)
 - [[broker-abstraction-layer]] — Execution layer
+
+## Contradictions / updates
+
+**2026-07-14 repository audit:** this page describes an earlier deployment intent. The current Compose file defines 21 services, several new services do not yet use the NATS/PostgreSQL/Redis connections implied by the diagram, and the full topology is too large for the stated 16 GB laptop target. [[trade-project-full-integration-build-plan]] is the current decision: use profiled infrastructure and a three-worker core; keep Kubernetes, Ray, vLLM, Qdrant, InfluxDB, Go, and Rust outside the default MVP until a measured requirement exists.

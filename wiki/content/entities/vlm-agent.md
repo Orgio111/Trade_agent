@@ -3,8 +3,8 @@ title: "VLM Agent"
 type: entity
 tags: [vlm, vision, chart-analysis, ollama, moondream, pattern-recognition, gpu]
 created: 2026-07-01
-updated: 2026-07-01
-status: active
+updated: 2026-07-14
+status: draft
 ---
 
 # VLM Agent
@@ -96,7 +96,7 @@ If VLM is unavailable (Ollama not running, model not loaded, timeout), the agent
 ## Related
 
 - [[multi-agent-pipeline]] — pipeline architecture showing VLM parallel execution
-- [[candle-buffer]] — provides candle history for chart rendering
+- candle-buffer — missing wiki page; chart-history input contract still needs documentation
 - [[nats-langgraph-bridge]] — triggers pipeline that includes VLM analysis
 - [[local-trading-ai-architecture]] — Ollama model deployment for RTX 4050
 - [[agent-swarm-visor]] — frontend 3D visualization of brain swarm

@@ -207,11 +207,16 @@ class MossCompositeEngine:
         macd_12 = self._ema(closes, 12)
         macd_26 = self._ema(closes, 26)
         macd = macd_12 - macd_26
-        signal = self._ema([macd_12, *(buf.get("macd_hist", tuple()))], 9)[0]  # last 9 macds
-        buf["macd_hist"] = macd_hist = tuple(list(buf.get("macd_hist", tuple()))[-8:] + [macd])
+        macd_history = list(buf.get("macd_hist", tuple()))[-8:]
+        signal = self._ema([*macd_history, macd], 9)
+        buf["macd_hist"] = macd_hist = tuple([*macd_history, macd])
         macd_cross_score = 0.5 if macd > signal else -0.5
         histogram = macd - signal
-        macd_div_score = float(np.sign(histogram) * (abs(histogram) / np.percentile(np.abs([abs(h) for h in macd_hist]), 75) if len(macd_hist) > 0 else 1.0))
+        macd_scale = max(
+            float(np.percentile(np.abs(macd_hist), 75)) if macd_hist else 0.0,
+            1e-12,
+        )
+        macd_div_score = float(np.sign(histogram) * abs(histogram) / macd_scale)
         macd_blend = 0.6 * macd_cross_score + 0.4 * macd_div_score
 
         # Blend: 0.6 RSI + 0.4 MACD
@@ -281,6 +286,7 @@ class MossCompositeEngine:
         buf[obv_key] = obv_deque
 
         # OBV trend via rolling linear regression slope
+        slope = 0.0
         if len(obv_deque) >= 2:
             x = list(range(len(obv_deque)))
             y = list(obv_deque)

@@ -65,28 +65,27 @@ services:
   #   Layer C (Rust execution) subscribes → signals.aggregated → executes
 
   nats:
-    image: nats:2.10-alpine
-    container_name: quantex-nats
-    restart: unless-stopped
-    ports:
-      - "4222:4222"   # Client connections (brains, orchestrator, realtime)
-      - "8222:8222"   # HTTP monitoring / health
-    command:
-      - "--jetstream"
-      - "--store_dir=/data"
-      - "-m"
-      - "8222"
-      - "--max_payload=1MB"
-    volumes:
-      - nats_data:/data
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q http://localhost:8222/healthz -O /dev/null || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    deploy:
-      resources:
-        limits: { cpus: "0.5", memory: 256M }
+      image: nats:2.10-alpine
+      container_name: quantex-nats
+      restart: unless-stopped
+      ports:
+        - "4222:4222"   # Client connections (brains, orchestrator, realtime)
+        - "8222:8222"   # HTTP monitoring / health
+      command:
+        - "--jetstream"
+        - "--store_dir=/data"
+        - "-m"
+        - "8222"
+      volumes:
+        - nats_data:/data
+      healthcheck:
+        test: ["CMD-SHELL", "wget -q http://localhost:8222/healthz -O /dev/null || exit 1"]
+        interval: 10s
+        timeout: 5s
+        retries: 3
+      deploy:
+        resources:
+          limits: { cpus: "0.5", memory: 256M }
 
   influxdb:
     image: influxdb:2.7
@@ -138,6 +137,249 @@ services:
     deploy:
       resources:
         limits: { cpus: "2.0", memory: 4G }
+
+  # ── NEW: MICROSERVICES ────────────────────────────────
+
+  market-data:
+    build:
+      context: .
+      dockerfile: services/market_data/Dockerfile
+    container_name: quantex-market-data
+    restart: unless-stopped
+    ports: ["8081:8081"]
+    environment:
+      REDIS_HOST: redis
+      POSTGRES_URL: postgresql://quantex:secret@postgres:5432/quantex
+      NATS_URL: nats://nats:4222
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+
+  feature-engine:
+    build:
+      context: .
+      dockerfile: services/feature_engine/Dockerfile
+    container_name: quantex-feature-engine
+    restart: unless-stopped
+    ports: ["8082:8082"]
+    environment:
+      REDIS_HOST: redis
+      NATS_URL: nats://nats:4222
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      market-data:
+        condition: service_started
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+
+  orderbook:
+    build:
+      context: .
+      dockerfile: services/orderbook/Dockerfile
+    container_name: quantex-orderbook
+    restart: unless-stopped
+    ports: ["8083:8083"]
+    environment:
+      REDIS_HOST: redis
+      NATS_URL: nats://nats:4222
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      market-data:
+        condition: service_started
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+
+  moe-router:
+    build:
+      context: .
+      dockerfile: services/moe_router/Dockerfile
+    container_name: quantex-moe-router
+    restart: unless-stopped
+    ports: ["8084:8084"]
+    environment:
+      REDIS_HOST: redis
+      NATS_URL: nats://nats:4222
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      feature-engine:
+        condition: service_started
+      orderbook:
+        condition: service_started
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+
+  inference:
+    build:
+      context: .
+      dockerfile: services/inference/Dockerfile
+    container_name: quantex-inference
+    restart: unless-stopped
+    ports: ["8085:8085"]
+    environment:
+      REDIS_HOST: redis
+      NATS_URL: nats://nats:4222
+      VLLM_URL: http://vllm:8000/v1
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      vllm:
+        condition: service_started
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: quantex-vllm
+    restart: unless-stopped
+    ports: ["8000:8000"]
+    # RTX 4050 laptop (6GB VRAM) — AWQ 4-bit quantized 7B model
+    # Alternatives: Qwen/Qwen2.5-3B-Instruct (fp16, ~6GB) for faster inference
+    command: >
+      --model Qwen/Qwen2.5-7B-Instruct-AWQ
+      --tensor-parallel-size 1
+      --quantization awq
+      --gpu-memory-utilization 0.85
+      --max-model-len 4096
+      --port 8000
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 6G }
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  execution:
+    build:
+      context: .
+      dockerfile: services/execution/Dockerfile
+    container_name: quantex-execution
+    restart: unless-stopped
+    ports: ["8096:8086"]
+    environment:
+      REDIS_HOST: redis
+      NATS_URL: nats://nats:4222
+      BINANCE_API_KEY: ${BINANCE_API_KEY}
+      BINANCE_API_SECRET: ${BINANCE_API_SECRET}
+      BINANCE_TESTNET: "true"
+      EXECUTION_MODE: paper
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+
+  risk:
+    build:
+      context: .
+      dockerfile: services/risk/Dockerfile
+    container_name: quantex-risk
+    restart: unless-stopped
+    ports: ["8087:8087"]
+    environment:
+      REDIS_HOST: redis
+      NATS_URL: nats://nats:4222
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      execution:
+        condition: service_started
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+
+  rl-learning:
+    build:
+      context: .
+      dockerfile: services/rl_learning/Dockerfile
+    container_name: quantex-rl-learning
+    restart: unless-stopped
+    ports: ["8088:8088"]
+    environment:
+      REDIS_HOST: redis
+      NATS_URL: nats://nats:4222
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: services/dashboard/Dockerfile
+    container_name: quantex-dashboard
+    restart: unless-stopped
+    ports: ["8080:8080"]
+    environment:
+      REDIS_HOST: redis
+      NATS_URL: nats://nats:4222
+    depends_on:
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_started
+      market-data:
+        condition: service_started
+      orderbook:
+        condition: service_started
+      moe-router:
+        condition: service_started
+      execution:
+        condition: service_started
+      risk:
+        condition: service_started
+      rl-learning:
+        condition: service_started
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
 
   realtime:
     build: ./realtime

@@ -1,0 +1,29 @@
+{
+  "event_id": "5835eba0-31a0-58a0-a2c5-19a0f534eccf",
+  "event_type": "market.candle.closed",
+  "exchange_ts": "2026-07-15T00:01:00.000000Z",
+  "ingest_run_id": "fixture-run-001",
+  "instrument_id": "BTCUSDT",
+  "market_type": "spot",
+  "payload": {
+    "close": "99999.9",
+    "close_time": "2026-07-15T00:01:00.000000Z",
+    "high": "99999.9",
+    "interval": "1m",
+    "low": "59950",
+    "open": "60000.1",
+    "open_time": "2026-07-15T00:00:00.000000Z",
+    "quote_volume": "741234.56",
+    "trade_count": 321,
+    "volume": "12.345"
+  },
+  "payload_checksum": "b3a7dc8afe1bd4e19319391a7088323f3d18ba2664f195d902b9c48022c1cc19",
+  "quality_flags": ["CHECKSUM_UNVERIFIED"],
+  "received_ts": "2026-07-15T00:01:00.125000Z",
+  "schema_version": "1.0",
+  "sequence_end": 123456,
+  "sequence_start": 123456,
+  "source_mode": "replay",
+  "trace_id": "trace-fixture-001",
+  "venue": "binance"
+}

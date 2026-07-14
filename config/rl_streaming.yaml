@@ -1,0 +1,148 @@
+# Real-Time RL Streaming + Meta-Learning + SEG v1 Configuration
+
+# ═══════════════════════════════════════════════════════════════════
+# STREAMING RL CONFIG
+# ═══════════════════════════════════════════════════════════════════
+
+streaming_rl:
+  # Memory stores
+  redis_url: "redis://localhost:6379/0"
+  postgres_dsn: "postgresql://postgres:postgres@localhost:5432/trading"
+  qdrant_url: "http://localhost:6333"
+  qdrant_collection: "trade_memory_streaming"
+
+  # Streaming reward engine
+  streaming_reward:
+    buffer_max_size: 10000
+    min_buffer_for_update: 32
+    update_batch_size: 64
+    update_interval_ms: 100
+    max_updates_per_second: 50
+    enable_streaming_shaping: true
+    shaping_gamma: 0.99
+    shaping_lambda: 0.95
+    learning_rate: 0.01
+    baseline_decay: 0.99
+    risk_scaling: true
+    max_risk_multiplier: 2.0
+    async_updates: true
+    update_timeout_ms: 50
+
+  # Online policy
+  online_policy:
+    state_dim: 32
+    action_dim: 3
+    hidden_dim: 64
+    learning_rate: 0.01
+    lr_decay: 0.9999
+    exploration_eps: 0.1
+    exploration_decay: 0.9995
+    min_exploration: 0.02
+    entropy_coef: 0.01
+    value_lr: 0.005
+    value_loss_coef: 0.5
+    min_updates_before_decay: 100
+    save_interval: 1000
+    model_dir: "models/online_policy"
+    device: "cpu"
+
+  # Ring buffers
+  recent_rewards_buffer: 10000
+  recent_states_buffer: 5000
+  advantage_buffer: 10000
+
+  # Vector search
+  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+  vector_dim: 384
+  similarity_threshold: 0.7
+  max_similar_results: 10
+
+  # Persistence
+  save_interval_seconds: 60
+  flush_on_shutdown: true
+
+
+# ═══════════════════════════════════════════════════════════════════
+# META LEARNER CONFIG
+# ═══════════════════════════════════════════════════════════════════
+
+meta_learner:
+  lookback_days: 7
+  min_trades_for_analysis: 20
+  llm_provider: "ollama"
+  llm_model: "qwen2.5:3b"
+  llm_base_url: "http://localhost:11434/v1"
+  llm_temperature: 0.3
+  llm_max_tokens: 3000
+  analysis_interval_hours: 6
+  require_backtest_validation: true
+  backtest_min_sharpe: 0.5
+  backtest_max_drawdown: 0.15
+  min_win_rate_improvement: 0.02
+  policy_update_mode: "blend"
+  blend_ratio: 0.3
+  policy_versions_dir: "policies/meta"
+  max_policy_versions: 50
+  auto_deploy: false
+  deploy_min_confidence: 0.7
+
+
+# ═══════════════════════════════════════════════════════════════════
+# SEG v1 CONFIG
+# ═══════════════════════════════════════════════════════════════════
+
+seg:
+  # Generator
+  generator:
+    llm_provider: "ollama"
+    llm_model: "qwen2.5:3b"
+    llm_base_url: "http://localhost:11434/v1"
+    llm_temperature: 0.7
+    llm_max_tokens: 2000
+    strategies_per_batch: 10
+    max_strategies_in_pool: 100
+    regime_aware: true
+    pool_dir: "strategies/pool"
+    archive_dir: "strategies/archive"
+
+  # Backtest engine
+  backtest:
+    data_dir: "data/historical"
+    default_symbol: "BTCUSDT"
+    default_timeframe: "1m"
+    initial_capital: 10000.0
+    fee_bps: 2.0
+    slippage_bps: 1.0
+    position_sizing: "fixed_pct"
+    position_size_pct: 0.05
+    max_open_positions: 1
+    max_daily_drawdown: 0.05
+    max_total_drawdown: 0.15
+    min_trades_for_score: 10
+    risk_free_rate: 0.02
+    save_trades: true
+    save_equity_curve: true
+    results_dir: "backtest/results"
+
+  # Evolution engine
+  evolution:
+    population_size: 50
+    elite_size: 5
+    tournament_size: 3
+    mutation_rate: 0.3
+    crossover_rate: 0.4
+    mutation_strength: 0.2
+    selection_method: "tournament"
+    fitness_sharing: true
+    max_generations: 100
+    convergence_threshold: 0.001
+    stagnation_limit: 10
+    min_trades_for_fitness: 20
+    fitness_metric: "rl_fitness"
+    min_hamming_distance: 2
+    max_similar_strategies: 3
+    archive_dir: "strategies/evolution_archive"
+    checkpoint_dir: "strategies/checkpoints"
+    save_checkpoint_every: 5
+    parallel_backtest: false
+    max_workers: 4

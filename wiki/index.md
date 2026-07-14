@@ -2,7 +2,7 @@
 
 > Content catalog for the trading & quant second brain. Organized by category. ZCode updates this on every ingest. **Read this first** when answering a query — then drill into pages.
 >
-> **State:** 2 sources · 59 pages · last updated 2026-07-01
+> **State:** 2 sources · 59 pages · last updated 2026-07-14
 
 ---
 
@@ -10,9 +10,8 @@
 _Synthesis pages — the big picture of a topic._
 
 - [[brain-ecosystem]] — single source of truth for all 12 brain weights, tiers, registration files, and aggregation flow. (stable, updated 2026-06-30)
-- [[infrastructure-overview]] — full deployment architecture: Docker Compose (13 services), Kubernetes (25 resources), Terraform (Hetzner), Nginx reverse proxy, monitoring stack. (stable, updated 2026-06-30)
-- [[infrastructure-overview]] — full deployment architecture: Docker Compose (13 services), Kubernetes (25 resources), Terraform (Hetzner), Nginx reverse proxy, monitoring stack. (stable, updated 2026-06-30)
-- [[multi-agent-pipeline]] — dual-path LangGraph state machine: scalping fast-path (<5ms) + heavy path (VLM→RAG→swarm), configurable threshold, conditional routing. (stable, updated 2026-07-01)
+- [[infrastructure-overview]] — legacy deployment inventory; the 2026-07-14 audit found 21 Compose services and recommends a smaller profiled core. (draft, updated 2026-07-14)
+- [[multi-agent-pipeline]] — LangGraph design intent; current risk/execution and latency claims require reconciliation with the audited runtime. (draft, updated 2026-07-14)
 
 ## Concepts
 _Methods and ideas, synthesized across all sources._
@@ -73,19 +72,17 @@ _Instruments, venues, tools, people, firms._
 - [[polymarket-brain]] — brain #11; Polymarket 5-formula alpha pipeline (Bayesian/Longshot/EV/Kelly/Nash), weight 0.05. (active, updated 2026-06-30)
 - [[odoo-erp-brain]] — brain #12; Odoo ERP business intelligence via XML-RPC, weight 0.05. (active, updated 2026-06-30)
 - [[neural-network-brain]] — brain #10; custom LSTM for temporal patterns, weight 0.05. (stable, updated 2026-06-26)
-- [[vlm-agent]] — VLM chart analysis agent: matplotlib rendering → Ollama moondream → structured JSON output. (active, updated 2026-07-01)
+- [[vlm-agent]] — experimental VLM chart analysis; missing candle-buffer documentation and excluded from the deterministic hot path. (draft, updated 2026-07-14)
 - [[rag-agent]] — RAG pattern retrieval agent: NIM embeddings → Qdrant vector search → trade pattern statistics. (active, updated 2026-07-01)
-- [[nats-langgraph-bridge]] — NATS↔LangGraph bridge: subscribes candle events, triggers pipeline, publishes results including ScalpDecisionEvent. (active, updated 2026-07-01)
-- [[scalping-engine]] — ultra-fast CPU-only scalping engine: <5ms logic, 5-candle window, momentum/rejection detection, strict JSON output. (active, updated 2026-07-01)
+- [[nats-langgraph-bridge]] — experimental NATS↔LangGraph bridge; requires canonical contract, durable consumer, and replay verification. (draft, updated 2026-07-14)
+- [[scalping-engine]] — experimental CPU-only signal engine; latency and risk integration remain unverified. (draft, updated 2026-07-14)
 - [[chart-segmentation]] — OpenCV chart feature extraction: candle detection, trend lines, S/R levels, volume analysis. (active, updated 2026-07-01)
-- [[local-inference-server]] — vLLM + FastAPI GPU inference server for RTX 4050: quantized models, SSE streaming, /generate/fast endpoint. (active, updated 2026-07-01)
-- [[gpu-optimizer]] — RTX 4050 optimization: GPU status monitoring, VRAM-based config, CUDA env tuning, model recommendations. (active, updated 2026-07-01)
-- [[ultra-low-latency-monitoring]] — Grafana dashboard + Prometheus metrics for GPU utilization, VRAM, vLLM inference latency, scalping engine timing. (active, updated 2026-07-01)
+- [[ultra-low-latency-monitoring]] — experimental GPU/vLLM/scalping dashboard; two referenced component pages are missing. (draft, updated 2026-07-14)
 
 ## Comparisons
 _Analyses and side-by-side comparisons (often filed from queries)._
 
-_(none yet)_
+- [[trade-project-full-integration-build-plan]] — evidence-backed target architecture, data/model/storage decisions, safety gates, roadmap, and first seven-day vertical slice. (stable, updated 2026-07-14)
 
 ## Playbooks
 _How-tos, processes, checklists._
@@ -110,4 +107,6 @@ _Per-source summary pages — one per ingested source._
 
 ## Orphaned / missing (from lint — flagged for creation)
 
-_(none currently)_
+- **candle-buffer** — referenced by [[nats-langgraph-bridge]] and [[vlm-agent]], but no page exists.
+- **feature-engine** and **risk-engine** — referenced by [[scalping-engine]], but no pages exist.
+- **gpu-optimizer** and **local-inference-server** — historical log entries claim creation, but the pages are absent from the current tree.

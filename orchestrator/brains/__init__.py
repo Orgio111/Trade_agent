@@ -29,6 +29,7 @@ MOSS Engine brains:
                   optimization (±30% bounds)
 """
 
+from .base_brain import BaseBrain, BrainSignal
 from .timesfm_brain import TimesFMBrain
 from .freqai_brain import FreqAIBrain
 from .llm_regime_brain import LLMRegimeBrain
@@ -77,6 +78,8 @@ __all__ = [
     "PolymarketBrain",
     "CustomNNBrain",
     "OdooBrain",
+    "BaseBrain",
+    "BrainSignal",
     "BRAIN_REGISTRY",
     # MOSS Engine (deferred)
     # "SkillRegistry",

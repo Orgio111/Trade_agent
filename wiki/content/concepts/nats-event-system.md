@@ -3,8 +3,8 @@ title: "NATS JetStream Event System"
 type: concept
 tags: [nats, event-system, jetstream, pub-sub, messaging, real-time]
 created: 2026-06-30
-updated: 2026-06-30
-status: stable
+updated: 2026-07-14
+status: draft
 ---
 
 # NATS JetStream Event System
@@ -147,6 +147,7 @@ event = quantex_event(data)
 
 ## Related
 
+- [[trade-project-full-integration-build-plan]] — canonical-contract, idempotency, and replay migration
 - [[real-time-trading-dashboard]] — WebSocket routing of NATS events to UI
 - [[brain-ecosystem]] — the 12 brains that produce signal events
 - [[multi-agent-pipeline]] — LangGraph pipeline that publishes ACP v2 events
@@ -155,6 +156,10 @@ event = quantex_event(data)
 - [[rag-agent]] — RAG pattern retrieval agent (publishes to agent.rag.*)
 - [[odoo-erp-trading-integration]] — Odoo ERP events flow through this system
 - [[signal-aggregation-logic]] — how aggregated signals are computed
+
+## Contradictions / updates
+
+**2026-07-14 repository audit:** Python, Go, and Rust do not yet share one compatible wire schema. Subject use also mixes exact signals.raw with hierarchical signals.raw.source.symbol forms. JetStream provides at-least-once delivery; “exactly once” requires producer deduplication, consumer idempotency, and durable side-effect handling that are not yet verified. Treat this page as target vocabulary until the golden contract and replay tests in [[trade-project-full-integration-build-plan]] pass.
 
 ## Sources
 

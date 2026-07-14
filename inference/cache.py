@@ -18,8 +18,15 @@ import hashlib
 from typing import Optional
 from dataclasses import dataclass
 
-from qdrant_client import QdrantClient
-from qdrant_client.http import models
+# Lazy import — qdrant_client is optional (in-memory fallback available)
+try:
+    from qdrant_client import QdrantClient
+    from qdrant_client.http import models
+    _QDRANT_AVAILABLE = True
+except ImportError:
+    QdrantClient = None  # type: ignore[assignment,misc]
+    models = None  # type: ignore[assignment]
+    _QDRANT_AVAILABLE = False
 
 
 CACHE_COLLECTION = "semantic_cache"

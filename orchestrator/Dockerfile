@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════
-# QUANTEX Orchestrator — Multi-stage Python Build
+# QUANTEX Orchestrator — Multi-stage Python Build (optimized)
 # ═══════════════════════════════════════════════════════════
 
 # ── Stage 1: Builder ────────────────────────────────────
@@ -7,7 +7,7 @@ FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-# Install build dependencies
+# Install build dependencies (gcc/g++ for asyncpg, aiohttp C extensions)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
@@ -18,14 +18,15 @@ COPY --from=ghcr.io/astral-sh/uv:0.4.23 /uv /usr/local/bin/uv
 
 # Copy and install dependencies
 COPY orchestrator/requirements.txt .
-RUN uv pip install --system --no-cache -r requirements.txt
+RUN uv pip install --system --no-cache --no-compile -r requirements.txt \
+    && find /usr/local/lib/python3.12/site-packages -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
 
 # ── Stage 2: Runner ─────────────────────────────────────
 FROM python:3.12-slim AS runner
 
 WORKDIR /app
 
-# Copy installed packages from builder
+# Copy installed packages from builder (only .dist-info + pure python + compiled)
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
@@ -35,8 +36,14 @@ COPY orchestrator/ ./orchestrator/
 COPY inference/ ./inference/
 COPY pyproject.toml ./
 
-# Create writable directories for runtime (ML model storage, etc.)
-RUN mkdir -p /app/models /app/logs
+# Cleanup: remove test dirs, __pycache__, .pyc bloat from site-packages
+# Keep .dist-info (needed by importlib.metadata for version checks at runtime)
+RUN find /usr/local/lib/python3.12/site-packages -type d -name 'tests' -exec rm -rf {} + 2>/dev/null || true \
+    && find /usr/local/lib/python3.12/site-packages -type d -name 'test' -exec rm -rf {} + 2>/dev/null || true \
+    && find /usr/local/lib/python3.12/site-packages -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true \
+    && find /usr/local/lib/python3.12/site-packages -name '*.pyc' -delete 2>/dev/null || true \
+    && find /usr/local/lib/python3.12/site-packages -name '*.egg-info' -exec rm -rf {} + 2>/dev/null || true \
+    && mkdir -p /app/models /app/logs
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1

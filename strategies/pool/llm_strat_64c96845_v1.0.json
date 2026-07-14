@@ -1,0 +1,82 @@
+{
+  "name": "llm_strat_64c96845",
+  "version": "1.0",
+  "timeframe": "1h",
+  "symbols": [
+    "BTCUSDT"
+  ],
+  "indicators": {
+    "rsi_period": 14,
+    "macd_fast": 12,
+    "macd_slow": 26,
+    "macd_signal": 9,
+    "bb_period": 20,
+    "bb_std": 2.5,
+    "ema_fast": 20,
+    "ema_slow": 50,
+    "ema_trend": 150,
+    "atr_period": 14,
+    "volume_period": 20
+  },
+  "entry_rules": [
+    {
+      "indicator": "rsi",
+      "operator": "<",
+      "value": 30,
+      "weight": 1
+    },
+    {
+      "indicator": "bb_position",
+      "operator": ">",
+      "value": -2.5,
+      "weight": 1
+    },
+    {
+      "indicator": "macd_hist",
+      "operator": ">",
+      "value": 0,
+      "weight": 1
+    },
+    {
+      "indicator": "volume_spike",
+      "operator": ">",
+      "value": 30,
+      "weight": 1
+    }
+  ],
+  "exit_rules": [
+    {
+      "type": "sl",
+      "value": -0.15,
+      "weight": 1
+    },
+    {
+      "type": "tp",
+      "value": 0.2,
+      "weight": 1
+    },
+    {
+      "type": "trailing_sl",
+      "value": -0.2,
+      "weight": 1
+    }
+  ],
+  "risk": {
+    "max_drawdown": 0.2,
+    "max_position_pct": 0.05,
+    "leverage": 3,
+    "stop_loss_pct": 0.1,
+    "take_profit_pct": 0.15,
+    "max_hold_bars": 100,
+    "correlation_limit": 0.5
+  },
+  "created_at": "2026-07-02T03:30:50.914832",
+  "parent_strategy": null,
+  "generation": 0,
+  "fitness": 0.0,
+  "trades_count": 0,
+  "win_rate": 0.0,
+  "sharpe": 0.0,
+  "max_drawdown": 0.0,
+  "total_pnl_pct": 0.0
+}

@@ -4,6 +4,11 @@ Uses local LLMs (qwen2.5:3b) to classify market regime from news+price context.
 
 ALL cloud APIs are optional — works fully with local Ollama + rule-based fallback.
 Weight in Go orchestrator: 0.15.
+
+Data pipeline:
+  1. Primary: Binance market data via ccxt (async, non-blocking)
+  2. Headlines: CryptoCompare API
+  3. LLM classification: Local Ollama → Cloud NIM → Cloud OpenRouter → Rule-based
 """
 
 from __future__ import annotations
@@ -30,6 +35,28 @@ try:
         load_dotenv(_env_file, override=False)
 except ImportError:
     pass
+
+
+# ── Import guards (cached at module level) ─────────────
+def _has_ccxt() -> bool:
+    try:
+        import ccxt  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def _has_httpx() -> bool:
+    try:
+        import httpx  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+_CCXT_AVAILABLE: bool = _has_ccxt()
+_HTTPX_AVAILABLE: bool = _has_httpx()
+
 
 REGIME_PROMPT = """You are a market regime classifier. Given the following market data, classify the current regime.
 
@@ -72,51 +99,60 @@ class LLMRegimeBrain(BaseBrain):
         self._http = None  # Lazy-init
         # Cache for Binance market data
         self._market_cache: dict[str, dict] = {}
-        self._cache_ttl = 300.0  # 5 minutes
+        self._cache_ttl = float(os.getenv("LLM_REGIME_CACHE_TTL", "300"))  # 5 minutes
         self._cache_ts: dict[str, float] = {}
+        # Retry tracking
+        self._fetch_retries: dict[str, int] = {}
+        self._exchange = None  # cached ccxt.binance instance
 
     async def _get_http(self):
-        """Lazy-import httpx."""
+        """Lazy-init httpx client."""
         if self._http is None:
+            if not _HTTPX_AVAILABLE:
+                return None
             import httpx
             self._http = httpx.AsyncClient(timeout=self.timeout)
         return self._http
 
     async def warmup(self) -> None:
         """Verify LLM tiers are reachable."""
+        http = await self._get_http()
+        if http is None:
+            logger.warning("[llm_regime] httpx not installed, HTTP calls disabled")
+            return
+
         # Tier 1: Ollama
         try:
-            http = await self._get_http()
             resp = await http.get(f"{self.ollama_url}/api/tags")
             if resp.status_code == 200:
                 models = [m["name"] for m in resp.json().get("models", [])]
                 if self.ollama_model not in models and models:
                     old = self.ollama_model
                     self.ollama_model = models[0]
-                    logger.warning(f"[llm_regime] Model {old} not found, auto-selected {self.ollama_model}")
+                    logger.warning("[llm_regime] Model %s not found, auto-selected %s", old, self.ollama_model)
                 if self.ollama_model in models:
-                    logger.info(f"[llm_regime] Ollama ready, model={self.ollama_model}")
+                    logger.info("[llm_regime] Ollama ready, model=%s", self.ollama_model)
                 elif not models:
                     logger.warning("[llm_regime] Ollama has no models installed")
             else:
-                logger.warning(f"[llm_regime] Ollama returned HTTP {resp.status_code}")
+                logger.warning("[llm_regime] Ollama returned HTTP %d", resp.status_code)
         except Exception as e:
-            logger.warning(f"[llm_regime] Ollama unreachable: {e}")
+            logger.warning("[llm_regime] Ollama unreachable: %s", e)
 
         # Report cloud availability
         tiers = ["local_ollama"]
         if self.nim_key:
             tiers.append("nim_cloud")
-            logger.info(f"[llm_regime] NIM configured: {self.nim_url} model={self.nim_model}")
+            logger.info("[llm_regime] NIM configured: %s model=%s", self.nim_url, self.nim_model)
         if self.openrouter_key:
             tiers.append("openrouter_cloud")
-            logger.info(f"[llm_regime] OpenRouter key available, model={self.openrouter_model}")
+            logger.info("[llm_regime] OpenRouter key available, model=%s", self.openrouter_model)
         if not self.nim_key and not self.openrouter_key:
             logger.info("[llm_regime] Running in local-only mode (rule-based fallback active)")
 
     async def compute_score(self, symbol: str) -> BrainSignal:
         """Classify market regime and map to directional score."""
-        context = self._build_context(symbol)
+        context = await self._build_context(symbol)
 
         # Tier 1: Local Ollama
         regime, confidence = await self._query_ollama(context)
@@ -146,7 +182,12 @@ class LLMRegimeBrain(BaseBrain):
             symbol=symbol,
             score=score,
             confidence=confidence,
-            metadata={"regime": regime, "model": self.ollama_model if regime else "none"},
+            metadata={
+                "regime": regime,
+                "confidence": round(confidence, 3),
+                "model": self.ollama_model,
+                "source": "ollama" if confidence > 0.3 else "rule_based",
+            },
         )
 
     def _rule_based_regime(self, context: dict) -> tuple[str | None, float]:
@@ -182,8 +223,8 @@ class LLMRegimeBrain(BaseBrain):
         # Default: ranging
         return "ranging", 0.4
 
-    def _build_context(self, symbol: str) -> dict:
-        """Build context dict from real Binance market data."""
+    async def _build_context(self, symbol: str) -> dict:
+        """Build context dict from real Binance market data (non-blocking)."""
         now = time.time()
         cached = self._market_cache.get(symbol)
         cache_ts = self._cache_ts.get(symbol, 0)
@@ -198,64 +239,94 @@ class LLMRegimeBrain(BaseBrain):
             "headlines": "No recent headlines",
         }
 
-        try:
-            import ccxt
-            exchange = ccxt.binance()
-            ohlcv = exchange.fetch_ohlcv(symbol, "1h", limit=30)
-            if len(ohlcv) >= 2:
-                closes = [bar[4] for bar in ohlcv]
-                volumes = [bar[5] for bar in ohlcv]
+        retries = self._fetch_retries.get(symbol, 0)
 
-                # Price change over last 24h
-                if len(closes) >= 24:
-                    pct = (closes[-1] - closes[-24]) / closes[-24] * 100
-                    context["price_change_pct"] = round(pct, 2)
+        # Fetch Binance data (non-blocking)
+        if _CCXT_AVAILABLE and retries < 3:
+            try:
+                ohlcv = await asyncio.wait_for(
+                    asyncio.to_thread(self._fetch_binance_ohlcv, symbol),
+                    timeout=10.0,
+                )
+                if ohlcv and len(ohlcv) >= 2:
+                    closes = [bar[4] for bar in ohlcv]
+                    volumes = [bar[5] for bar in ohlcv]
 
-                # Volume ratio: last 6h vs 24h average
-                if len(volumes) >= 24:
-                    recent_vol = sum(volumes[-6:]) / 6
-                    avg_vol = sum(volumes[-24:]) / 24
-                    if avg_vol > 0:
-                        context["vol_ratio"] = round(recent_vol / avg_vol, 2)
+                    # Price change over last 24h
+                    if len(closes) >= 24:
+                        pct = (closes[-1] - closes[-24]) / closes[-24] * 100
+                        context["price_change_pct"] = round(pct, 2)
 
-                # RSI(14) from closes
-                if len(closes) >= 15:
-                    arr = np.array(closes, dtype=float)
-                    deltas = np.diff(arr[-15:])
-                    gains = np.where(deltas > 0, deltas, 0)
-                    losses = np.where(deltas < 0, -deltas, 0)
-                    avg_gain = np.mean(gains)
-                    avg_loss = max(np.mean(losses), 1e-10)
-                    rs = avg_gain / avg_loss
-                    context["rsi"] = round(float(100 - 100 / (1 + rs)), 0)
+                    # Volume ratio: last 6h vs 24h average
+                    if len(volumes) >= 24:
+                        recent_vol = sum(volumes[-6:]) / 6
+                        avg_vol = sum(volumes[-24:]) / 24
+                        if avg_vol > 0:
+                            context["vol_ratio"] = round(recent_vol / avg_vol, 2)
 
-                # Try to fetch headlines (optional)
-                try:
-                    import requests
-                    resp = requests.get(
-                        "https://min-api.cryptocompare.com/data/v2/news/?categories=BTC,ETH",
-                        timeout=3,
-                    )
-                    if resp.status_code == 200:
-                        data = resp.json().get("Data", [])[:5]
-                        headlines = [d.get("title", "") for d in data if d.get("title")]
-                        if headlines:
-                            context["headlines"] = "; ".join(headlines)
-                except Exception:
-                    pass
+                    # RSI(14) from closes
+                    if len(closes) >= 15:
+                        arr = np.array(closes, dtype=float)
+                        deltas = np.diff(arr[-15:])
+                        gains = np.where(deltas > 0, deltas, 0)
+                        losses = np.where(deltas < 0, -deltas, 0)
+                        avg_gain = np.mean(gains)
+                        avg_loss = max(np.mean(losses), 1e-10)
+                        rs = avg_gain / avg_loss
+                        context["rsi"] = round(float(100 - 100 / (1 + rs)), 0)
 
-            self._market_cache[symbol] = context
-            self._cache_ts[symbol] = now
-        except Exception as e:
-            logger.debug(f"[llm_regime] Binance data fetch failed: {e}")
+                    self._fetch_retries[symbol] = 0  # Reset on success
+            except asyncio.TimeoutError:
+                self._fetch_retries[symbol] = retries + 1
+                logger.warning("[llm_regime] Binance fetch timed out for %s", symbol)
+            except Exception as e:
+                self._fetch_retries[symbol] = retries + 1
+                logger.debug("[llm_regime] Binance data fetch failed: %s", e)
 
+        # Fetch headlines (optional, non-blocking)
+        await self._fetch_headlines(context, symbol)
+
+        self._market_cache[symbol] = context
+        self._cache_ts[symbol] = now
         return context
+
+    def _fetch_binance_ohlcv(self, symbol: str) -> list[list]:
+        """Synchronous Binance OHLCV fetch via ccxt (called in thread pool)."""
+        import ccxt
+        if self._exchange is None:
+            self._exchange = ccxt.binance({"enableRateLimit": True})
+        return self._exchange.fetch_ohlcv(symbol, "1h", limit=30)
+
+    async def _fetch_headlines(self, context: dict, symbol: str) -> None:
+        """Fetch crypto news headlines (non-blocking)."""
+        if not _HTTPX_AVAILABLE:
+            return
+        try:
+            http = await self._get_http()
+            if http is None:
+                return
+            base = symbol.split("/")[0].upper() if "/" in symbol else symbol.upper()
+            resp = await http.get(
+                f"https://min-api.cryptocompare.com/data/v2/news/?categories={base}",
+                timeout=5.0,
+            )
+            if resp.status_code == 200:
+                data = resp.json().get("Data", [])[:5]
+                headlines = [d.get("title", "") for d in data if d.get("title")]
+                if headlines:
+                    context["headlines"] = "; ".join(headlines)
+        except Exception:
+            pass  # Headlines are optional
 
     async def _query_ollama(self, context: dict) -> tuple[str | None, float]:
         """Query local Ollama for regime classification."""
+        if not _HTTPX_AVAILABLE:
+            return None, 0.0
         prompt = REGIME_PROMPT.format(**context)
         try:
             http = await self._get_http()
+            if http is None:
+                return None, 0.0
             resp = await http.post(
                 f"{self.ollama_url}/api/generate",
                 json={
@@ -269,17 +340,21 @@ class LLMRegimeBrain(BaseBrain):
                 text = resp.json().get("response", "")
                 return self._parse_regime_response(text)
         except Exception as e:
-            logger.debug(f"[llm_regime] Ollama timeout/error: {e}")
+            logger.debug("[llm_regime] Ollama timeout/error: %s", e)
         return None, 0.0
 
     async def _query_cloud(self, context: dict) -> tuple[str | None, float]:
         """Query NIM (tier 2) or OpenRouter free (tier 3) as cloud fallback."""
+        if not _HTTPX_AVAILABLE:
+            return None, 0.0
         prompt = REGIME_PROMPT.format(**context)
 
         # Tier 2: NIM (free NVIDIA credits) — optional
         if self.nim_key:
             try:
                 http = await self._get_http()
+                if http is None:
+                    return None, 0.0
                 resp = await http.post(
                     f"{self.nim_url}/v1/chat/completions",
                     json={
@@ -295,12 +370,14 @@ class LLMRegimeBrain(BaseBrain):
                     logger.info("[llm_regime] NIM tier OK")
                     return self._parse_regime_response(text)
             except Exception as e:
-                logger.debug(f"[llm_regime] NIM error: {e}")
+                logger.debug("[llm_regime] NIM error: %s", e)
 
         # Tier 3: OpenRouter free model — optional
         if self.openrouter_key:
             try:
                 http = await self._get_http()
+                if http is None:
+                    return None, 0.0
                 resp = await http.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     json={
@@ -316,7 +393,7 @@ class LLMRegimeBrain(BaseBrain):
                     logger.info("[llm_regime] OpenRouter free tier OK")
                     return self._parse_regime_response(text)
             except Exception as e:
-                logger.debug(f"[llm_regime] OpenRouter error: {e}")
+                logger.debug("[llm_regime] OpenRouter error: %s", e)
 
         return None, 0.0
 
