@@ -17,6 +17,16 @@ _ALLOWED_TRANSITIONS: dict[OrderStatus, frozenset[OrderStatus]] = {
             OrderStatus.FILLED,
             OrderStatus.CANCELED,
             OrderStatus.REJECTED,
+            OrderStatus.AMBIGUOUS,
+        }
+    ),
+    OrderStatus.AMBIGUOUS: frozenset(
+        {
+            OrderStatus.OPEN,
+            OrderStatus.PARTIALLY_FILLED,
+            OrderStatus.FILLED,
+            OrderStatus.CANCELED,
+            OrderStatus.REJECTED,
         }
     ),
     OrderStatus.OPEN: frozenset(
@@ -53,4 +63,3 @@ def assert_transition(current: OrderStatus, target: OrderStatus) -> None:
         return
     if target not in _ALLOWED_TRANSITIONS[current]:
         raise InvalidOrderTransition(f"cannot transition order from {current.value} to {target.value}")
-

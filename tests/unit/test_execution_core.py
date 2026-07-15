@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 import pytest
 
 from packages.brokers import (
+    BrokerError,
     DuplicateBrokerIntent,
     InvalidOrderError,
     PaperBroker,
@@ -14,9 +15,13 @@ from packages.brokers import (
     PaperModeRequired,
 )
 from packages.domain.events import SourceMode
+from packages.event_bus import InMemoryEventBus
 from packages.execution import (
+    AmbiguousSubmissionError,
+    BrokerLedgerConflict,
     DiscrepancyKind,
     ExecutionService,
+    InMemoryDecisionStore,
     InMemoryExecutionLedger,
     InvalidOrderTransition,
     MarketSnapshot,
@@ -30,6 +35,7 @@ from packages.execution import (
     assert_transition,
 )
 from packages.risk import CandidateSignal, RiskDecision, RiskReason
+from workers.execution import ExecutionWorker, StaleExecutionContext
 
 
 NOW = datetime(2026, 7, 15, 4, 0, tzinfo=timezone.utc)
@@ -128,14 +134,20 @@ def service(
 ) -> tuple[ExecutionService, InMemoryExecutionLedger, PaperBroker]:
     ledger = InMemoryExecutionLedger()
     broker = PaperBroker(config)
-    return ExecutionService(ledger, broker), ledger, broker
+    return ExecutionService(ledger, broker, InMemoryDecisionStore()), ledger, broker
+
+
+def authorized_submit(executor: ExecutionService, decision_value, candidate_value, **kwargs):
+    executor.decision_store.record(decision_value)
+    return executor.submit(decision_value, candidate_value, **kwargs)
 
 
 def test_execution_rejects_unapproved_decision_before_persist_or_submit() -> None:
     executor, ledger, broker = service()
 
     with pytest.raises(UnapprovedDecisionError):
-        executor.submit(
+        authorized_submit(
+            executor,
             decision(approved=False),
             candidate(),
             account_id="paper-main",
@@ -147,6 +159,60 @@ def test_execution_rejects_unapproved_decision_before_persist_or_submit() -> Non
     assert broker.list_orders() == ()
 
 
+def test_execution_rejects_unissued_forged_approval() -> None:
+    executor, ledger, broker = service()
+
+    with pytest.raises(UnapprovedDecisionError, match="not issued"):
+        executor.submit(
+            decision(),
+            candidate(),
+            account_id="paper-main",
+            market=market(),
+        )
+
+    assert ledger.list_intents() == ()
+    assert broker.list_orders() == ()
+
+
+def test_execution_service_has_a_hard_live_mode_gate() -> None:
+    executor, ledger, broker = service()
+    live_candidate = candidate(source_mode=SourceMode.LIVE)
+    live_decision = decision(candidate_value=live_candidate)
+
+    with pytest.raises(UnapprovedDecisionError, match="hard-gated"):
+        authorized_submit(
+            executor,
+            live_decision,
+            live_candidate,
+            account_id="paper-main",
+            market=market(),
+        )
+
+    assert ledger.list_intents() == ()
+    assert broker.list_orders() == ()
+
+
+def test_execution_worker_rejects_stale_decision_before_intent_creation() -> None:
+    executor, ledger, broker = service()
+    approved_candidate = candidate()
+    approved_decision = decision(candidate_value=approved_candidate)
+    executor.decision_store.record(approved_decision)
+    worker = ExecutionWorker(
+        InMemoryEventBus(), executor, account_id="paper-main"
+    )
+
+    with pytest.raises(StaleExecutionContext):
+        worker.process(
+            approved_decision,
+            approved_candidate,
+            market=market(),
+            execution_at=NOW + timedelta(seconds=3),
+        )
+
+    assert ledger.list_intents() == ()
+    assert broker.list_orders() == ()
+
+
 @pytest.mark.parametrize("account_id", ["paper-other", "live-main"])
 def test_execution_rejects_approval_replayed_to_another_account(
     account_id: str,
@@ -155,7 +221,8 @@ def test_execution_rejects_approval_replayed_to_another_account(
     approved_candidate = candidate()
 
     with pytest.raises(ValueError, match="account_id does not match"):
-        executor.submit(
+        authorized_submit(
+            executor,
             decision(candidate_value=approved_candidate),
             approved_candidate,
             account_id=account_id,
@@ -172,7 +239,8 @@ def test_execution_rejects_candidate_changed_after_risk_approval() -> None:
     changed_candidate = candidate(side="sell")
 
     with pytest.raises(ValueError, match="candidate payload does not match"):
-        executor.submit(
+        authorized_submit(
+            executor,
             decision(candidate_value=approved_candidate),
             changed_candidate,
             account_id="paper-main",
@@ -185,13 +253,15 @@ def test_execution_rejects_candidate_changed_after_risk_approval() -> None:
 
 def test_deterministic_duplicate_is_idempotent_across_service_restart() -> None:
     executor, ledger, broker = service()
-    first = executor.submit(
+    first = authorized_submit(
+        executor,
         decision(), candidate(), account_id="paper-main", market=market(), created_at=NOW
     )
     event_count = len(ledger.events)
 
-    restarted_service = ExecutionService(ledger, broker)
-    duplicate = restarted_service.submit(
+    restarted_service = ExecutionService(ledger, broker, executor.decision_store)
+    duplicate = authorized_submit(
+        restarted_service,
         decision(),
         candidate(),
         account_id="paper-main",
@@ -209,6 +279,48 @@ def test_deterministic_duplicate_is_idempotent_across_service_restart() -> None:
     assert len(ledger.events) == event_count
 
 
+def test_ack_lost_after_accept_is_ambiguous_then_reconciles_without_resubmit() -> None:
+    ledger = InMemoryExecutionLedger()
+    broker = AcceptThenTimeoutBroker()
+    executor = ExecutionService(ledger, broker, InMemoryDecisionStore())
+
+    with pytest.raises(AmbiguousSubmissionError):
+        authorized_submit(
+            executor,
+            decision(), candidate(), account_id="paper-main", market=market(), created_at=NOW
+        )
+
+    assert ledger.list_orders()[0].status is OrderStatus.AMBIGUOUS
+    assert broker.submit_calls == 1
+    recovered = authorized_submit(
+        executor,
+        decision(), candidate(), account_id="paper-main", market=market(), created_at=NOW
+    )
+    assert recovered.duplicate
+    assert recovered.order.status is OrderStatus.FILLED
+    assert broker.submit_calls == 1
+
+
+def test_unknown_submit_outcome_never_automatically_resubmits() -> None:
+    ledger = InMemoryExecutionLedger()
+    broker = AlwaysTimeoutBroker()
+    executor = ExecutionService(ledger, broker, InMemoryDecisionStore())
+
+    for _ in range(2):
+        with pytest.raises(AmbiguousSubmissionError):
+            authorized_submit(
+                executor,
+                decision(),
+                candidate(),
+                account_id="paper-main",
+                market=market(),
+                created_at=NOW,
+            )
+
+    assert ledger.list_orders()[0].status is OrderStatus.AMBIGUOUS
+    assert broker.submit_calls == 1
+
+
 def test_full_market_fill_uses_decimal_slippage_and_fee_math() -> None:
     executor, ledger, _ = service(
         config=PaperBrokerConfig(
@@ -216,7 +328,8 @@ def test_full_market_fill_uses_decimal_slippage_and_fee_math() -> None:
         )
     )
 
-    result = executor.submit(
+    result = authorized_submit(
+        executor,
         decision(quantity="2"), candidate(), account_id="paper-main", market=market()
     )
 
@@ -233,6 +346,40 @@ def test_full_market_fill_uses_decimal_slippage_and_fee_math() -> None:
     ]
 
 
+@pytest.mark.parametrize("precision", [6, 10, 28, 50])
+def test_intent_and_fill_are_independent_of_ambient_decimal_context(
+    precision: int,
+) -> None:
+    approved_candidate = candidate()
+    approved_decision = decision(candidate_value=approved_candidate)
+
+    with localcontext() as context:
+        context.prec = precision
+        executor, _, _ = service(
+            config=PaperBrokerConfig(
+                fee_rate=Decimal("0.001"), slippage_bps=Decimal("10")
+            )
+        )
+        actual = authorized_submit(
+            executor,
+            approved_decision,
+            approved_candidate,
+            account_id="paper-main",
+            market=market(),
+            created_at=NOW,
+        )
+
+    expected_intent = OrderIntent.from_approved_decision(
+        approved_decision,
+        approved_candidate,
+        account_id="paper-main",
+        created_at=NOW,
+    )
+    assert actual.intent.intent_id == expected_intent.intent_id
+    assert actual.order.average_fill_price == Decimal("100.100")
+    assert actual.order.cumulative_fee == Decimal("0.200200")
+
+
 def test_liquidity_driven_partial_fills_accumulate_weighted_price_and_fees() -> None:
     executor, ledger, broker = service(
         config=PaperBrokerConfig(
@@ -241,7 +388,8 @@ def test_liquidity_driven_partial_fills_accumulate_weighted_price_and_fees() -> 
             liquidity_participation=Decimal("0.5"),
         )
     )
-    first = executor.submit(
+    first = authorized_submit(
+        executor,
         decision(quantity="2"),
         candidate(),
         account_id="paper-main",
@@ -271,9 +419,29 @@ def test_liquidity_driven_partial_fills_accumulate_weighted_price_and_fees() -> 
     assert len(ledger.fills) == 2
 
 
+def test_duplicate_fill_id_with_changed_money_is_quarantined() -> None:
+    executor, ledger, broker = service()
+    result = authorized_submit(
+        executor,
+        decision(),
+        candidate(),
+        account_id="paper-main",
+        market=market(),
+        created_at=NOW,
+    )
+    changed_broker = MutatedFillBroker(broker)
+    reconciler_service = ExecutionService(
+        ledger, changed_broker, executor.decision_store
+    )
+
+    with pytest.raises(BrokerLedgerConflict, match="different immutable content"):
+        reconciler_service.synchronize(result.intent.client_order_id)
+
+
 def test_non_marketable_limit_order_remains_open_without_a_fill() -> None:
     executor, ledger, broker = service()
-    result = executor.submit(
+    result = authorized_submit(
+        executor,
         decision(),
         candidate(),
         account_id="paper-main",
@@ -296,7 +464,8 @@ def test_marketable_limit_respects_limit_price_when_slippage_is_larger() -> None
     executor, _, _ = service(
         config=PaperBrokerConfig(slippage_bps=Decimal("100"), fee_rate=Decimal("0"))
     )
-    result = executor.submit(
+    result = authorized_submit(
+        executor,
         decision(quantity="1"),
         candidate(),
         account_id="paper-main",
@@ -310,6 +479,8 @@ def test_marketable_limit_respects_limit_price_when_slippage_is_larger() -> None
 
 def test_invalid_state_transition_is_rejected() -> None:
     assert_transition(OrderStatus.OPEN, OrderStatus.PARTIALLY_FILLED)
+    assert_transition(OrderStatus.PENDING_SUBMIT, OrderStatus.AMBIGUOUS)
+    assert_transition(OrderStatus.AMBIGUOUS, OrderStatus.OPEN)
     assert_transition(OrderStatus.FILLED, OrderStatus.FILLED)  # replay is a no-op
 
     with pytest.raises(InvalidOrderTransition):
@@ -358,13 +529,17 @@ def test_broker_rejects_duplicate_invalid_and_live_intents() -> None:
 
 def test_new_ledger_recovers_existing_broker_order_without_resubmitting() -> None:
     first_executor, _, broker = service()
-    first = first_executor.submit(
+    first = authorized_submit(
+        first_executor,
         decision(), candidate(), account_id="paper-main", market=market(), created_at=NOW
     )
 
     recovered_ledger = InMemoryExecutionLedger()
-    recovered_service = ExecutionService(recovered_ledger, broker)
-    recovered = recovered_service.submit(
+    recovered_service = ExecutionService(
+        recovered_ledger, broker, first_executor.decision_store
+    )
+    recovered = authorized_submit(
+        recovered_service,
         decision(), candidate(), account_id="paper-main", market=market(), created_at=NOW
     )
 
@@ -435,6 +610,7 @@ def test_reconciler_reports_missing_quantity_and_status_without_mutation() -> No
         DiscrepancyKind.REQUESTED_QUANTITY_MISMATCH,
         DiscrepancyKind.FILLED_QUANTITY_MISMATCH,
         DiscrepancyKind.STATUS_MISMATCH,
+        DiscrepancyKind.AVERAGE_FILL_PRICE_MISMATCH,
     }
     assert report.clean is False
     assert len(ledger.events) == event_count
@@ -474,3 +650,52 @@ class StaticBroker:
 
     def list_fills(self, client_order_id: str | None = None):
         return ()
+
+
+class AcceptThenTimeoutBroker(PaperBroker):
+    def __init__(self) -> None:
+        super().__init__()
+        self.submit_calls = 0
+
+    def submit_order(self, intent, market):
+        self.submit_calls += 1
+        super().submit_order(intent, market)
+        raise BrokerError("ack lost after venue acceptance")
+
+
+class AlwaysTimeoutBroker:
+    def __init__(self) -> None:
+        self.submit_calls = 0
+
+    def submit_order(self, intent, market):
+        self.submit_calls += 1
+        raise BrokerError("no response")
+
+    def get_order(self, client_order_id: str):
+        return None
+
+    def list_orders(self):
+        return ()
+
+    def list_fills(self, client_order_id: str | None = None):
+        return ()
+
+
+class MutatedFillBroker:
+    def __init__(self, delegate: PaperBroker) -> None:
+        self.delegate = delegate
+
+    def submit_order(self, intent, market):
+        return self.delegate.submit_order(intent, market)
+
+    def get_order(self, client_order_id: str):
+        return self.delegate.get_order(client_order_id)
+
+    def list_orders(self):
+        return self.delegate.list_orders()
+
+    def list_fills(self, client_order_id: str | None = None):
+        return tuple(
+            replace(fill, fee=fill.fee + Decimal("0.01"))
+            for fill in self.delegate.list_fills(client_order_id)
+        )

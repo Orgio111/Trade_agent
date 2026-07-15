@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, localcontext
 import hashlib
 import json
 from typing import Iterable
@@ -15,6 +15,7 @@ from packages.event_bus import CoreSubject, InMemoryEventBus
 from packages.execution import (
     ExecutionResult,
     ExecutionService,
+    InMemoryDecisionStore,
     InMemoryExecutionLedger,
     MarketSnapshot,
     Reconciler,
@@ -76,6 +77,7 @@ class ReplayHarness:
         self.account_id = account_id
         self.bus = InMemoryEventBus()
         self.ledger = InMemoryExecutionLedger()
+        self.decision_store = InMemoryDecisionStore()
         self.broker = PaperBroker(
             PaperBrokerConfig(
                 fee_rate=fee_rate,
@@ -87,10 +89,11 @@ class ReplayHarness:
             self.bus,
             BaselineSmaStrategy(),
             RiskEngine(risk_policy),
+            self.decision_store,
         )
         self.execution_worker = ExecutionWorker(
             self.bus,
-            ExecutionService(self.ledger, self.broker),
+            ExecutionService(self.ledger, self.broker, self.decision_store),
             account_id=account_id,
         )
 
@@ -130,6 +133,7 @@ class ReplayHarness:
                     outcome.decision,
                     outcome.candidate,
                     market=self._market_snapshot(outcome.candidate, event.received_ts),
+                    execution_at=event.received_ts,
                 )
             records.append(
                 ReplayRecord(
@@ -168,6 +172,11 @@ class ReplayHarness:
         )
 
     def _portfolio_state(self, at: datetime) -> PortfolioState:
+        with localcontext() as context:
+            context.prec = 50
+            return self._portfolio_state_with_context(at)
+
+    def _portfolio_state_with_context(self, at: datetime) -> PortfolioState:
         orders = self.ledger.list_orders()
         gross_exposure = sum(
             (
@@ -205,16 +214,18 @@ class ReplayHarness:
         candidate: CandidateSignal,
         observed_at: datetime,
     ) -> MarketSnapshot:
-        half_spread = candidate.spread_bps / Decimal("20000")
-        return MarketSnapshot(
-            venue=candidate.venue,
-            market_type=candidate.market_type,
-            instrument=candidate.instrument,
-            bid=candidate.reference_price * (Decimal("1") - half_spread),
-            ask=candidate.reference_price * (Decimal("1") + half_spread),
-            last=candidate.reference_price,
-            observed_at=observed_at,
-        )
+        with localcontext() as context:
+            context.prec = 50
+            half_spread = candidate.spread_bps / Decimal("20000")
+            return MarketSnapshot(
+                venue=candidate.venue,
+                market_type=candidate.market_type,
+                instrument=candidate.instrument,
+                bid=candidate.reference_price * (Decimal("1") - half_spread),
+                ask=candidate.reference_price * (Decimal("1") + half_spread),
+                last=candidate.reference_price,
+                observed_at=observed_at,
+            )
 
     def _trace_digest(self, records: list[ReplayRecord]) -> str:
         payload = {

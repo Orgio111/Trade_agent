@@ -2,6 +2,10 @@
 
 > Append-only timeline of every operation on the wiki. Newest at top. Reverse chronological so the current state is the first thing you read.
 
+## [2026-07-15] note | Deterministic Paper Core v1 built and verified
+
+Implemented [[deterministic-paper-core-v1]] from [[trade-project-full-integration-build-plan]]: canonical provenance-bound events, Binance/Bybit candle adapters, fail-closed quality gates, account/candidate-bound deterministic risk, issued-decision authorization, paper execution with ambiguous-submit recovery, replay, PostgreSQL ledger schema, and a checksum-locked migration runner. Full Python validation is 294 passing tests; golden replay and PostgreSQL fresh apply/no-op reapply pass. Live execution remains hard-blocked because durable repositories, cash/position projections, and protective stop/OCO lifecycle are not yet implemented. Updated the plan checkpoint and index to 60 pages.
+
 ## [2026-07-14] lint | Architecture-plan wiki consistency
 
 Verified [[trade-project-full-integration-build-plan]] has no broken wikilinks and all 59 content pages remain indexed by category. Removed two index entries whose files are absent, converted seven current-content broken links to explicit missing-component text, flagged five missing pages, and downgraded unverified pipeline/latency entities from active to draft. Historical log links remain unchanged because the log is append-only.

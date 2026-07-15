@@ -124,6 +124,25 @@ def test_tampered_fixture_fails_closed_on_checksum() -> None:
         MarketEvent.model_validate(fixture)
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("source_mode", "paper_live"),
+        ("venue", "bybit"),
+        ("instrument_id", "ETHUSDT"),
+        ("exchange_ts", "2026-07-15T00:01:01.000000Z"),
+    ],
+)
+def test_tampered_event_provenance_fails_closed(
+    field: str, value: object
+) -> None:
+    fixture = json.loads(fixture_path().read_text(encoding="utf-8"))
+    fixture[field] = value
+
+    with pytest.raises(ValidationError, match="canonical event provenance"):
+        MarketEvent.model_validate(fixture)
+
+
 def test_market_event_normalizes_offset_times_to_utc() -> None:
     plus_eight = timezone(timedelta(hours=8))
     result = event(

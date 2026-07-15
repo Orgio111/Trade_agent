@@ -60,7 +60,10 @@ def canonical_decimal(value: Decimal | None) -> str | None:
         return None
     if value == 0:
         return "0"
-    return format(value.normalize(), "f")
+    text = format(value, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text
 
 
 def _aware_utc(value: datetime, *, field_name: str) -> datetime:
@@ -134,6 +137,7 @@ class OrderType(str, Enum):
 
 class OrderStatus(str, Enum):
     PENDING_SUBMIT = "pending_submit"
+    AMBIGUOUS = "ambiguous"
     OPEN = "open"
     PARTIALLY_FILLED = "partially_filled"
     FILLED = "filled"
@@ -391,6 +395,7 @@ class OrderRecord:
             raise ValueError("partially filled orders need a partial filled quantity")
         if status in {
             OrderStatus.PENDING_SUBMIT,
+            OrderStatus.AMBIGUOUS,
             OrderStatus.OPEN,
             OrderStatus.REJECTED,
         } and filled != 0:

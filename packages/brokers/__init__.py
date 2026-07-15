@@ -1,7 +1,9 @@
 """Canonical execution broker ports and paper adapter."""
 
 from packages.brokers.base import (
+    AmbiguousBrokerError,
     BrokerError,
+    DefinitiveBrokerError,
     DuplicateBrokerIntent,
     ExecutionBroker,
     InvalidOrderError,
@@ -10,7 +12,9 @@ from packages.brokers.base import (
 from packages.brokers.paper import PaperBroker, PaperBrokerConfig
 
 __all__ = [
+    "AmbiguousBrokerError",
     "BrokerError",
+    "DefinitiveBrokerError",
     "DuplicateBrokerIntent",
     "ExecutionBroker",
     "InvalidOrderError",
@@ -18,4 +22,3 @@ __all__ = [
     "PaperBrokerConfig",
     "PaperModeRequired",
 ]
-

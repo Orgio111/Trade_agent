@@ -178,17 +178,18 @@
   },
   "active": "92fdba78a71f7449",
   "lastOpenFiles": [
-    "workers/market_data/adapters/__pycache__/bybit.cpython-312.pyc",
-    "workers/market_data/adapters/__pycache__/__init__.cpython-312.pyc",
-    "workers/market_data/adapters/__pycache__/common.cpython-312.pyc",
-    "workers/market_data/adapters/__pycache__/binance.cpython-312.pyc",
-    "workers/market_data/adapters/__pycache__",
-    "tests/contract/__pycache__/test_venue_kline_adapters.cpython-312-pytest-9.1.1.pyc",
-    "tests/contract/test_venue_kline_adapters.py",
-    "workers/market_data/adapters/common.py",
-    "workers/market_data/adapters/__init__.py",
-    "workers/market_data/adapters/bybit.py",
-    "workers/market_data/adapters/binance.py",
+    "orchestrator/moss_engine/__pycache__/__main__.cpython-312.pyc",
+    "models/freqai/xgboost_freqai_backup_1784049801.joblib",
+    "wiki/content/decisions/deterministic-paper-core-v1.md",
+    "models/freqai/xgboost_freqai_backup_1784049423.joblib",
+    "tests/replay/__pycache__/test_core_replay.cpython-312.pyc",
+    "scripts/__pycache__/apply_migrations.cpython-312.pyc",
+    "tests/contract/__pycache__/test_migration_runner.cpython-312-pytest-9.1.1.pyc",
+    "infra/migrations/Dockerfile",
+    "infra/migrations",
+    "tests/contract/test_migration_runner.py",
+    "scripts/apply_migrations.py",
+    "packages/execution/__pycache__/decision_store.cpython-312.pyc",
     "wiki/content/comparisons/trade-project-full-integration-build-plan.md",
     "wiki/index.md",
     "frontend/node_modules/playwright-core/lib/tools/cli-client/skill/SKILL.md",
@@ -212,7 +213,6 @@
     "wiki/content/entities/ppo-portfolio-manager.md",
     "wiki/content/entities/vllm-inference-provider.md",
     "wiki/content/concepts/broker-abstraction-layer.md",
-    "wiki/content/concepts/nats-event-system.md",
-    "wiki/content/overviews/brain-ecosystem.md"
+    "wiki/content/concepts/nats-event-system.md"
   ]
 }

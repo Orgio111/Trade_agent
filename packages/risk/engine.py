@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import UTC, datetime
-from decimal import Decimal, ROUND_DOWN
+from decimal import Decimal, ROUND_DOWN, localcontext
 from typing import Any
 
 from packages.domain.events import SourceMode
@@ -29,6 +29,27 @@ class RiskEngine:
         self.policy = policy
 
     def evaluate(
+        self,
+        candidate: CandidateSignal,
+        portfolio: PortfolioState,
+        constraints: InstrumentConstraints,
+        *,
+        evaluated_at: datetime,
+        manual_risk_fraction: Decimal | None = None,
+    ) -> RiskDecision:
+        """Evaluate inside a fixed context, independent of ambient precision."""
+
+        with localcontext() as context:
+            context.prec = 50
+            return self._evaluate(
+                candidate,
+                portfolio,
+                constraints,
+                evaluated_at=evaluated_at,
+                manual_risk_fraction=manual_risk_fraction,
+            )
+
+    def _evaluate(
         self,
         candidate: CandidateSignal,
         portfolio: PortfolioState,

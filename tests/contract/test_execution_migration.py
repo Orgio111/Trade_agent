@@ -48,3 +48,15 @@ def test_execution_migration_is_idempotent_and_fail_closed() -> None:
     assert "'replay', 'paper_live'" in order_intent
     assert "'live'" not in order_intent
 
+
+def test_execution_migration_matches_prefixed_runtime_ids_and_statuses() -> None:
+    sql = MIGRATION.read_text(encoding="utf-8").lower()
+
+    assert "id                  varchar(64) primary key" in sql
+    assert "risk_decision_id    varchar(64)" in sql
+    assert "market_type         varchar(32) not null" in sql
+    assert "candidate_hash      varchar(64) not null" in sql
+    assert "venue_fill_id       varchar(128) not null" in sql
+    assert "'pending_submit', 'ambiguous', 'open'" in sql
+    assert "'canceled'" in sql
+    assert "'cancelled'" not in sql

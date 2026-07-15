@@ -9,7 +9,7 @@ append-only; derived order state can only move through the state machine.
 from __future__ import annotations
 
 from dataclasses import replace
-from decimal import Decimal
+from decimal import Decimal, localcontext
 from threading import RLock
 from types import MappingProxyType
 
@@ -142,6 +142,11 @@ class InMemoryExecutionLedger:
             return updated
 
     def record_fill(self, fill: Fill) -> OrderRecord:
+        with localcontext() as context:
+            context.prec = 50
+            return self._record_fill_with_context(fill)
+
+    def _record_fill_with_context(self, fill: Fill) -> OrderRecord:
         with self._lock:
             if fill.fill_id in self._seen_fill_ids:
                 raise DuplicateFill(f"fill_id already used: {fill.fill_id}")

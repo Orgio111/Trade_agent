@@ -2,7 +2,7 @@
 
 > Content catalog for the trading & quant second brain. Organized by category. ZCode updates this on every ingest. **Read this first** when answering a query — then drill into pages.
 >
-> **State:** 2 sources · 59 pages · last updated 2026-07-14
+> **State:** 2 sources · 60 pages · last updated 2026-07-15
 
 ---
 
@@ -82,7 +82,7 @@ _Instruments, venues, tools, people, firms._
 ## Comparisons
 _Analyses and side-by-side comparisons (often filed from queries)._
 
-- [[trade-project-full-integration-build-plan]] — evidence-backed target architecture, data/model/storage decisions, safety gates, roadmap, and first seven-day vertical slice. (stable, updated 2026-07-14)
+- [[trade-project-full-integration-build-plan]] — evidence-backed target architecture, safety gates, roadmap, and the verified 2026-07-15 paper-core checkpoint. (stable, updated 2026-07-15)
 
 ## Playbooks
 _How-tos, processes, checklists._
@@ -94,7 +94,7 @@ _How-tos, processes, checklists._
 ## Decisions
 _Decision logs: what was decided, when, why._
 
-_(none yet)_
+- [[deterministic-paper-core-v1]] — reference semantics and safety invariants for the verified market-event → risk → paper-fill vertical slice. (stable, updated 2026-07-15)
 
 ## Sources
 _Per-source summary pages — one per ingested source._

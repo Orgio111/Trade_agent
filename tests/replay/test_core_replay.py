@@ -1,7 +1,7 @@
 """Golden replay tests for the deterministic paper vertical slice."""
 
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 from packages.domain import CandlePayload, MarketEvent, SourceMode
 from packages.replay import ReplayHarness
@@ -75,6 +75,15 @@ def test_golden_replay_is_deterministic_and_reconciled() -> None:
     assert first.fills == 1
     assert first.reconciliation_clean
     assert first.trace_digest == second.trace_digest
+
+
+def test_replay_is_independent_of_ambient_decimal_precision() -> None:
+    expected = _harness().run(_events())
+    for precision in (6, 10, 28, 50):
+        with localcontext() as context:
+            context.prec = precision
+            actual = _harness().run(_events())
+        assert actual.trace_digest == expected.trace_digest
 
 
 def test_live_event_is_rejected_by_risk_before_execution() -> None:

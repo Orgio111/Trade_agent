@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
+from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, localcontext
 import hashlib
 
 from packages.domain.events import MarketEvent
@@ -46,6 +46,15 @@ class BaselineSmaStrategy:
         self._last_side: dict[str, str] = {}
 
     def on_market_event(
+        self,
+        event: MarketEvent,
+        constraints: InstrumentConstraints,
+    ) -> CandidateSignal | None:
+        with localcontext() as context:
+            context.prec = 50
+            return self._on_market_event(event, constraints)
+
+    def _on_market_event(
         self,
         event: MarketEvent,
         constraints: InstrumentConstraints,

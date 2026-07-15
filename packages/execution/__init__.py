@@ -1,5 +1,9 @@
 """Canonical, deterministic paper execution core."""
 
+from packages.execution.decision_store import (
+    DecisionAuthorizationError,
+    InMemoryDecisionStore,
+)
 from packages.execution.ledger import (
     DuplicateFill,
     DuplicateLedgerIdentity,
@@ -26,6 +30,7 @@ from packages.execution.reconciliation import (
     ReconciliationReport,
 )
 from packages.execution.service import (
+    AmbiguousSubmissionError,
     BrokerLedgerConflict,
     ExecutionService,
     ExecutionServiceError,
@@ -38,8 +43,10 @@ from packages.execution.state_machine import (
 )
 
 __all__ = [
+    "AmbiguousSubmissionError",
     "BrokerLedgerConflict",
     "DiscrepancyKind",
+    "DecisionAuthorizationError",
     "DuplicateFill",
     "DuplicateLedgerIdentity",
     "ExecutionLedgerError",
@@ -48,6 +55,7 @@ __all__ = [
     "ExecutionServiceError",
     "Fill",
     "InMemoryExecutionLedger",
+    "InMemoryDecisionStore",
     "InvalidOrderTransition",
     "LedgerEvent",
     "LedgerInvariantViolation",
@@ -65,4 +73,3 @@ __all__ = [
     "allowed_transitions",
     "assert_transition",
 ]
-

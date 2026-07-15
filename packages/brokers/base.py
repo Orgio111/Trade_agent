@@ -17,7 +17,15 @@ class BrokerError(RuntimeError):
     pass
 
 
-class InvalidOrderError(BrokerError):
+class DefinitiveBrokerError(BrokerError):
+    """The venue definitively did not accept the order."""
+
+
+class AmbiguousBrokerError(BrokerError):
+    """Transport failed after submission may have reached the venue."""
+
+
+class InvalidOrderError(DefinitiveBrokerError):
     pass
 
 
@@ -25,7 +33,7 @@ class DuplicateBrokerIntent(BrokerError):
     pass
 
 
-class PaperModeRequired(BrokerError):
+class PaperModeRequired(DefinitiveBrokerError):
     pass
 
 

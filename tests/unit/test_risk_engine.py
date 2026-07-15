@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 import pytest
 from pydantic import ValidationError
@@ -409,6 +409,18 @@ def test_decision_is_frozen_and_deterministic() -> None:
     assert first.decision_id.startswith("risk_")
     with pytest.raises(ValidationError):
         first.approved_quantity = D("999")  # type: ignore[misc]
+
+
+@pytest.mark.parametrize("precision", [6, 10, 28, 50])
+def test_risk_decision_is_independent_of_ambient_decimal_context(
+    precision: int,
+) -> None:
+    expected = evaluate()
+    with localcontext() as context:
+        context.prec = precision
+        actual = evaluate()
+    assert actual == expected
+    assert actual.decision_id == expected.decision_id
 
 
 def test_decision_schema_rejects_inconsistent_verdict_values() -> None:

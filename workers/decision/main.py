@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from packages.domain.events import MarketEvent
 from packages.event_bus import CoreSubject, InMemoryEventBus
+from packages.execution import InMemoryDecisionStore
 from packages.risk import (
     CandidateSignal,
     InstrumentConstraints,
@@ -30,10 +31,12 @@ class DecisionWorker:
         bus: InMemoryEventBus,
         strategy: BaselineSmaStrategy,
         risk_engine: RiskEngine,
+        decision_store: InMemoryDecisionStore,
     ) -> None:
         self.bus = bus
         self.strategy = strategy
         self.risk_engine = risk_engine
+        self.decision_store = decision_store
 
     def process(
         self,
@@ -51,7 +54,13 @@ class DecisionWorker:
         if evaluated_at.tzinfo is None or evaluated_at.utcoffset() is None:
             raise ValueError("evaluated_at must be timezone-aware")
         evaluated_utc = evaluated_at.astimezone(UTC)
-        age_seconds = Decimal(str((evaluated_utc - event.exchange_ts).total_seconds()))
+        age = evaluated_utc - event.exchange_ts
+        age_microseconds = (
+            age.days * 86_400_000_000
+            + age.seconds * 1_000_000
+            + age.microseconds
+        )
+        age_seconds = Decimal(age_microseconds) / Decimal("1000000")
         candidate_values = candidate.model_dump(mode="python")
         candidate_values.update(
             data_age_seconds=age_seconds if age_seconds >= 0 else None,
@@ -66,6 +75,7 @@ class DecisionWorker:
             constraints,
             evaluated_at=evaluated_utc,
         )
+        self.decision_store.record(decision)
         subject = (
             CoreSubject.RISK_APPROVED
             if decision.approved

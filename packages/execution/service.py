@@ -5,12 +5,21 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from packages.brokers.base import BrokerError, DuplicateBrokerIntent, ExecutionBroker
+from packages.brokers.base import (
+    BrokerError,
+    DefinitiveBrokerError,
+    DuplicateBrokerIntent,
+    ExecutionBroker,
+)
 from packages.execution.ledger import (
     DuplicateFill,
     DuplicateLedgerIdentity,
     InMemoryExecutionLedger,
     LedgerInvariantViolation,
+)
+from packages.execution.decision_store import (
+    DecisionAuthorizationError,
+    InMemoryDecisionStore,
 )
 from packages.execution.models import (
     ExecutionResult,
@@ -19,6 +28,7 @@ from packages.execution.models import (
     OrderStatus,
     OrderType,
 )
+from packages.domain import SourceMode
 
 
 class ExecutionServiceError(RuntimeError):
@@ -33,12 +43,22 @@ class BrokerLedgerConflict(ExecutionServiceError):
     pass
 
 
+class AmbiguousSubmissionError(ExecutionServiceError):
+    """Submission outcome is unknown and automatic resubmission is forbidden."""
+
+
 class ExecutionService:
     """Persist-before-submit orchestration with deterministic idempotency."""
 
-    def __init__(self, ledger: InMemoryExecutionLedger, broker: ExecutionBroker) -> None:
+    def __init__(
+        self,
+        ledger: InMemoryExecutionLedger,
+        broker: ExecutionBroker,
+        decision_store: InMemoryDecisionStore,
+    ) -> None:
         self.ledger = ledger
         self.broker = broker
+        self.decision_store = decision_store
 
     def submit(
         self,
@@ -58,8 +78,19 @@ class ExecutionService:
         the service can verify that the decision approved that exact signal.
         """
 
+        try:
+            self.decision_store.require_exact_approval(decision)
+        except DecisionAuthorizationError as exc:
+            raise UnapprovedDecisionError(str(exc)) from exc
         if getattr(decision, "approved", False) is not True:
             raise UnapprovedDecisionError("execution requires approved=True")
+        if getattr(candidate, "source_mode", None) not in {
+            SourceMode.REPLAY,
+            SourceMode.PAPER_LIVE,
+        }:
+            raise UnapprovedDecisionError(
+                "core execution is hard-gated to replay and paper_live modes"
+            )
 
         try:
             intent = OrderIntent.from_approved_decision(
@@ -77,6 +108,22 @@ class ExecutionService:
 
         existing = self.ledger.get_order(intent.intent_id)
         if existing is not None:
+            if existing.status in {
+                OrderStatus.PENDING_SUBMIT,
+                OrderStatus.AMBIGUOUS,
+            }:
+                broker_record = self.broker.get_order(intent.client_order_id)
+                if broker_record is None:
+                    if existing.status is OrderStatus.PENDING_SUBMIT:
+                        self.ledger.record_status(
+                            intent.intent_id, OrderStatus.AMBIGUOUS
+                        )
+                    raise AmbiguousSubmissionError(
+                        "persisted intent has no definitive broker outcome; "
+                        "reconciliation is required"
+                    )
+                self._synchronize_record(broker_record)
+                return self.ledger.result_for(intent.intent_id, duplicate=True)
             return self.ledger.result_for(intent.intent_id, duplicate=True)
 
         try:
@@ -96,11 +143,16 @@ class ExecutionService:
             # deterministic client ID; never submit a replacement order.
             broker_record = self.broker.get_order(intent.client_order_id)
             if broker_record is None or broker_record.intent_id != intent.intent_id:
-                self.ledger.record_status(intent.intent_id, OrderStatus.REJECTED)
+                self.ledger.record_status(intent.intent_id, OrderStatus.AMBIGUOUS)
                 raise BrokerLedgerConflict("broker duplicate does not match intent") from exc
-        except BrokerError:
+        except DefinitiveBrokerError:
             self.ledger.record_status(intent.intent_id, OrderStatus.REJECTED)
             raise
+        except BrokerError as exc:
+            self.ledger.record_status(intent.intent_id, OrderStatus.AMBIGUOUS)
+            raise AmbiguousSubmissionError(
+                "broker submission outcome is ambiguous; automatic resubmission blocked"
+            ) from exc
 
         self._synchronize_record(broker_record)
         return self.ledger.result_for(intent.intent_id)
@@ -127,7 +179,18 @@ class ExecutionService:
             try:
                 self.ledger.record_fill(fill)
             except DuplicateFill:
-                continue
+                existing = next(
+                    (
+                        item
+                        for item in self.ledger.fills_for(fill.intent_id)
+                        if item.fill_id == fill.fill_id
+                    ),
+                    None,
+                )
+                if existing != fill:
+                    raise BrokerLedgerConflict(
+                        "duplicate fill_id has different immutable content"
+                    )
 
         ledger_record = self.ledger.get_order(broker_record.intent_id)
         if ledger_record is None:

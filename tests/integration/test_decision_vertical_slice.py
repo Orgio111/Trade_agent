@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from packages.domain import CandlePayload, MarketEvent, SourceMode
 from packages.event_bus import CoreSubject, InMemoryEventBus
+from packages.execution import InMemoryDecisionStore
 from packages.risk import (
     InstrumentConstraints,
     PortfolioState,
@@ -85,6 +86,7 @@ def test_validated_candles_produce_one_approved_candidate() -> None:
                 min_confidence=Decimal("0.55"),
             )
         ),
+        InMemoryDecisionStore(),
     )
 
     outcomes = []

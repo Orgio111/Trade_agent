@@ -106,6 +106,34 @@ def compute_payload_checksum(payload: Any) -> str:
     return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
 
 
+def _market_event_identity(
+    *,
+    event_type: str,
+    venue: str,
+    market_type: str,
+    instrument_id: str,
+    exchange_ts: datetime,
+    sequence_start: int | None,
+    sequence_end: int | None,
+    source_mode: SourceMode,
+    ingest_run_id: str,
+    payload_checksum: str,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "1.0",
+        "event_type": event_type,
+        "venue": venue,
+        "market_type": market_type,
+        "instrument_id": instrument_id,
+        "exchange_ts": _utc_datetime(exchange_ts),
+        "sequence_start": sequence_start,
+        "sequence_end": sequence_end,
+        "source_mode": source_mode,
+        "ingest_run_id": ingest_run_id,
+        "payload_checksum": payload_checksum,
+    }
+
+
 class CandlePayload(BaseModel):
     """A venue-independent OHLCV candle payload.
 
@@ -203,6 +231,25 @@ class MarketEvent(BaseModel):
             raise ValueError("sequence_end must be greater than or equal to sequence_start")
         if not self.verify_checksum():
             raise ValueError("payload_checksum does not match payload")
+        expected_id = uuid5(
+            NAMESPACE_URL,
+            canonical_json(
+                _market_event_identity(
+                    event_type=self.event_type,
+                    venue=self.venue,
+                    market_type=self.market_type,
+                    instrument_id=self.instrument_id,
+                    exchange_ts=self.exchange_ts,
+                    sequence_start=self.sequence_start,
+                    sequence_end=self.sequence_end,
+                    source_mode=self.source_mode,
+                    ingest_run_id=self.ingest_run_id,
+                    payload_checksum=self.payload_checksum,
+                )
+            ),
+        )
+        if self.event_id != expected_id:
+            raise ValueError("event_id does not match canonical event provenance")
         return self
 
     @classmethod
@@ -234,19 +281,18 @@ class MarketEvent(BaseModel):
         candle = payload if isinstance(payload, CandlePayload) else CandlePayload.model_validate(payload)
         checksum = compute_payload_checksum(candle)
         exchange_utc = _utc_datetime(exchange_ts)
-        identity = {
-            "schema_version": "1.0",
-            "event_type": event_type,
-            "venue": venue,
-            "market_type": market_type,
-            "instrument_id": instrument_id,
-            "exchange_ts": exchange_utc,
-            "sequence_start": sequence_start,
-            "sequence_end": sequence_end,
-            "source_mode": source_mode,
-            "ingest_run_id": ingest_run_id,
-            "payload_checksum": checksum,
-        }
+        identity = _market_event_identity(
+            event_type=event_type,
+            venue=venue,
+            market_type=market_type,
+            instrument_id=instrument_id,
+            exchange_ts=exchange_utc,
+            sequence_start=sequence_start,
+            sequence_end=sequence_end,
+            source_mode=source_mode,
+            ingest_run_id=ingest_run_id,
+            payload_checksum=checksum,
+        )
         resolved_id = event_id or uuid5(NAMESPACE_URL, canonical_json(identity))
         return cls(
             event_id=resolved_id,

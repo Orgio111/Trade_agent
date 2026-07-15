@@ -12,7 +12,7 @@ tags:
   - local-ai
   - roadmap
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-15
 sources:
   - "[[infrastructure-overview]]"
   - "[[multi-agent-pipeline]]"
@@ -62,6 +62,29 @@ The repository contains many valuable parts, but it is not yet one coherent trad
 6. Implement idempotent paper execution plus exchange reconciliation.
 7. Add AI, RAG, news, and vision only after the deterministic pipeline passes replay and fault-injection tests.
 8. Promote to shadow and tiny canary modes only through explicit, auditable gates.
+
+### Implementation checkpoint — 2026-07-15
+
+The first deterministic vertical slice is now implemented as [[deterministic-paper-core-v1]]. It is intentionally a paper/replay reference core, not a live-trading release.
+
+Implemented and verified:
+
+- A strict `MarketEvent` v1 contract with UTC timestamps, `Decimal` serialization, deterministic event IDs, payload checksums, and provenance-tamper rejection.
+- Binance and Bybit closed-kline normalizers, reason-coded candle/timestamp/sequence checks, and a fail-closed order-book builder.
+- One deterministic risk engine binding every verdict to account, venue, market type, candidate content hash, policy version, and portfolio snapshot. Historical data cannot execute; live mode remains blocked by default.
+- Paper execution with deterministic intent/client IDs, exact issued-decision lookup, persist-before-submit semantics, explicit `AMBIGUOUS` handling for lost acknowledgements, execution TTL and price-deviation gates, append-only fills, and expanded reconciliation.
+- A deterministic replay harness and CLI. The golden six-candle fixture produces one candidate, one approval, one order, one fill, a clean reconciliation result, and a stable digest across ambient `Decimal` precision 6/10/28/50.
+- PostgreSQL migration `002_execution_ledger.sql`, a checksum-locked migration runner for both fresh and existing volumes, and a minimal Compose core containing PostgreSQL, Redis, NATS, and the migration job.
+- The pre-existing MOSS integration collection defects were repaired; the full Python suite now reports **294 passed**. Go tests, the Next.js production build, Compose validation, migration image build, and a fresh PostgreSQL apply/no-op reapply test also pass. Cargo remains unavailable in this environment.
+
+Deliberately incomplete and blocked from live promotion:
+
+- Runtime event bus, decision authority, and execution ledger are still in-memory reference implementations; PostgreSQL repositories and durable NATS consumers are not connected to the workers yet.
+- The replay portfolio projection is not a tax-lot/cash/PnL ledger. Daily and weekly loss gates therefore need a durable ledger projection before promotion evidence is meaningful.
+- Entry intents do not yet create or reconcile protective stop/OCO legs. The risk engine's approved risk amount is an estimate until a persisted protective-order lifecycle exists.
+- Raw immutable Parquet capture, full order-book venue feeds, promotion-grade backtesting, control-plane kill-switch APIs, dashboard integration, AI advisory lanes, shadow mode, and live adapters remain future phases.
+
+The next implementation gate is durable PostgreSQL decision/order/cash/position state plus crash-recovery reconciliation. No live key or live order path should be enabled before that gate and protective exits are complete.
 
 ### MVP versus advanced system
 

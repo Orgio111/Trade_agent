@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from decimal import Decimal
+from decimal import Decimal, localcontext
 import hashlib
 from threading import RLock
 
@@ -155,6 +155,13 @@ class PaperBroker:
             )
 
     def _try_fill(self, client_order_id: str, market: MarketSnapshot) -> None:
+        with localcontext() as context:
+            context.prec = 50
+            self._try_fill_with_context(client_order_id, market)
+
+    def _try_fill_with_context(
+        self, client_order_id: str, market: MarketSnapshot
+    ) -> None:
         record = self._orders[client_order_id]
         if not self._is_marketable(record, market):
             return
