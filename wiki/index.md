@@ -2,7 +2,7 @@
 
 > Content catalog for the trading & quant second brain. Organized by category. ZCode updates this on every ingest. **Read this first** when answering a query — then drill into pages.
 >
-> **State:** 2 sources · 60 pages · last updated 2026-07-15
+> **State:** 2 sources · 62 pages · last updated 2026-07-15
 
 ---
 
@@ -73,7 +73,7 @@ _Instruments, venues, tools, people, firms._
 - [[odoo-erp-brain]] — brain #12; Odoo ERP business intelligence via XML-RPC, weight 0.05. (active, updated 2026-06-30)
 - [[neural-network-brain]] — brain #10; custom LSTM for temporal patterns, weight 0.05. (stable, updated 2026-06-26)
 - [[vlm-agent]] — experimental VLM chart analysis; missing candle-buffer documentation and excluded from the deterministic hot path. (draft, updated 2026-07-14)
-- [[rag-agent]] — RAG pattern retrieval agent: NIM embeddings → Qdrant vector search → trade pattern statistics. (active, updated 2026-07-01)
+- [[rag-agent]] — legacy experimental trading-pattern RAG using NIM/Qdrant; quarantined from project knowledge and unchanged by the local knowledge pipeline. (draft, updated 2026-07-15)
 - [[nats-langgraph-bridge]] — experimental NATS↔LangGraph bridge; requires canonical contract, durable consumer, and replay verification. (draft, updated 2026-07-14)
 - [[scalping-engine]] — experimental CPU-only signal engine; latency and risk integration remain unverified. (draft, updated 2026-07-14)
 - [[chart-segmentation]] — OpenCV chart feature extraction: candle detection, trend lines, S/R levels, volume analysis. (active, updated 2026-07-01)
@@ -82,7 +82,7 @@ _Instruments, venues, tools, people, firms._
 ## Comparisons
 _Analyses and side-by-side comparisons (often filed from queries)._
 
-- [[trade-project-full-integration-build-plan]] — evidence-backed target architecture, safety gates, roadmap, and the verified 2026-07-15 paper-core checkpoint. (stable, updated 2026-07-15)
+- [[trade-project-full-integration-build-plan]] — evidence-backed target architecture, safety gates, roadmap, verified paper-core checkpoint, and scoped project-knowledge storage supersession. (stable, updated 2026-07-15)
 
 ## Playbooks
 _How-tos, processes, checklists._
@@ -90,11 +90,13 @@ _How-tos, processes, checklists._
 - [[local-ai-deployment-guide]] — step-by-step deployment of local trading AI on RTX 4050 + Ollama. (stable, updated 2026-06-30)
 - [[signal-aggregation-logic]] — Go orchestrator weighted aggregation formula, weight mismatch fixes, proposed rebalancing. (updated 2026-06-26)
 - [[nn-brain-development-guide]] — step-by-step playbook for building, training, and deploying custom NN brain. (stable, updated 2026-06-26)
+- [[local-knowledge-pipeline-operations]] — local lock/check/sync/verify/query operations, security exclusions, failure recovery, and release checklist. (stable, updated 2026-07-15)
 
 ## Decisions
 _Decision logs: what was decided, when, why._
 
 - [[deterministic-paper-core-v1]] — reference semantics and safety invariants for the verified market-event → risk → paper-fill vertical slice. (stable, updated 2026-07-15)
+- [[local-knowledge-pipeline-v1]] — manifest-owned, CI-enforced project knowledge using ChromaDB 1.5.9 and local Ollama `nomic-embed-text`. (stable, updated 2026-07-15)
 
 ## Sources
 _Per-source summary pages — one per ingested source._

@@ -58,6 +58,32 @@ services:
       resources:
         limits: { cpus: "1.0", memory: 1G }
 
+  chroma:
+    image: chromadb/chroma:1.5.9
+    container_name: quantex-chroma
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8100:8000"
+    environment:
+      IS_PERSISTENT: "TRUE"
+      PERSIST_DIRECTORY: /data
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - chroma_data:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v2/heartbeat', timeout=2)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+
   # ── LAYER 2-4: EVENT STREAM BUS ──────────────────────
   # NATS JetStream is the backbone of the Trinity Architecture:
   #   Layer A (Python brains) publish → signals.raw
@@ -550,6 +576,7 @@ volumes:
   postgres_data:
   redis_data:
   qdrant_data:
+  chroma_data:
   nats_data:
   influx_data:
   nginx_logs:

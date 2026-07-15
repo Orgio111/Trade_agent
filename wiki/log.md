@@ -2,6 +2,10 @@
 
 > Append-only timeline of every operation on the wiki. Newest at top. Reverse chronological so the current state is the first thing you read.
 
+## [2026-07-15] note | Local project-knowledge pipeline v1
+
+Recorded [[local-knowledge-pipeline-v1]] and [[local-knowledge-pipeline-operations]]: `project.manifest.toml` binds component ownership, primary responsibility, code, documentation, and embedding inputs; deterministic lock drift now has an offline CI contract, while a local receipt plus live ChromaDB verification remain explicit local operations. Selected ChromaDB 1.5.9 with Ollama `nomic-embed-text` only for project knowledge, added a scoped supersession note to [[trade-project-full-integration-build-plan]], and reclassified [[rag-agent]] as a quarantined legacy trading-pattern path with no trading behavior change. Updated the index to 62 pages.
+
 ## [2026-07-15] note | Deterministic Paper Core v1 built and verified
 
 Implemented [[deterministic-paper-core-v1]] from [[trade-project-full-integration-build-plan]]: canonical provenance-bound events, Binance/Bybit candle adapters, fail-closed quality gates, account/candidate-bound deterministic risk, issued-decision authorization, paper execution with ambiguous-submit recovery, replay, PostgreSQL ledger schema, and a checksum-locked migration runner. Full Python validation is 294 passing tests; golden replay and PostgreSQL fresh apply/no-op reapply pass. Live execution remains hard-blocked because durable repositories, cash/position projections, and protective stop/OCO lifecycle are not yet implemented. Updated the plan checkpoint and index to 60 pages.

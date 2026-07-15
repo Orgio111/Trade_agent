@@ -4,11 +4,11 @@
     "type": "split",
     "children": [
       {
-        "id": "432851446d62fc12",
+        "id": "ec0ab62f34f860b4",
         "type": "tabs",
         "children": [
           {
-            "id": "92fdba78a71f7449",
+            "id": "f63797c7069ad41e",
             "type": "leaf",
             "state": {
               "type": "graph",
@@ -176,20 +176,24 @@
       "bases:Create new base": false
     }
   },
-  "active": "92fdba78a71f7449",
+  "active": "f63797c7069ad41e",
   "lastOpenFiles": [
-    "orchestrator/moss_engine/__pycache__/__main__.cpython-312.pyc",
-    "models/freqai/xgboost_freqai_backup_1784049801.joblib",
+    "project.manifest.lock.json",
+    "project.manifest.toml",
+    "tests/integration/__pycache__/test_knowledge_sync.cpython-312.pyc",
+    "tests/unit/__pycache__/test_knowledge_ollama.cpython-312.pyc",
+    "tests/unit/__pycache__/test_knowledge_manifest.cpython-312.pyc",
+    "tests/unit/__pycache__/test_knowledge_chunking.cpython-312.pyc",
+    "packages/knowledge/__pycache__/locality.cpython-312.pyc",
+    "packages/knowledge/locality.py",
+    "tests/integration/__pycache__/test_knowledge_sync.cpython-312-pytest-9.1.1.pyc",
+    "tests/unit/__pycache__/test_knowledge_ollama.cpython-312-pytest-9.1.1.pyc",
+    "tests/fakes/__pycache__/__init__.cpython-312.pyc",
+    "CHANGELOG.md",
+    "wiki/content/playbooks/local-knowledge-pipeline-operations.md",
+    "wiki/content/decisions/local-knowledge-pipeline-v1.md",
+    "wiki/AutoGen Trading Pipeline.md",
     "wiki/content/decisions/deterministic-paper-core-v1.md",
-    "models/freqai/xgboost_freqai_backup_1784049423.joblib",
-    "tests/replay/__pycache__/test_core_replay.cpython-312.pyc",
-    "scripts/__pycache__/apply_migrations.cpython-312.pyc",
-    "tests/contract/__pycache__/test_migration_runner.cpython-312-pytest-9.1.1.pyc",
-    "infra/migrations/Dockerfile",
-    "infra/migrations",
-    "tests/contract/test_migration_runner.py",
-    "scripts/apply_migrations.py",
-    "packages/execution/__pycache__/decision_store.cpython-312.pyc",
     "wiki/content/comparisons/trade-project-full-integration-build-plan.md",
     "wiki/index.md",
     "frontend/node_modules/playwright-core/lib/tools/cli-client/skill/SKILL.md",
@@ -199,7 +203,6 @@
     "wiki/CLI Reference.md",
     "wiki/Model Loader VRAM Strategy.md",
     "wiki/Enhanced Risk Engine.md",
-    "wiki/AutoGen Trading Pipeline.md",
     "wiki/agents.md",
     "wiki/content/entities/ultra-low-latency-monitoring.md",
     "wiki/content/entities/chart-segmentation.md",
@@ -210,9 +213,6 @@
     "wiki/content/entities/vlm-agent.md",
     "wiki/content/concepts/odoo-erp-panel.md",
     "wiki/content/entities/orderbook-heatmap.md",
-    "wiki/content/entities/ppo-portfolio-manager.md",
-    "wiki/content/entities/vllm-inference-provider.md",
-    "wiki/content/concepts/broker-abstraction-layer.md",
-    "wiki/content/concepts/nats-event-system.md"
+    "wiki/content/entities/ppo-portfolio-manager.md"
   ]
 }

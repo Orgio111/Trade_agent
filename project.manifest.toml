@@ -1,0 +1,407 @@
+schema_version = 1
+project = "Trade_agent"
+
+[knowledge]
+source_of_truth = "wiki"
+embedding_provider = "ollama"
+embedding_model = "nomic-embed-text"
+embedding_dimension = 768
+model_digest_policy = "runtime_locked"
+ollama_base_url = "http://127.0.0.1:11434"
+vector_store = "chromadb"
+chroma_host = "127.0.0.1"
+chroma_port = 8100
+chroma_ssl = false
+chroma_client_version = "1.5.9"
+chroma_server_image = "chromadb/chroma:1.5.9"
+collection = "trade-agent-project-knowledge-v1"
+lock_file = "project.manifest.lock.json"
+receipt_file = ".local/knowledge/sync-receipt.json"
+chunker_version = "char-lines-v1"
+max_chunk_chars = 4000
+overlap_chars = 400
+embedding_batch_size = 16
+upsert_batch_size = 64
+
+[coverage]
+include = [
+  "project.manifest.toml",
+  "project.manifest.lock.json",
+  "packages/**/*.py",
+  "orchestrator/**/*.py",
+  "orchestrator/.dockerignore",
+  "orchestrator/Dockerfile",
+  "orchestrator/requirements.txt",
+  "inference/**/*.py",
+  "workers/**/*.py",
+  "binance/**/*.py",
+  "notifications/**/*.py",
+  "services/**/*.py",
+  "services/**/Dockerfile",
+  "services/**/requirements.txt",
+  "realtime/**/*.go",
+  "realtime/Dockerfile",
+  "realtime/go.mod",
+  "realtime/go.sum",
+  "execution/src/**/*.rs",
+  "execution/Cargo.toml",
+  "frontend/src/**/*.ts",
+  "frontend/src/**/*.tsx",
+  "frontend/src/**/*.css",
+  "frontend/tests/**/*.ts",
+  "frontend/*.ts",
+  "frontend/Dockerfile",
+  "frontend/package.json",
+  "frontend/package-lock.json",
+  "frontend/tsconfig.json",
+  "strategies/**/*.json",
+  "scripts/**/*.py",
+  "tests/**/*.py",
+  "*.py",
+  ".github/workflows/*.yml",
+  "docker-compose*.yml",
+  "config/**/*.yaml",
+  "config_dir/**/*.yaml",
+  "config.yaml",
+  "db/migrations/**/*.sql",
+  "deployment/**/*.yaml",
+  "deployment/**/*.tf",
+  "deployment/**/*.sh",
+  "deployment/**/*.conf",
+  "deployment/**/Dockerfile",
+  "infra/**/*.yml",
+  "infra/**/Dockerfile",
+  "monitoring/**/*.yml",
+  "monitoring/**/*.json",
+  "pyproject.toml",
+  "requirements.txt",
+  "uv.lock",
+  ".gitignore",
+  "AGENTS.md",
+  "README.md",
+  "CHANGELOG.md",
+  "wiki/ZCODE.md",
+  "wiki/index.md",
+  "wiki/log.md",
+  "wiki/content/**/*.md",
+]
+forbidden_repository_paths = [
+  "**/*.sqlite3",
+  "**/.env",
+  "**/.env.*",
+  ".local/**/*",
+  ".chroma/**/*",
+  "chroma-data/**/*",
+]
+legacy_repository_exceptions = [
+  ".env.example",
+  "memory/chroma.sqlite3",
+]
+
+[[components]]
+id = "knowledge-pipeline"
+owner = "software-engineering/knowledge"
+primary_responsibility = "Build and verify the local project-knowledge projection."
+owned_paths = [
+  "project.manifest.toml",
+  "project.manifest.lock.json",
+  "packages/knowledge/**/*.py",
+  "scripts/knowledge.py",
+  "scripts/benchmark_knowledge.py",
+  "tests/fakes/**/*.py",
+  "tests/unit/test_knowledge_*.py",
+  "tests/integration/test_knowledge_*.py",
+]
+tests = [
+  "tests/unit/test_knowledge_*.py",
+  "tests/integration/test_knowledge_*.py",
+]
+documentation = [
+  "wiki/content/playbooks/local-knowledge-pipeline-operations.md",
+]
+architecture = [
+  "wiki/content/decisions/local-knowledge-pipeline-v1.md",
+]
+embedding_inputs = [
+  "project.manifest.toml",
+  "packages/knowledge/**/*.py",
+  "scripts/knowledge.py",
+  "scripts/benchmark_knowledge.py",
+]
+forbidden_imports = [
+  "anthropic",
+  "google",
+  "ollama",
+  "openai",
+  "qdrant_client",
+  "sentence_transformers",
+]
+
+[[components]]
+id = "deterministic-paper-core"
+owner = "software-engineering/core"
+primary_responsibility = "Provide deterministic paper and replay safety semantics."
+owned_paths = [
+  "packages/brokers/**/*.py",
+  "packages/data_quality/**/*.py",
+  "packages/domain/**/*.py",
+  "packages/event_bus/**/*.py",
+  "packages/event_contracts/**/*.py",
+  "packages/execution/**/*.py",
+  "packages/replay/**/*.py",
+  "packages/risk/**/*.py",
+  "packages/strategies/**/*.py",
+  "tests/contract/**/*.py",
+  "tests/replay/**/*.py",
+  "tests/unit/test_data_quality.py",
+  "tests/unit/test_execution_core.py",
+  "tests/unit/test_risk_engine.py",
+  "tests/integration/test_decision_vertical_slice.py",
+  "tests/integration/test_replay_cli.py",
+]
+tests = [
+  "tests/contract/**/*.py",
+  "tests/replay/**/*.py",
+  "tests/unit/test_data_quality.py",
+  "tests/unit/test_execution_core.py",
+  "tests/unit/test_risk_engine.py",
+  "tests/integration/test_decision_vertical_slice.py",
+]
+documentation = [
+  "wiki/content/concepts/broker-abstraction-layer.md",
+]
+architecture = [
+  "wiki/content/decisions/deterministic-paper-core-v1.md",
+]
+embedding_inputs = [
+  "packages/brokers/**/*.py",
+  "packages/data_quality/**/*.py",
+  "packages/domain/**/*.py",
+  "packages/event_bus/**/*.py",
+  "packages/event_contracts/**/*.py",
+  "packages/execution/**/*.py",
+  "packages/replay/**/*.py",
+  "packages/risk/**/*.py",
+  "packages/strategies/**/*.py",
+]
+
+[[components]]
+id = "orchestration-runtime"
+owner = "software-engineering/orchestration"
+primary_responsibility = "Coordinate existing agents, inference, and runtime workers."
+owned_paths = [
+  "orchestrator/**/*.py",
+  "inference/**/*.py",
+  "workers/**/*.py",
+  "binance/**/*.py",
+  "notifications/**/*.py",
+  "strategies/**/*.json",
+  "tests/test_*.py",
+  "*.py",
+]
+tests = [
+  "tests/test_brain_integrations.py",
+  "tests/test_imports.py",
+  "tests/test_orchestrator_new_modules.py",
+]
+documentation = [
+  "wiki/content/concepts/multi-agent-pipeline.md",
+  "wiki/content/entities/rag-agent.md",
+]
+architecture = [
+  "wiki/content/concepts/local-trading-ai-architecture.md",
+]
+embedding_inputs = [
+  "orchestrator/**/*.py",
+  "inference/**/*.py",
+  "workers/**/*.py",
+  "binance/**/*.py",
+  "notifications/**/*.py",
+  "strategies/**/*.json",
+  "*.py",
+]
+
+[[components]]
+id = "service-runtime"
+owner = "software-engineering/services"
+primary_responsibility = "Serve application APIs, realtime transport, execution, and user interface."
+owned_paths = [
+  "services/**/*.py",
+  "realtime/**/*.go",
+  "execution/src/**/*.rs",
+  "execution/Cargo.toml",
+  "frontend/src/**/*.ts",
+  "frontend/src/**/*.tsx",
+  "frontend/src/**/*.css",
+  "frontend/tests/**/*.ts",
+  "frontend/*.ts",
+  "frontend/package.json",
+  "frontend/package-lock.json",
+  "frontend/tsconfig.json",
+]
+tests = [
+  "frontend/tests/**/*.ts",
+  "tests/test_brain_integrations.py",
+]
+documentation = [
+  "wiki/content/concepts/real-time-trading-dashboard.md",
+]
+architecture = [
+  "wiki/content/overviews/infrastructure-overview.md",
+]
+embedding_inputs = [
+  "services/**/*.py",
+  "realtime/**/*.go",
+  "execution/src/**/*.rs",
+  "frontend/src/**/*.ts",
+  "frontend/src/**/*.tsx",
+  "frontend/src/**/*.css",
+  "frontend/*.ts",
+]
+
+[[components]]
+id = "platform-infrastructure"
+owner = "software-engineering/platform"
+primary_responsibility = "Define reproducible local build, deployment, storage, and monitoring infrastructure."
+owned_paths = [
+  ".github/workflows/*.yml",
+  "docker-compose*.yml",
+  "config/**/*.yaml",
+  "config_dir/**/*.yaml",
+  "config.yaml",
+  "db/migrations/**/*.sql",
+  "deployment/**/*.yaml",
+  "deployment/**/*.tf",
+  "deployment/**/*.sh",
+  "deployment/**/*.conf",
+  "deployment/**/Dockerfile",
+  "infra/**/*.yml",
+  "infra/**/Dockerfile",
+  "monitoring/**/*.yml",
+  "monitoring/**/*.json",
+  "orchestrator/.dockerignore",
+  "orchestrator/Dockerfile",
+  "orchestrator/requirements.txt",
+  "services/**/Dockerfile",
+  "services/**/requirements.txt",
+  "realtime/Dockerfile",
+  "realtime/go.mod",
+  "realtime/go.sum",
+  "frontend/Dockerfile",
+  "pyproject.toml",
+  "requirements.txt",
+  "uv.lock",
+  "scripts/apply_migrations.py",
+  "scripts/replay_market.py",
+]
+tests = [
+  "tests/contract/test_migration_runner.py",
+  "tests/integration/test_replay_cli.py",
+]
+documentation = [
+  "wiki/content/playbooks/local-ai-deployment-guide.md",
+]
+architecture = [
+  "wiki/content/overviews/infrastructure-overview.md",
+  "wiki/content/comparisons/trade-project-full-integration-build-plan.md",
+]
+embedding_inputs = [
+  ".github/workflows/*.yml",
+  "docker-compose*.yml",
+  "db/migrations/**/*.sql",
+  "deployment/**/*.yaml",
+  "deployment/**/*.tf",
+  "deployment/**/*.sh",
+  "deployment/**/*.conf",
+  "infra/**/*.yml",
+  "monitoring/**/*.yml",
+  "scripts/apply_migrations.py",
+  "scripts/replay_market.py",
+]
+
+[[components]]
+id = "project-governance"
+owner = "software-engineering/governance"
+primary_responsibility = "Maintain repository-wide engineering rules and release history."
+owned_paths = [
+  ".gitignore",
+  "AGENTS.md",
+  "README.md",
+  "CHANGELOG.md",
+  "tests/__init__.py",
+]
+tests = [
+  "tests/test_imports.py",
+]
+documentation = [
+  "wiki/content/playbooks/local-knowledge-pipeline-operations.md",
+]
+architecture = [
+  "wiki/content/decisions/local-knowledge-pipeline-v1.md",
+]
+embedding_inputs = [
+  "AGENTS.md",
+  "README.md",
+  "CHANGELOG.md",
+]
+
+[[components]]
+id = "obsidian-knowledge-base"
+owner = "software-engineering/knowledge-curation"
+primary_responsibility = "Curate permanent project knowledge and architecture in Obsidian."
+owned_paths = [
+  "wiki/ZCODE.md",
+  "wiki/index.md",
+  "wiki/log.md",
+  "wiki/content/**/*.md",
+]
+tests = [
+  "tests/unit/test_knowledge_manifest.py",
+]
+documentation = [
+  "wiki/content/playbooks/local-knowledge-pipeline-operations.md",
+]
+architecture = [
+  "wiki/content/decisions/local-knowledge-pipeline-v1.md",
+]
+embedding_inputs = [
+  "wiki/ZCODE.md",
+  "wiki/index.md",
+  "wiki/log.md",
+  "wiki/content/**/*.md",
+]
+
+[[quarantines]]
+id = "legacy-trading-vector-systems"
+reason = "Trading-memory vector paths are outside this project-knowledge migration."
+scope = [
+  "memory.py",
+  "inference/cache.py",
+  "orchestrator/rag_agent.py",
+  "orchestrator/memory/vector_memory.py",
+  "orchestrator/rl_memory/**/*.py",
+  "orchestrator/rl_streaming/**/*.py",
+  "orchestrator/nim_*.py",
+  "orchestrator/inference_integration.py",
+]
+baseline_paths = [
+  "inference/cache.py",
+  "memory.py",
+  "orchestrator/inference_integration.py",
+  "orchestrator/memory/vector_memory.py",
+  "orchestrator/nim_client.py",
+  "orchestrator/nim_enhanced.py",
+  "orchestrator/rag_agent.py",
+  "orchestrator/rl_memory/langgraph_rl_nodes.py",
+  "orchestrator/rl_memory/memory_store.py",
+  "orchestrator/rl_memory/nightly_loop.py",
+  "orchestrator/rl_memory/reward_function.py",
+  "orchestrator/rl_memory/rl_node.py",
+  "orchestrator/rl_streaming/__init__.py",
+  "orchestrator/rl_streaming/cli_commands.py",
+  "orchestrator/rl_streaming/langgraph_nodes.py",
+  "orchestrator/rl_streaming/memory_integration.py",
+  "orchestrator/rl_streaming/meta_learner.py",
+  "orchestrator/rl_streaming/online_policy.py",
+  "orchestrator/rl_streaming/streaming_reward.py",
+]

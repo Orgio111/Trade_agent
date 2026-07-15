@@ -86,6 +86,10 @@ Deliberately incomplete and blocked from live promotion:
 
 The next implementation gate is durable PostgreSQL decision/order/cash/position state plus crash-recovery reconciliation. No live key or live order path should be enabled before that gate and protective exits are complete.
 
+### Project-knowledge storage supersession — 2026-07-15
+
+[[local-knowledge-pipeline-v1]] supersedes this plan's pgvector/Qdrant recommendation **only for repository project knowledge**. Code, architecture, documentation, research synthesis, and lessons learned now use `project.manifest.toml`, a deterministic lock, ChromaDB 1.5.9 in local Docker server mode, and local Ollama `nomic-embed-text`; the operational workflow is [[local-knowledge-pipeline-operations]]. PostgreSQL remains authoritative for execution/portfolio state, while the legacy trading-pattern memory in [[rag-agent]] remains quarantined and unchanged. This addendum changes no strategy, risk, broker, or execution logic.
+
 ### MVP versus advanced system
 
 | Scope | MVP | Advanced, only after promotion evidence |
@@ -1198,6 +1202,8 @@ Not ten more agents. The 10× improvement is a **canonical point-in-time dataset
 - [[inference-router]]
 - [[local-trading-ai-architecture]]
 - [[brain-ecosystem]]
+- [[local-knowledge-pipeline-v1]]
+- [[local-knowledge-pipeline-operations]]
 - [[order-flow-imbalance]]
 - [[microstructure]]
 - [[real-time-trading-dashboard]]

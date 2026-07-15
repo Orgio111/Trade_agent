@@ -1,0 +1,17 @@
+[
+  {
+    "pnl_pct": 0.05,
+    "win": true,
+    "timestamp": 1784130500.3448496
+  },
+  {
+    "pnl_pct": -0.02,
+    "win": false,
+    "timestamp": 1784130500.346373
+  },
+  {
+    "pnl_pct": 0.03,
+    "win": true,
+    "timestamp": 1784130500.349917
+  }
+]

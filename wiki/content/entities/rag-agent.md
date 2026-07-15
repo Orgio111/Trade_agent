@@ -1,15 +1,20 @@
 ---
-title: "RAG Agent"
+title: "Legacy Trading-Pattern RAG Agent"
 type: entity
-tags: [rag, retrieval, vector-search, qdrant, embeddings, pattern-memory, nim]
+tags: [rag, retrieval, vector-search, qdrant, embeddings, pattern-memory, nim, legacy, trading-memory]
 created: 2026-07-01
-updated: 2026-07-01
-status: active
+updated: 2026-07-15
+sources:
+  - "[[multi-agent-pipeline]]"
+  - "[[nats-event-system]]"
+status: draft
 ---
 
-# RAG Agent
+# Legacy Trading-Pattern RAG Agent
 
-Retrieval Augmented Generation agent for trade pattern memory. Queries Qdrant vector store for historically similar trade setups and provides context to the strategy agent for informed decisions.
+This page documents the pre-existing experimental retrieval path for **trade-pattern memory**. It queries Qdrant for historically similar market setups and supplies non-authoritative context to the strategy experiment described by [[multi-agent-pipeline]]. Its production behavior and statistical validity have not been verified.
+
+> **Boundary:** this is not the project-knowledge system. [[local-knowledge-pipeline-v1]] uses a separate manifest-scoped ChromaDB 1.5.9 collection and local Ollama `nomic-embed-text` for source code, architecture, documentation, research synthesis, and lessons learned. The project-knowledge implementation did not modify this agent, its trading inputs, its confidence formula, or any strategy/risk/execution behavior.
 
 ## Architecture
 
@@ -90,13 +95,21 @@ This adjusts the strategy agent's confidence by ±0.1 based on historical eviden
 - Also used by: `_fallback_signal()` for pattern stats confidence adjustment
 - Memory storage: `orchestrator/memory/vector_memory.py` (Qdrant wrapper)
 
+## Status and quarantine
+
+- `orchestrator/rag_agent.py` and `orchestrator/memory/vector_memory.py` remain legacy trading-memory paths.
+- Their NIM, Qdrant, local-memory, and hash-fallback behavior is not approved for project-knowledge indexing.
+- The hash fallback is not a semantic embedding and must not be reused by [[local-knowledge-pipeline-v1]].
+- Any migration of this trading-pattern memory requires a separate decision, leakage evaluation, point-in-time retrieval tests, and explicit confirmation that deterministic risk/execution remain model-independent.
+- This page does not claim that the current trading pipeline is production-ready or that retrieved pattern statistics improve outcomes.
+
 ## Strengths & weaknesses
 
 **Strengths:**
 - Provides historical context for current market conditions
 - Semantic search finds similar patterns even with different exact parameters
 - Non-blocking — pipeline continues if RAG fails
-- Confidence adjustment improves signal quality over time
+- Produces an explicit, inspectable context object for experiments
 
 **Weaknesses:**
 - Cold start: first queries have no stored patterns
@@ -106,6 +119,7 @@ This adjusts the strategy agent's confidence by ±0.1 based on historical eviden
 
 ## Related
 
+- [[local-knowledge-pipeline-v1]] — separate project-knowledge architecture; does not alter trading behavior
 - [[multi-agent-pipeline]] — pipeline architecture showing RAG parallel execution
 - [[nats-event-system]] — RAG query/result events flow through NATS
 - [[nats-langgraph-bridge]] — triggers pipeline that includes RAG retrieval
