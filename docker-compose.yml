@@ -15,7 +15,7 @@ services:
     environment:
       POSTGRES_DB: quantex
       POSTGRES_USER: quantex
-      POSTGRES_PASSWORD: secret
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./db/migrations:/docker-entrypoint-initdb.d
@@ -70,16 +70,6 @@ services:
       ANONYMIZED_TELEMETRY: "FALSE"
     volumes:
       - chroma_data:/data
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v2/heartbeat', timeout=2)"
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
     deploy:
       resources:
         limits: { cpus: "1.0", memory: 1G }
@@ -141,8 +131,9 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
       GROQ_API_KEY: ${GROQ_API_KEY}
       INFERENCE_BUDGET_TIER: ${INFERENCE_BUDGET_TIER:-free}
-      OPENAI_API_KEY: sk-placeholder-key
-      DATABASE_URL: postgresql://quantex:secret@postgres:5432/quantex
+      # Optional token for local OpenAI-compatible inference adapters only.
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       REDIS_HOST: redis
       INITIAL_BALANCE: ${INITIAL_BALANCE:-1000.0}
       FORWARDED_ALLOW_IPS: "*"
@@ -175,7 +166,7 @@ services:
     ports: ["8081:8081"]
     environment:
       REDIS_HOST: redis
-      POSTGRES_URL: postgresql://quantex:secret@postgres:5432/quantex
+      POSTGRES_URL: ${DATABASE_URL:?DATABASE_URL is required}
       NATS_URL: nats://nats:4222
     volumes:
       - ./data:/app/data
@@ -559,7 +550,7 @@ services:
     ports: ["3001:3000"]
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: quantex123
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
       GF_INSTALL_PLUGINS: grafana-piechart-panel
     volumes:
       - grafana_data:/var/lib/grafana

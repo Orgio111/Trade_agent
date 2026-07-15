@@ -172,7 +172,12 @@ class InMemoryVectorStore:
 
     async def inventory(self) -> dict[str, StoredRecord]:
         return {
-            record_id: StoredRecord(id=record_id, metadata=dict(record.metadata))
+            record_id: StoredRecord(
+                id=record_id,
+                embedding=tuple(record.embedding),
+                document=record.document,
+                metadata=dict(record.metadata),
+            )
             for record_id, record in self.records.items()
         }
 

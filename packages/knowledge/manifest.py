@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import os
+import re
 import subprocess
 import tomllib
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from functools import lru_cache
+from pathlib import Path
 
 from pydantic import ValidationError
 
@@ -42,6 +45,7 @@ class ManifestInventory:
     manifest: ProjectManifest
     manifest_sha256: str
     owned_by: dict[str, str]
+    quarantined_paths: frozenset[str]
     sources: tuple[SourceFile, ...]
 
 
@@ -123,18 +127,66 @@ def _git_tracked_paths(root: Path) -> set[str] | None:
     )
     if completed.returncode != 0:
         raise ManifestError("cannot read the Git tracked-file inventory")
-    return {
+    tracked = {
         item.decode("utf-8").replace("\\", "/")
         for item in completed.stdout.split(b"\x00")
         if item
     }
+    # A file removed in the current worktree remains in Git's index until the
+    # removal is committed. Drift checks describe the tree being validated, so
+    # do not report already-removed generated artifacts as live repository data.
+    return {path for path in tracked if os.path.lexists(root / Path(path))}
+
+
+@lru_cache(maxsize=512)
+def _compile_repository_pattern(pattern: str) -> re.Pattern[str]:
+    """Compile the manifest's small POSIX-glob dialect with true ``**`` support."""
+
+    expression: list[str] = ["^"]
+    index = 0
+    while index < len(pattern):
+        character = pattern[index]
+        if character == "*":
+            if index + 1 < len(pattern) and pattern[index + 1] == "*":
+                index += 2
+                if index < len(pattern) and pattern[index] == "/":
+                    expression.append("(?:.*/)?")
+                    index += 1
+                else:
+                    expression.append(".*")
+                continue
+            expression.append("[^/]*")
+        elif character == "?":
+            expression.append("[^/]")
+        else:
+            expression.append(re.escape(character))
+        index += 1
+    expression.append("$")
+    return re.compile("".join(expression))
 
 
 def _matches_pattern(path: str, pattern: str) -> bool:
-    candidate = PurePosixPath(path)
-    if candidate.match(pattern):
-        return True
-    return pattern.startswith("**/") and candidate.match(pattern[3:])
+    return _compile_repository_pattern(pattern).fullmatch(path) is not None
+
+
+def _tracked_coverage(
+    tracked: set[str] | None,
+    *,
+    include: tuple[str, ...],
+    exclude: tuple[str, ...],
+) -> set[str]:
+    """Select every relevant tracked file, including files under unknown new roots."""
+
+    for pattern in (*include, *exclude):
+        validate_relative_pattern(pattern)
+    if tracked is None or not include:
+        return set()
+    return {
+        item
+        for item in tracked
+        if any(_matches_pattern(item, pattern) for pattern in include)
+        and not any(_matches_pattern(item, pattern) for pattern in exclude)
+    }
 
 
 def _categories_for(
@@ -206,10 +258,18 @@ def load_inventory(
     except (UnicodeDecodeError, tomllib.TOMLDecodeError, ValidationError) as exc:
         raise ManifestError(f"invalid project manifest: {exc}") from exc
 
+    tracked = _git_tracked_paths(root)
     coverage = _expand_patterns(
         root,
         manifest.coverage.include,
         label="coverage.include",
+    )
+    coverage.update(
+        _tracked_coverage(
+            tracked,
+            include=manifest.coverage.tracked_include,
+            exclude=manifest.coverage.tracked_exclude,
+        )
     )
     lowered: dict[str, str] = {}
     for item in sorted(coverage):
@@ -263,7 +323,6 @@ def load_inventory(
             text = _read_stable_utf8(root / governed_path, governed_path)
             scan_forbidden_imports(governed_path, text, component.forbidden_imports)
 
-    tracked = _git_tracked_paths(root)
     if tracked is not None:
         forbidden_patterns = manifest.coverage.forbidden_repository_paths
         for pattern in forbidden_patterns:
@@ -281,6 +340,7 @@ def load_inventory(
                 + ", ".join(sorted(unexpected))
             )
 
+    quarantined_paths: set[str] = set()
     for quarantine in manifest.quarantines:
         actual = _expand_patterns(
             root,
@@ -298,6 +358,13 @@ def load_inventory(
             if removed:
                 detail.append("removed=" + ",".join(removed))
             raise ManifestError(f"{quarantine.id} scope drift: {'; '.join(detail)}")
+        outside_coverage = actual - coverage
+        if outside_coverage:
+            raise ManifestError(
+                f"{quarantine.id}: quarantined paths are outside ownership coverage: "
+                + ", ".join(sorted(outside_coverage))
+            )
+        quarantined_paths.update(actual)
 
     sources_by_path: dict[str, SourceFile] = {}
     for component in manifest.components:
@@ -307,6 +374,7 @@ def load_inventory(
             label=f"{component.id}.embedding_inputs",
             require_each=bool(component.embedding_inputs),
         )
+        embedding_paths.difference_update(quarantined_paths)
         for source_path in sorted(embedding_paths):
             owner = owned_by.get(source_path)
             if owner != component.id:
@@ -337,5 +405,6 @@ def load_inventory(
         manifest=manifest,
         manifest_sha256=sha256_text(raw_bytes.decode("utf-8")),
         owned_by=owned_by,
+        quarantined_paths=frozenset(quarantined_paths),
         sources=tuple(sources_by_path[path] for path in sorted(sources_by_path)),
     )

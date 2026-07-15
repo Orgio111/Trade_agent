@@ -10,7 +10,7 @@ tags:
   - embeddings
   - ci
 created: 2026-07-15
-updated: 2026-07-15
+updated: 2026-07-16
 sources:
   - "[[trade-project-full-integration-build-plan]]"
   - "[[rag-agent]]"
@@ -45,6 +45,7 @@ The project needs one local, reviewable contract that answers four questions for
 Adopt a dedicated **project-knowledge** pipeline with:
 
 - one human-authored `project.manifest.toml` that maps component ID, owner, one primary responsibility, code paths, documentation paths, and embedding inputs;
+- repository-wide tracked-file discovery for production code, configuration, and durable documentation, with narrow declared exclusions for generated, raw, machine-local, and legacy artifacts;
 - a generated deterministic `project.manifest.lock.json` derived from normalized source bytes, chunk configuration, chunk IDs, and embedding-model identity;
 - **ChromaDB 1.5.9** in local Docker server mode (`chroma`, `127.0.0.1:8100` → container port 8000) as the project-knowledge vector store;
 - local Ollama **`nomic-embed-text`** as the only embedding model;
@@ -66,7 +67,7 @@ It does not migrate or redesign:
 - Qdrant/NIM experiments used by the legacy trading-pattern RAG path;
 - any strategy, signal, risk, sizing, broker, or execution behavior.
 
-Those trading-memory paths are quarantined from the project-knowledge collection and remain unchanged until a separate, explicitly approved architecture decision is implemented.
+Those trading-memory paths are baseline-frozen and excluded from project-knowledge lock sources and embeddings. Any addition or removal fails manifest validation until a separate, explicitly approved architecture decision updates the baseline.
 
 ## Manifest, lock, and receipt contract
 
@@ -77,18 +78,21 @@ Those trading-memory paths are quarantined from the project-knowledge collection
 - component ownership and exactly one primary responsibility;
 - code, documentation, architecture, research, and lesson-learned inputs;
 - deterministic chunking rules;
-- allowed text types, size limits, and security exclusions.
+- executable text-type, repository-path, and security-exclusion rules.
 
-`project.manifest.lock.json` records content-derived identities, not mutable runtime state. Stable chunk IDs are derived from project, component, normalized path, source hash, and chunk index. A rename or content change therefore creates explicit drift instead of silently overwriting unrelated vectors.
+`project.manifest.lock.json` records content-derived identities, not mutable runtime state. Stable chunk IDs are derived from the project, embedding contract, chunker version, normalized path, chunk index, and chunk content hash. A rename, content change, or contract change therefore creates explicit drift instead of silently overwriting unrelated vectors.
 
 `.local/knowledge/sync-receipt.json` records the local synchronization evidence required by `verify`. It is machine-local and ignored by Git because a receipt from one Chroma instance cannot prove another instance is synchronized.
+
+`sync` also acquires a machine-global, collection-scoped writer lease keyed by the local Chroma endpoint and collection identity. The lease lives in the host temporary directory, so concurrent clones or worktrees on the same machine cannot mutate the same collection simultaneously. It coordinates writers only; the manifest, lock, receipt, and live verification remain the evidence of correctness.
 
 CI must fail when:
 
 - a declared path is missing, outside the repository, duplicated across owners, or matched by no component;
+- a relevant tracked production/configuration/documentation file appears under an undeclared root without exactly one owner;
 - a component has zero or multiple primary responsibilities;
 - required code lacks a durable documentation owner;
-- an embedding input is a secret, raw source, generated artifact, cache, binary, symlink escape, or temporary file;
+- an embedding input is a secret or literal YAML/TOML/env credential, raw source, generated artifact, cache, binary, symlink escape, or temporary file;
 - normalized source/chunk hashes differ from the checked-in lock;
 - the manifest, chunking policy, collection version, or embedding-model identity changes without a refreshed lock.
 
@@ -101,7 +105,7 @@ The two guarantees are intentionally separate:
 | `lock` | No | The expected deterministic source/chunk inventory can be reproduced |
 | `check` | No | The TOML manifest and checked-in JSON lock match the repository and ownership rules |
 | `sync` | Yes | Expected chunks were embedded locally, reconciled into ChromaDB, and acknowledged by a local receipt |
-| `verify` | Local ChromaDB | The collection and local receipt match the current manifest lock |
+| `verify` | Local Ollama + ChromaDB | The model identity, collection, and local receipt match the current manifest lock |
 | `query` | Local Ollama + ChromaDB | Local semantic retrieval works against verified project knowledge |
 
 An offline CI pass does **not** prove that a developer's Chroma server is running or synchronized. A regenerated lock alone is also not evidence of successful embedding. Live readiness requires `sync` followed by `verify`; operator workflows that depend on retrieval must run both.
@@ -110,6 +114,7 @@ An offline CI pass does **not** prove that a developer's Chroma server is runnin
 
 - Embedding failures never produce zero vectors or hash-based pseudo-embeddings.
 - A partial Ollama/ChromaDB failure does not write a successful synchronization receipt.
+- Concurrent `sync` writers for the same local collection fail closed under the machine-global lease.
 - Model, dimension, collection, or chunk-policy mismatch fails closed and requires a deliberate rebuild/version change.
 - Stale Chroma records are removed only through manifest-scoped reconciliation; unrelated collections are never deleted.
 - Query refuses a missing, unverified, or drifting receipt/collection instead of returning potentially stale context.

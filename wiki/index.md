@@ -2,7 +2,7 @@
 
 > Content catalog for the trading & quant second brain. Organized by category. ZCode updates this on every ingest. **Read this first** when answering a query — then drill into pages.
 >
-> **State:** 2 sources · 62 pages · last updated 2026-07-15
+> **State:** 2 sources · 62 pages · last updated 2026-07-16
 
 ---
 
@@ -90,13 +90,13 @@ _How-tos, processes, checklists._
 - [[local-ai-deployment-guide]] — step-by-step deployment of local trading AI on RTX 4050 + Ollama. (stable, updated 2026-06-30)
 - [[signal-aggregation-logic]] — Go orchestrator weighted aggregation formula, weight mismatch fixes, proposed rebalancing. (updated 2026-06-26)
 - [[nn-brain-development-guide]] — step-by-step playbook for building, training, and deploying custom NN brain. (stable, updated 2026-06-26)
-- [[local-knowledge-pipeline-operations]] — local lock/check/sync/verify/query operations, security exclusions, failure recovery, and release checklist. (stable, updated 2026-07-15)
+- [[local-knowledge-pipeline-operations]] — local lock/check/sync/verify/query operations, security exclusions, failure recovery, and release checklist. (stable, updated 2026-07-16)
 
 ## Decisions
 _Decision logs: what was decided, when, why._
 
 - [[deterministic-paper-core-v1]] — reference semantics and safety invariants for the verified market-event → risk → paper-fill vertical slice. (stable, updated 2026-07-15)
-- [[local-knowledge-pipeline-v1]] — manifest-owned, CI-enforced project knowledge using ChromaDB 1.5.9 and local Ollama `nomic-embed-text`. (stable, updated 2026-07-15)
+- [[local-knowledge-pipeline-v1]] — manifest-owned, CI-enforced project knowledge using ChromaDB 1.5.9 and local Ollama `nomic-embed-text`. (stable, updated 2026-07-16)
 
 ## Sources
 _Per-source summary pages — one per ingested source._

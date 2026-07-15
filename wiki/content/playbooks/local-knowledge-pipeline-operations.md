@@ -10,7 +10,7 @@ tags:
   - embeddings
   - ci
 created: 2026-07-15
-updated: 2026-07-15
+updated: 2026-07-16
 sources:
   - "[[local-knowledge-pipeline-v1]]"
 status: stable
@@ -51,10 +51,10 @@ No cloud API key is required or permitted for this pipeline.
 | `python scripts/knowledge.py lock` | None | `project.manifest.lock.json` | Rebuild the deterministic expected source/chunk inventory |
 | `python scripts/knowledge.py check` | None | No | Run the same fail-closed drift checks used by CI |
 | `python scripts/knowledge.py sync` | Local Ollama + ChromaDB | Chroma collection and local receipt | Embed and reconcile the live local index |
-| `python scripts/knowledge.py verify` | Local ChromaDB | No | Compare the live collection and receipt with the current lock |
+| `python scripts/knowledge.py verify` | Local Ollama + ChromaDB | No | Compare the live collection, model identity, and receipt with the current lock |
 | `python scripts/knowledge.py query "<question>"` | Local Ollama + ChromaDB | No | Retrieve verified project knowledge with source metadata |
 
-Use `python scripts/knowledge.py <command> --help` for command-specific options. Paths and service endpoints come from `project.manifest.toml` or explicit loopback-only overrides, never hard-coded user directories.
+Use `python scripts/knowledge.py <command> --help` for command-specific options. Paths and service endpoints come from `project.manifest.toml`, never hard-coded user directories.
 
 ## Standard change workflow
 
@@ -67,6 +67,8 @@ When adding or moving production code:
 3. Add or update the corresponding durable wiki page.
 4. Add only permanent code/documentation/research inputs to the embedding set.
 5. Never select `wiki/raw/`, `.env`, generated output, model files, caches, logs, or local database directories.
+
+The tracked-file policy discovers relevant code, configuration, and durable documentation even under a previously unknown root. A new path such as `new_service/app.py` therefore fails CI until it has one explicit owner. Add a `tracked_exclude` rule only for a narrow generated, raw, machine-local, or documented legacy path; never use it to hide production ownership drift.
 
 ### 2. Rebuild the deterministic lock
 
@@ -90,6 +92,8 @@ python scripts/knowledge.py sync
 ```
 
 `sync` uses local Ollama `nomic-embed-text`, upserts changed chunks, preserves unchanged chunks, removes only stale records owned by this manifest/collection, and writes `.local/knowledge/sync-receipt.json` only after success.
+
+Before it writes, `sync` acquires one machine-global lease for the configured local Chroma endpoint and collection. The lease is stored under the host temporary directory and is shared by clones and worktrees on that machine. If another writer already holds it, the second `sync` fails closed; do not bypass the lease or run concurrent writers against the same collection.
 
 ### 4. Verify live state
 
@@ -128,9 +132,11 @@ The following must never enter the embedding input set:
 - `.git/`, `.obsidian/`, editor state, caches, logs, coverage, build output, virtual environments, `node_modules/`, Rust targets, and Python bytecode;
 - `.local/knowledge/`, Chroma persistence volumes, model weights, datasets, screenshots, archives, binaries, and temporary files;
 - files reached through a symlink that resolves outside the repository;
-- any path that exceeds the manifest's text size/type policy.
+- any path or file type rejected by the executable repository-path and text-type admission rules.
 
 If a high-confidence secret detector fires, remove and rotate the secret before refreshing the lock. Do not add a broad exclusion merely to make CI green.
+
+YAML, TOML, and env-style configuration must reference injected secrets. Plain `${VAR}`, required `${VAR:?message}` / `${VAR?message}`, GitHub Actions secret expressions, and equivalent secret-manager references are accepted. Literal values and default-bearing `${VAR:-literal}` expressions are rejected so placeholder credentials cannot enter the lock or vector store.
 
 ## Failure handling
 
@@ -175,6 +181,12 @@ Start Ollama, confirm `nomic-embed-text` exists, and retry. Do not substitute a 
 - Rerun `sync`; stable chunk IDs make upserts idempotent.
 - Run `verify` to identify missing, stale, or mismatched records.
 - Never delete unrelated ChromaDB collections as a recovery shortcut.
+
+### `sync` reports another writer is running
+
+- Let the active `sync` finish, then rerun `check`, `sync`, and `verify`.
+- If no process is active, confirm that endpoint and collection settings are correct before investigating the host temporary-directory lease.
+- Never bypass the collection-scoped lease to run two writers against one local collection.
 
 ### `verify` reports stale or missing chunks
 

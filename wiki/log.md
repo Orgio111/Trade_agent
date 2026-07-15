@@ -2,6 +2,10 @@
 
 > Append-only timeline of every operation on the wiki. Newest at top. Reverse chronological so the current state is the first thing you read.
 
+## [2026-07-16] note | Local knowledge infrastructure hardening
+
+Aligned [[local-knowledge-pipeline-v1]] and [[local-knowledge-pipeline-operations]] with the executable path/type admission rules and the machine-global, collection-scoped synchronization lease. Pinned the Chroma client consistently, extended drift CI to Codex branches, and replaced literal Compose credentials with explicit local environment inputs without changing trading behavior.
+
 ## [2026-07-15] note | Local project-knowledge pipeline v1
 
 Recorded [[local-knowledge-pipeline-v1]] and [[local-knowledge-pipeline-operations]]: `project.manifest.toml` binds component ownership, primary responsibility, code, documentation, and embedding inputs; deterministic lock drift now has an offline CI contract, while a local receipt plus live ChromaDB verification remain explicit local operations. Selected ChromaDB 1.5.9 with Ollama `nomic-embed-text` only for project knowledge, added a scoped supersession note to [[trade-project-full-integration-build-plan]], and reclassified [[rag-agent]] as a quarantined legacy trading-pattern path with no trading behavior change. Updated the index to 62 pages.

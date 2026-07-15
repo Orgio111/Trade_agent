@@ -15,4 +15,5 @@ All notable project changes are recorded here. This file follows Keep a Changelo
 ### Changed
 
 - Scoped project-knowledge storage to ChromaDB while leaving PostgreSQL ledger state and legacy trading-pattern Qdrant/NIM paths unchanged.
-
+- Pinned the Chroma Python client to 1.5.9 across dependency entry points, extended CI drift enforcement to `codex/**` branches, and removed committed Compose credential literals in favor of explicit local environment configuration.
+- Documented the machine-global, collection-scoped synchronization lease and aligned the operations contract with executable path/type admission rules.

@@ -93,6 +93,20 @@ _SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
 )
 
+_STRUCTURED_CONFIG_SUFFIXES = frozenset({".toml", ".yaml", ".yml"})
+_CONFIG_ASSIGNMENT = re.compile(
+    r"^\s*(?:-\s*)?(?P<key>[A-Za-z][A-Za-z0-9_.-]*)\s*[:=]\s*(?P<value>.+?)\s*$"
+)
+_SAFE_CONFIG_REFERENCES = (
+    re.compile(r"^\$[A-Za-z_][A-Za-z0-9_]*$"),
+    re.compile(r"^\$\{[A-Za-z_][A-Za-z0-9_]*(?:(?::)?\?[^{}\r\n]+)?\}$"),
+    re.compile(r"^(?:var|local|module|data)\.[A-Za-z0-9_.-]+$"),
+    re.compile(r"^\{\{.+\}\}$"),
+    re.compile(r"^\$\{\{.+\}\}$"),
+    re.compile(r"^\*[A-Za-z_][A-Za-z0-9_-]*$"),
+)
+_NON_CREDENTIAL_LITERALS = frozenset({"", "false", "none", "null", "true", "~"})
+
 
 def validate_relative_pattern(pattern: str) -> None:
     """Reject absolute, Windows-specific, and repository-escaping globs."""
@@ -144,10 +158,50 @@ def _shannon_entropy(value: str) -> float:
     )
 
 
+def _is_structured_config(path: str) -> bool:
+    candidate = PurePosixPath(path)
+    name = candidate.name.lower()
+    return (
+        candidate.suffix.lower() in _STRUCTURED_CONFIG_SUFFIXES
+        or name == ".env"
+        or name.startswith(".env.")
+    )
+
+
+def _is_sensitive_config_key(key: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]+", "_", key.lower()).strip("_")
+    if normalized.endswith("_file"):
+        return False
+    parts = set(normalized.split("_"))
+    return bool(parts & {"password", "passphrase", "secret", "token"}) or any(
+        marker in normalized
+        for marker in ("api_key", "private_key", "access_key", "client_secret")
+    )
+
+
+def _literal_config_credential(line: str) -> bool:
+    match = _CONFIG_ASSIGNMENT.fullmatch(line)
+    if match is None or not _is_sensitive_config_key(match.group("key")):
+        return False
+    value = match.group("value").strip()
+    if value[:1] in {"'", '"'} and len(value) >= 2 and value[-1] == value[0]:
+        value = value[1:-1].strip()
+    else:
+        value = re.split(r"\s+#", value, maxsplit=1)[0].strip()
+    lowered = value.lower()
+    if lowered in _NON_CREDENTIAL_LITERALS:
+        return False
+    return not any(pattern.fullmatch(value) for pattern in _SAFE_CONFIG_REFERENCES)
+
+
 def scan_secrets(path: str, text: str) -> None:
     """Raise without ever placing the matched value in the error message."""
 
     for line_number, line in enumerate(text.splitlines(), start=1):
+        if _is_structured_config(path) and _literal_config_credential(line):
+            raise SecretDetectedError(
+                f"{path}:{line_number}: literal credential in structured config"
+            )
         for reason, pattern in _SECRET_PATTERNS:
             if pattern.search(line):
                 raise SecretDetectedError(f"{path}:{line_number}: {reason}")

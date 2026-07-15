@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import importlib
 import json
 import os
+import tempfile
 from pathlib import Path
 from types import TracebackType
 from typing import Any
@@ -17,7 +19,7 @@ from .manifest import load_inventory
 
 
 class LocalProcessLock:
-    """Cross-platform non-blocking file lease for the single sync writer."""
+    """Cross-platform non-blocking lease for one collection operation."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -42,7 +44,9 @@ class LocalProcessLock:
         except OSError as exc:
             self._handle.close()
             self._handle = None
-            raise KnowledgeError("another knowledge sync is already running") from exc
+            raise KnowledgeError(
+                "another knowledge operation is already running"
+            ) from exc
         return self
 
     def __exit__(
@@ -65,6 +69,27 @@ class LocalProcessLock:
         finally:
             self._handle.close()
             self._handle = None
+
+
+def _sync_lease_path(service: Any) -> Path:
+    """Return one machine-global lease per local Chroma collection.
+
+    A checkout-local lock allows two worktrees to mutate the same collection at
+    once. The endpoint and collection identity instead key a lock in the host
+    temporary directory, so local clones and worktrees share the same lease.
+    """
+
+    settings = service.inventory.manifest.knowledge
+    identity = (
+        f"{settings.chroma_host}:{settings.chroma_port}:"
+        f"{int(settings.chroma_ssl)}:{settings.collection}"
+    )
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
+    return (
+        Path(tempfile.gettempdir())
+        / "trade-agent-knowledge-locks"
+        / f"sync-{digest}.lock"
+    )
 
 
 def _json_print(value: Any) -> None:
@@ -90,6 +115,7 @@ def _service(manifest_path: str):
         ssl=settings.chroma_ssl,
         collection=settings.collection,
         expected_dimension=settings.embedding_dimension,
+        expected_client_version=settings.chroma_client_version,
     )
     return KnowledgeSynchronizer(
         inventory=inventory,
@@ -103,8 +129,7 @@ async def _run_live(args: argparse.Namespace) -> dict[str, Any]:
     service = _service(args.manifest)
     try:
         if args.command == "sync":
-            lease_path = service.inventory.root / ".local" / "knowledge" / "sync.lock"
-            with LocalProcessLock(lease_path):
+            with LocalProcessLock(_sync_lease_path(service)):
                 report = await service.sync()
             return {
                 "status": "synchronized",
@@ -117,13 +142,15 @@ async def _run_live(args: argparse.Namespace) -> dict[str, Any]:
                 "model_digest": report.model_digest,
             }
         if args.command == "verify":
-            return await service.verify_live()
+            with LocalProcessLock(_sync_lease_path(service)):
+                return await service.verify_live()
         if args.command == "query":
-            result = await service.query(
-                args.text,
-                top_k=args.top_k,
-                component=args.component,
-            )
+            with LocalProcessLock(_sync_lease_path(service)):
+                result = await service.query(
+                    args.text,
+                    top_k=args.top_k,
+                    component=args.component,
+                )
             return {
                 "query": result.query,
                 "lock_sha256": result.lock_sha256,

@@ -19,8 +19,44 @@ from .models import (
 )
 
 
+_INVENTORY_INCLUDE = ["metadatas", "documents", "embeddings"]
+
+
 async def _await_if_needed(value: Any) -> Any:
     return await value if inspect.isawaitable(value) else value
+
+
+def _result_list(result: Mapping[str, Any], field: str) -> list[Any]:
+    """Normalize Chroma lists and NumPy arrays without importing NumPy."""
+
+    value = result.get(field)
+    to_list = getattr(value, "tolist", None)
+    if callable(to_list):
+        value = to_list()
+    if not isinstance(value, list):
+        raise VectorStoreError(f"Chroma inventory {field} field is malformed")
+    return value
+
+
+def _stored_embedding(value: Any, *, expected_dimension: int) -> tuple[float, ...]:
+    to_list = getattr(value, "tolist", None)
+    if callable(to_list):
+        value = to_list()
+    if not isinstance(value, list):
+        raise VectorStoreError("Chroma inventory contains a malformed embedding")
+    try:
+        embedding = tuple(float(item) for item in value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise VectorStoreError(
+            "Chroma inventory contains a malformed embedding"
+        ) from exc
+    if len(embedding) != expected_dimension:
+        raise VectorStoreError("Chroma inventory embedding dimension drift")
+    if not all(math.isfinite(item) for item in embedding):
+        raise VectorStoreError("Chroma inventory contains a non-finite embedding")
+    if not any(item != 0.0 for item in embedding):
+        raise VectorStoreError("Chroma inventory contains a zero embedding")
+    return embedding
 
 
 class ChromaVectorStore:
@@ -34,8 +70,11 @@ class ChromaVectorStore:
         ssl: bool,
         collection: str,
         expected_dimension: int,
+        expected_client_version: str,
+        inventory_batch_size: int = 256,
         client: Any | None = None,
         client_factory: Callable[[], Awaitable[Any] | Any] | None = None,
+        client_version_resolver: Callable[[], str] | None = None,
     ) -> None:
         try:
             host = require_loopback_host(host, service="Chroma")
@@ -45,19 +84,50 @@ class ChromaVectorStore:
             raise VectorStoreError("Chroma port is invalid")
         if expected_dimension < 1:
             raise VectorStoreError("Chroma embedding dimension must be positive")
+        if not expected_client_version.strip():
+            raise VectorStoreError("expected Chroma client version is required")
+        if not 1 <= inventory_batch_size <= 2048:
+            raise VectorStoreError(
+                "Chroma inventory batch size must be between 1 and 2048"
+            )
         self._host = host
         self._port = port
         self._ssl = ssl
         self._collection_name = collection
         self._expected_dimension = expected_dimension
+        self._expected_client_version = expected_client_version
+        self._inventory_batch_size = inventory_batch_size
         self._client = client
         self._client_factory = client_factory
+        self._client_version_resolver = client_version_resolver
+        self._client_version_verified = False
         self._collection: Any | None = None
         self._closed = False
+
+    def _verify_client_version(self) -> None:
+        if self._client_version_verified:
+            return
+        try:
+            if self._client_version_resolver is not None:
+                actual = self._client_version_resolver()
+            else:
+                import chromadb
+
+                actual = getattr(chromadb, "__version__", None)
+        except Exception as exc:
+            raise VectorStoreError("local Chroma client is unavailable") from exc
+        if not isinstance(actual, str) or actual != self._expected_client_version:
+            rendered = actual if isinstance(actual, str) else "unknown"
+            raise VectorStoreError(
+                "Chroma client version drift: "
+                f"expected {self._expected_client_version}, got {rendered}"
+            )
+        self._client_version_verified = True
 
     async def _get_client(self) -> Any:
         if self._closed:
             raise VectorStoreError("Chroma vector store is closed")
+        self._verify_client_version()
         if self._client is not None:
             return self._client
         try:
@@ -111,28 +181,89 @@ class ChromaVectorStore:
         self._collection = collection
 
     async def inventory(self) -> dict[str, StoredRecord]:
+        """Read complete records in bounded pages for content-integrity checks."""
+
         try:
             collection = await self._get_collection()
-            result = await _await_if_needed(collection.get(include=["metadatas"]))
-            ids = result.get("ids", [])
-            metadatas = result.get("metadatas", [])
+            expected_count = await _await_if_needed(collection.count())
         except VectorStoreError:
             raise
         except Exception as exc:
             raise VectorStoreError("cannot inventory the Chroma collection") from exc
         if (
-            not isinstance(ids, list)
-            or not isinstance(metadatas, list)
-            or len(ids) != len(metadatas)
+            not isinstance(expected_count, int)
+            or isinstance(expected_count, bool)
+            or expected_count < 0
         ):
-            raise VectorStoreError("Chroma inventory response is malformed")
+            raise VectorStoreError("Chroma inventory count is malformed")
+
         records: dict[str, StoredRecord] = {}
-        for record_id, metadata in zip(ids, metadatas, strict=True):
-            if not isinstance(record_id, str) or not isinstance(metadata, dict):
-                raise VectorStoreError("Chroma inventory contains malformed records")
-            records[record_id] = StoredRecord(
-                id=record_id,
-                metadata=json_scalar_mapping(metadata),
+        offset = 0
+        while offset < expected_count:
+            limit = min(self._inventory_batch_size, expected_count - offset)
+            try:
+                result = await _await_if_needed(
+                    collection.get(
+                        limit=limit,
+                        offset=offset,
+                        include=_INVENTORY_INCLUDE,
+                    )
+                )
+            except Exception as exc:
+                raise VectorStoreError(
+                    "cannot inventory the Chroma collection"
+                ) from exc
+            if not isinstance(result, Mapping):
+                raise VectorStoreError("Chroma inventory response is malformed")
+            ids = _result_list(result, "ids")
+            metadatas = _result_list(result, "metadatas")
+            documents = _result_list(result, "documents")
+            embeddings = _result_list(result, "embeddings")
+            if not ids or not (
+                len(ids) == len(metadatas) == len(documents) == len(embeddings)
+            ):
+                raise VectorStoreError("Chroma inventory response is malformed")
+            if len(ids) > limit:
+                raise VectorStoreError("Chroma inventory page exceeded its limit")
+            for record_id, metadata, document, embedding in zip(
+                ids, metadatas, documents, embeddings, strict=True
+            ):
+                if (
+                    not isinstance(record_id, str)
+                    or not isinstance(metadata, dict)
+                    or not isinstance(document, str)
+                ):
+                    raise VectorStoreError(
+                        "Chroma inventory contains malformed records"
+                    )
+                if record_id in records:
+                    raise VectorStoreError(
+                        "Chroma inventory contains duplicate record IDs"
+                    )
+                try:
+                    validated_metadata = json_scalar_mapping(metadata)
+                except TypeError as exc:
+                    raise VectorStoreError(
+                        "Chroma inventory contains malformed metadata"
+                    ) from exc
+                records[record_id] = StoredRecord(
+                    id=record_id,
+                    embedding=_stored_embedding(
+                        embedding,
+                        expected_dimension=self._expected_dimension,
+                    ),
+                    document=document,
+                    metadata=validated_metadata,
+                )
+            offset += len(ids)
+
+        try:
+            final_count = await _await_if_needed(collection.count())
+        except Exception as exc:
+            raise VectorStoreError("cannot finalize Chroma inventory") from exc
+        if final_count != expected_count or len(records) != expected_count:
+            raise VectorStoreError(
+                "Chroma inventory changed while integrity verification was running"
             )
         return records
 

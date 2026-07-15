@@ -57,6 +57,7 @@ data/
 .local/knowledge/
 .chroma/
 chroma-data/
+.pytest_tmp*/
 
 # Logs
 logs/

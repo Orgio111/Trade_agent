@@ -32,7 +32,7 @@ class KnowledgeSettings(StrictModel):
     chroma_ssl: bool = False
     chroma_client_version: str = "1.5.9"
     chroma_server_image: str = "chromadb/chroma:1.5.9"
-    collection: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{2,62}$")
+    collection: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{1,61}[a-z0-9]$")
     lock_file: str = "project.manifest.lock.json"
     receipt_file: str = ".local/knowledge/sync-receipt.json"
     chunker_version: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]+$")
@@ -60,6 +60,8 @@ class CoverageSettings(StrictModel):
     """Repository paths whose ownership must be exhaustive and exclusive."""
 
     include: tuple[str, ...]
+    tracked_include: tuple[str, ...] = ()
+    tracked_exclude: tuple[str, ...] = ()
     forbidden_repository_paths: tuple[str, ...] = ()
     legacy_repository_exceptions: tuple[str, ...] = ()
 
@@ -151,9 +153,11 @@ class VectorRecord:
 
 @dataclass(frozen=True, slots=True)
 class StoredRecord:
-    """Metadata returned by a vector-store inventory operation."""
+    """Complete record returned by a vector-store integrity inventory."""
 
     id: str
+    embedding: tuple[float, ...]
+    document: str
     metadata: Mapping[str, Scalar]
 
 

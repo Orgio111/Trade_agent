@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -13,6 +15,7 @@ from packages.knowledge.errors import (
 )
 from packages.knowledge.lockfile import build_lock
 from packages.knowledge.manifest import load_inventory
+from packages.knowledge.models import VectorRecord
 from packages.knowledge.synchronizer import KnowledgeSynchronizer
 from tests.fakes.knowledge import (
     DeterministicFakeEmbedder,
@@ -184,6 +187,77 @@ async def test_live_verify_detects_missing_vector(tmp_path: Path) -> None:
 
     with pytest.raises(LiveVerificationError, match="live Chroma ID drift"):
         await service.verify_live()
+
+
+@pytest.mark.asyncio
+async def test_live_verify_detects_wrong_document_with_same_id_and_metadata(
+    tmp_path: Path,
+) -> None:
+    manifest = write_test_project(tmp_path)
+    embedder = DeterministicFakeEmbedder()
+    store = InMemoryVectorStore()
+    service = _service(manifest, embedder=embedder, store=store)
+    await service.sync()
+    record_id, record = next(iter(store.records.items()))
+    original_metadata = dict(record.metadata)
+    store.records[record_id] = replace(
+        record,
+        document=f"{record.document}\nCORRUPTED",
+    )
+
+    with pytest.raises(LiveVerificationError, match="document content drift"):
+        await service.verify_live()
+
+    assert dict(store.records[record_id].metadata) == original_metadata
+
+
+@pytest.mark.asyncio
+async def test_live_verify_detects_wrong_vector_with_same_id_and_metadata(
+    tmp_path: Path,
+) -> None:
+    manifest = write_test_project(tmp_path)
+    embedder = DeterministicFakeEmbedder()
+    store = InMemoryVectorStore()
+    service = _service(manifest, embedder=embedder, store=store)
+    await service.sync()
+    record_id, record = next(iter(store.records.items()))
+    original_metadata = dict(record.metadata)
+    corrupted = list(record.embedding)
+    corrupted[0] += 0.25
+    store.records[record_id] = replace(record, embedding=tuple(corrupted))
+
+    with pytest.raises(LiveVerificationError, match="embedding fingerprint drift"):
+        await service.verify_live()
+
+    assert dict(store.records[record_id].metadata) == original_metadata
+
+
+@pytest.mark.asyncio
+async def test_sync_fails_when_store_persists_corrupt_vectors(tmp_path: Path) -> None:
+    class CorruptingVectorStore(InMemoryVectorStore):
+        async def upsert(self, records: Sequence[VectorRecord]) -> None:
+            await super().upsert(records)
+            for record in records:
+                corrupted = list(record.embedding)
+                corrupted[0] += 0.25
+                self.records[record.id] = replace(
+                    record,
+                    embedding=tuple(corrupted),
+                )
+
+    manifest = write_test_project(tmp_path)
+    embedder = DeterministicFakeEmbedder()
+    store = CorruptingVectorStore()
+    service = _service(manifest, embedder=embedder, store=store)
+
+    with pytest.raises(
+        LiveVerificationError,
+        match="did not persist complete knowledge records",
+    ):
+        await service.sync()
+
+    assert store.activation_calls == 0
+    assert not _receipt(tmp_path).exists()
 
 
 @pytest.mark.asyncio

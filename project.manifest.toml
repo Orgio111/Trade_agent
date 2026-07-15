@@ -28,8 +28,10 @@ include = [
   "project.manifest.toml",
   "project.manifest.lock.json",
   "packages/**/*.py",
+  "packages/**/*.json",
   "orchestrator/**/*.py",
-  "orchestrator/.dockerignore",
+  "orchestrator/brains/*.json",
+  "**/.dockerignore",
   "orchestrator/Dockerfile",
   "orchestrator/requirements.txt",
   "inference/**/*.py",
@@ -45,6 +47,7 @@ include = [
   "realtime/go.sum",
   "execution/src/**/*.rs",
   "execution/Cargo.toml",
+  "execution/Cargo.lock",
   "frontend/src/**/*.ts",
   "frontend/src/**/*.tsx",
   "frontend/src/**/*.css",
@@ -56,12 +59,14 @@ include = [
   "frontend/tsconfig.json",
   "strategies/**/*.json",
   "scripts/**/*.py",
+  "Trade_agent/**/*.py",
   "tests/**/*.py",
   "*.py",
   ".github/workflows/*.yml",
   "docker-compose*.yml",
   "config/**/*.yaml",
   "config_dir/**/*.yaml",
+  "config_dir/**/*.py",
   "config.yaml",
   "db/migrations/**/*.sql",
   "deployment/**/*.yaml",
@@ -80,15 +85,88 @@ include = [
   "AGENTS.md",
   "README.md",
   "CHANGELOG.md",
+  "install.ps1",
   "wiki/ZCODE.md",
+  "wiki/README.md",
   "wiki/index.md",
   "wiki/log.md",
   "wiki/content/**/*.md",
+]
+tracked_include = [
+  "**/*.py",
+  "**/*.go",
+  "**/*.rs",
+  "**/*.ts",
+  "**/*.tsx",
+  "**/*.js",
+  "**/*.jsx",
+  "**/*.mjs",
+  "**/*.cjs",
+  "**/*.css",
+  "**/*.scss",
+  "**/*.sql",
+  "**/*.toml",
+  "**/*.yaml",
+  "**/*.yml",
+  "**/*.json",
+  "**/*.tf",
+  "**/*.hcl",
+  "**/*.sh",
+  "**/*.ps1",
+  "**/*.md",
+  "**/*.conf",
+  "**/*.ini",
+  "**/*.proto",
+  "**/Dockerfile",
+  "Dockerfile",
+  "**/Makefile",
+  "Makefile",
+  "**/.dockerignore",
+  ".dockerignore",
+  "**/Cargo.lock",
+  "Cargo.lock",
+  "**/go.mod",
+  "go.mod",
+  "**/go.sum",
+  "go.sum",
+  "**/requirements*.txt",
+  "requirements*.txt",
+]
+tracked_exclude = [
+  ".obsidian/**/*",
+  ".pytest_tmp*/**/*",
+  ".venv/**/*",
+  "**/__pycache__/**/*",
+  "**/.pytest_cache/**/*",
+  "frontend/node_modules/**/*",
+  "frontend/test-results/**/*",
+  "execution/target/**/*",
+  "build/**/*",
+  "dist/**/*",
+  ".local/**/*",
+  ".chroma/**/*",
+  "chroma-data/**/*",
+  "backtest_results/**/*",
+  "data/**/*",
+  "logs/**/*",
+  "models/**/*",
+  "raw/**/*",
+  "wiki/raw/**/*",
+  # Legacy pre-vault notes remain readable but are not durable project docs.
+  "wiki/AutoGen Trading Pipeline.md",
+  "wiki/Backtest Engine.md",
+  "wiki/CLI Reference.md",
+  "wiki/Enhanced Risk Engine.md",
+  "wiki/Model Loader VRAM Strategy.md",
+  "wiki/Troubleshooting.md",
+  "wiki/Wiki Index.md",
+  "wiki/agents.md",
 ]
 forbidden_repository_paths = [
   "**/*.sqlite3",
   "**/.env",
   "**/.env.*",
+  ".pytest_tmp*/**/*",
   ".local/**/*",
   ".chroma/**/*",
   "chroma-data/**/*",
@@ -147,20 +225,24 @@ owned_paths = [
   "packages/domain/**/*.py",
   "packages/event_bus/**/*.py",
   "packages/event_contracts/**/*.py",
+  "packages/event_contracts/**/*.json",
   "packages/execution/**/*.py",
   "packages/replay/**/*.py",
   "packages/risk/**/*.py",
   "packages/strategies/**/*.py",
-  "tests/contract/**/*.py",
+  "tests/contract/test_event_contracts.py",
+  "tests/contract/test_venue_kline_adapters.py",
   "tests/replay/**/*.py",
   "tests/unit/test_data_quality.py",
   "tests/unit/test_execution_core.py",
   "tests/unit/test_risk_engine.py",
   "tests/integration/test_decision_vertical_slice.py",
   "tests/integration/test_replay_cli.py",
+  "scripts/replay_market.py",
 ]
 tests = [
-  "tests/contract/**/*.py",
+  "tests/contract/test_event_contracts.py",
+  "tests/contract/test_venue_kline_adapters.py",
   "tests/replay/**/*.py",
   "tests/unit/test_data_quality.py",
   "tests/unit/test_execution_core.py",
@@ -179,10 +261,12 @@ embedding_inputs = [
   "packages/domain/**/*.py",
   "packages/event_bus/**/*.py",
   "packages/event_contracts/**/*.py",
+  "packages/event_contracts/**/*.json",
   "packages/execution/**/*.py",
   "packages/replay/**/*.py",
   "packages/risk/**/*.py",
   "packages/strategies/**/*.py",
+  "scripts/replay_market.py",
 ]
 
 [[components]]
@@ -191,12 +275,21 @@ owner = "software-engineering/orchestration"
 primary_responsibility = "Coordinate existing agents, inference, and runtime workers."
 owned_paths = [
   "orchestrator/**/*.py",
+  "orchestrator/brains/*.json",
   "inference/**/*.py",
   "workers/**/*.py",
   "binance/**/*.py",
   "notifications/**/*.py",
+  "config_dir/**/*.py",
   "strategies/**/*.json",
-  "tests/test_*.py",
+  "Trade_agent/**/*.py",
+  "tests/test_brain_integrations.py",
+  "tests/test_freqai_brain.py",
+  "tests/test_moss_integration.py",
+  "tests/test_orchestrator_new_modules.py",
+  "tests/test_polymarket_brain.py",
+  "tests/test_rl_memory.py",
+  "tests/test_timesfm_forecaster.py",
   "*.py",
 ]
 tests = [
@@ -213,23 +306,83 @@ architecture = [
 ]
 embedding_inputs = [
   "orchestrator/**/*.py",
+  "orchestrator/brains/*.json",
   "inference/**/*.py",
   "workers/**/*.py",
   "binance/**/*.py",
   "notifications/**/*.py",
+  "config_dir/**/*.py",
   "strategies/**/*.json",
+  "Trade_agent/**/*.py",
   "*.py",
 ]
 
 [[components]]
-id = "service-runtime"
+id = "api-services"
 owner = "software-engineering/services"
-primary_responsibility = "Serve application APIs, realtime transport, execution, and user interface."
+primary_responsibility = "Expose application capabilities through local service APIs."
 owned_paths = [
   "services/**/*.py",
+]
+tests = [
+  "tests/test_brain_integrations.py",
+]
+documentation = [
+  "wiki/content/concepts/local-trading-ai-architecture.md",
+]
+architecture = [
+  "wiki/content/overviews/infrastructure-overview.md",
+]
+embedding_inputs = [
+  "services/**/*.py",
+]
+
+[[components]]
+id = "realtime-transport"
+owner = "software-engineering/realtime"
+primary_responsibility = "Aggregate and transport realtime system events."
+owned_paths = [
   "realtime/**/*.go",
+  "realtime/go.mod",
+  "realtime/go.sum",
+]
+tests = []
+documentation = [
+  "wiki/content/concepts/nats-event-system.md",
+]
+architecture = [
+  "wiki/content/overviews/infrastructure-overview.md",
+]
+embedding_inputs = [
+  "realtime/**/*.go",
+]
+
+[[components]]
+id = "execution-runtime"
+owner = "software-engineering/execution"
+primary_responsibility = "Execute authorized orders through the Rust runtime."
+owned_paths = [
   "execution/src/**/*.rs",
   "execution/Cargo.toml",
+  "execution/Cargo.lock",
+]
+tests = []
+documentation = [
+  "wiki/content/concepts/broker-abstraction-layer.md",
+]
+architecture = [
+  "wiki/content/comparisons/trade-project-full-integration-build-plan.md",
+]
+embedding_inputs = [
+  "execution/src/**/*.rs",
+  "execution/Cargo.toml",
+]
+
+[[components]]
+id = "frontend-ui"
+owner = "software-engineering/frontend"
+primary_responsibility = "Render the local trading operations interface."
+owned_paths = [
   "frontend/src/**/*.ts",
   "frontend/src/**/*.tsx",
   "frontend/src/**/*.css",
@@ -241,7 +394,6 @@ owned_paths = [
 ]
 tests = [
   "frontend/tests/**/*.ts",
-  "tests/test_brain_integrations.py",
 ]
 documentation = [
   "wiki/content/concepts/real-time-trading-dashboard.md",
@@ -250,9 +402,6 @@ architecture = [
   "wiki/content/overviews/infrastructure-overview.md",
 ]
 embedding_inputs = [
-  "services/**/*.py",
-  "realtime/**/*.go",
-  "execution/src/**/*.rs",
   "frontend/src/**/*.ts",
   "frontend/src/**/*.tsx",
   "frontend/src/**/*.css",
@@ -260,16 +409,64 @@ embedding_inputs = [
 ]
 
 [[components]]
-id = "platform-infrastructure"
-owner = "software-engineering/platform"
-primary_responsibility = "Define reproducible local build, deployment, storage, and monitoring infrastructure."
+id = "ci-governance"
+owner = "software-engineering/ci"
+primary_responsibility = "Enforce reproducible dependency and continuous-integration policy."
 owned_paths = [
   ".github/workflows/*.yml",
+  "pyproject.toml",
+  "requirements.txt",
+  "uv.lock",
+  "tests/test_imports.py",
+]
+tests = [
+  "tests/test_imports.py",
+]
+documentation = [
+  "wiki/content/playbooks/local-knowledge-pipeline-operations.md",
+]
+architecture = [
+  "wiki/content/decisions/local-knowledge-pipeline-v1.md",
+]
+embedding_inputs = [
+  ".github/workflows/*.yml",
+  "pyproject.toml",
+]
+
+[[components]]
+id = "database-migrations"
+owner = "software-engineering/database"
+primary_responsibility = "Evolve the durable database schema deterministically."
+owned_paths = [
+  "db/migrations/**/*.sql",
+  "scripts/apply_migrations.py",
+  "tests/contract/test_execution_migration.py",
+  "tests/contract/test_migration_runner.py",
+]
+tests = [
+  "tests/contract/test_execution_migration.py",
+  "tests/contract/test_migration_runner.py",
+]
+documentation = [
+  "wiki/content/playbooks/local-ai-deployment-guide.md",
+]
+architecture = [
+  "wiki/content/decisions/deterministic-paper-core-v1.md",
+]
+embedding_inputs = [
+  "db/migrations/**/*.sql",
+  "scripts/apply_migrations.py",
+]
+
+[[components]]
+id = "deployment-infrastructure"
+owner = "software-engineering/deployment"
+primary_responsibility = "Package and deploy the local service topology reproducibly."
+owned_paths = [
   "docker-compose*.yml",
   "config/**/*.yaml",
   "config_dir/**/*.yaml",
   "config.yaml",
-  "db/migrations/**/*.sql",
   "deployment/**/*.yaml",
   "deployment/**/*.tf",
   "deployment/**/*.sh",
@@ -277,27 +474,16 @@ owned_paths = [
   "deployment/**/Dockerfile",
   "infra/**/*.yml",
   "infra/**/Dockerfile",
-  "monitoring/**/*.yml",
-  "monitoring/**/*.json",
-  "orchestrator/.dockerignore",
+  "**/.dockerignore",
   "orchestrator/Dockerfile",
   "orchestrator/requirements.txt",
   "services/**/Dockerfile",
   "services/**/requirements.txt",
   "realtime/Dockerfile",
-  "realtime/go.mod",
-  "realtime/go.sum",
   "frontend/Dockerfile",
-  "pyproject.toml",
-  "requirements.txt",
-  "uv.lock",
-  "scripts/apply_migrations.py",
-  "scripts/replay_market.py",
+  "install.ps1",
 ]
-tests = [
-  "tests/contract/test_migration_runner.py",
-  "tests/integration/test_replay_cli.py",
-]
+tests = []
 documentation = [
   "wiki/content/playbooks/local-ai-deployment-guide.md",
 ]
@@ -306,17 +492,35 @@ architecture = [
   "wiki/content/comparisons/trade-project-full-integration-build-plan.md",
 ]
 embedding_inputs = [
-  ".github/workflows/*.yml",
   "docker-compose*.yml",
-  "db/migrations/**/*.sql",
+  "config/**/*.yaml",
+  "config_dir/**/*.yaml",
+  "config.yaml",
   "deployment/**/*.yaml",
   "deployment/**/*.tf",
   "deployment/**/*.sh",
   "deployment/**/*.conf",
   "infra/**/*.yml",
+]
+
+[[components]]
+id = "monitoring"
+owner = "software-engineering/observability"
+primary_responsibility = "Define local health, alerting, and telemetry views."
+owned_paths = [
   "monitoring/**/*.yml",
-  "scripts/apply_migrations.py",
-  "scripts/replay_market.py",
+  "monitoring/**/*.json",
+]
+tests = []
+documentation = [
+  "wiki/content/entities/ultra-low-latency-monitoring.md",
+]
+architecture = [
+  "wiki/content/overviews/infrastructure-overview.md",
+]
+embedding_inputs = [
+  "monitoring/**/*.yml",
+  "monitoring/**/*.json",
 ]
 
 [[components]]
@@ -351,6 +555,7 @@ owner = "software-engineering/knowledge-curation"
 primary_responsibility = "Curate permanent project knowledge and architecture in Obsidian."
 owned_paths = [
   "wiki/ZCODE.md",
+  "wiki/README.md",
   "wiki/index.md",
   "wiki/log.md",
   "wiki/content/**/*.md",
@@ -366,6 +571,7 @@ architecture = [
 ]
 embedding_inputs = [
   "wiki/ZCODE.md",
+  "wiki/README.md",
   "wiki/index.md",
   "wiki/log.md",
   "wiki/content/**/*.md",
