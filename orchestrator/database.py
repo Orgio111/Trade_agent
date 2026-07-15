@@ -71,18 +71,22 @@ class Database:
     Handles connection pooling, migrations, and all CRUD operations.
     """
 
-    def __init__(self):
+    def __init__(self, dsn: Optional[str] = None):
         self._pool: Optional[asyncpg.Pool] = None
-        self._dsn = os.getenv(
-            "DATABASE_URL",
-            "postgresql://quantex:secret@localhost:5432/quantex",
-        )
+        self._dsn = dsn
 
     async def connect(self):
         """Initialize connection pool."""
         if self._pool is None:
+            dsn = self._dsn or os.getenv("DATABASE_URL")
+            if not dsn or not dsn.strip():
+                raise RuntimeError(
+                    "DATABASE_URL is required before Database.connect(); "
+                    "inject it through the runtime secret configuration"
+                )
+            self._dsn = dsn
             self._pool = await asyncpg.create_pool(
-                dsn=self._dsn,
+                dsn=dsn,
                 min_size=2,
                 max_size=10,
                 command_timeout=30,

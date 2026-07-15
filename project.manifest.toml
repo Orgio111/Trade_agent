@@ -290,12 +290,14 @@ owned_paths = [
   "tests/test_polymarket_brain.py",
   "tests/test_rl_memory.py",
   "tests/test_timesfm_forecaster.py",
+  "tests/unit/test_database_configuration.py",
   "*.py",
 ]
 tests = [
   "tests/test_brain_integrations.py",
   "tests/test_imports.py",
   "tests/test_orchestrator_new_modules.py",
+  "tests/unit/test_database_configuration.py",
 ]
 documentation = [
   "wiki/content/concepts/multi-agent-pipeline.md",

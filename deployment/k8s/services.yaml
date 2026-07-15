@@ -30,7 +30,10 @@ spec:
                   name: quantex-secrets
                   key: openrouter-api-key
             - name: DATABASE_URL
-              value: "postgresql://quantex:secret@quantex-postgres:5432/quantex"
+              valueFrom:
+                secretKeyRef:
+                  name: quantex-secrets
+                  key: database-url
             - name: REDIS_HOST
               value: "quantex-redis"
             # Trinity Layer A: NATS JetStream — 11 brain signals bus
@@ -436,7 +439,10 @@ spec:
             - containerPort: 3000
           env:
             - name: GF_SECURITY_ADMIN_PASSWORD
-              value: "quantex123"
+              valueFrom:
+                secretKeyRef:
+                  name: quantex-secrets
+                  key: grafana-admin-password
 ---
 apiVersion: v1
 kind: Service

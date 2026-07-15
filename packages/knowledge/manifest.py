@@ -37,6 +37,19 @@ class SourceFile:
 
 
 @dataclass(frozen=True, slots=True)
+class GovernedFile:
+    """Canonical evidence for one owned repository text file."""
+
+    path: str
+    absolute_path: Path
+    component_id: str
+    owner: str
+    text: str
+    sha256: str
+    byte_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class ManifestInventory:
     """Resolved repository inventory used by both CI and live sync."""
 
@@ -46,6 +59,7 @@ class ManifestInventory:
     manifest_sha256: str
     owned_by: dict[str, str]
     quarantined_paths: frozenset[str]
+    governed_files: tuple[GovernedFile, ...]
     sources: tuple[SourceFile, ...]
 
 
@@ -82,17 +96,34 @@ def _expand_patterns(
 
 
 def _read_stable_utf8(path: Path, relative_path: str) -> str:
-    before = path.stat()
     try:
+        before = path.stat()
         text = path.read_text(encoding="utf-8")
+        after = path.stat()
     except UnicodeDecodeError as exc:
         raise ManifestError(
-            f"embedding source is not valid UTF-8: {relative_path}"
+            f"governed file is not valid UTF-8: {relative_path}"
         ) from exc
-    after = path.stat()
+    except OSError as exc:
+        raise ManifestError(f"cannot read governed file: {relative_path}") from exc
     if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
-        raise ManifestError(f"source changed while being scanned: {relative_path}")
+        raise ManifestError(
+            f"governed file changed while being scanned: {relative_path}"
+        )
     return canonical_text(text)
+
+
+def _configured_lock_path(root: Path, configured: str) -> str:
+    """Return the safe repository-relative lock path without requiring it to exist."""
+
+    validate_relative_pattern(configured)
+    if any(character in configured for character in "*?["):
+        raise ManifestError("knowledge.lock_file must be one exact repository path")
+    candidate = (root / configured).resolve()
+    try:
+        return candidate.relative_to(root.resolve()).as_posix()
+    except ValueError as exc:
+        raise ManifestError("knowledge.lock_file escapes the repository") from exc
 
 
 def _validate_wiki_document(root: Path, relative_path: str, index_text: str) -> None:
@@ -317,11 +348,38 @@ def load_inventory(
         )
         component_docs[component.id] = docs
         component_architecture[component.id] = architecture
+
+    components_by_id = {component.id: component for component in manifest.components}
+    configured_lock = _configured_lock_path(root, manifest.knowledge.lock_file)
+    governed_by_path: dict[str, GovernedFile] = {}
+    for governed_path, component_id in sorted(owned_by.items()):
+        # The generated lock cannot hash itself. Its canonical byte-for-byte
+        # comparison in check_lock is the evidence for this one owned path.
+        if governed_path == configured_lock:
+            continue
+        absolute = root / governed_path
+        text = _read_stable_utf8(absolute, governed_path)
+        component = components_by_id[component_id]
+        governed_by_path[governed_path] = GovernedFile(
+            path=governed_path,
+            absolute_path=absolute,
+            component_id=component_id,
+            owner=component.owner,
+            text=text,
+            sha256=sha256_text(text),
+            byte_count=len(text.encode("utf-8")),
+        )
+
+    for component in manifest.components:
         for governed_path in sorted(component_paths[component.id]):
             if not governed_path.endswith(".py"):
                 continue
-            text = _read_stable_utf8(root / governed_path, governed_path)
-            scan_forbidden_imports(governed_path, text, component.forbidden_imports)
+            governed = governed_by_path[governed_path]
+            scan_forbidden_imports(
+                governed_path,
+                governed.text,
+                component.forbidden_imports,
+            )
 
     if tracked is not None:
         forbidden_patterns = manifest.coverage.forbidden_repository_paths
@@ -376,6 +434,10 @@ def load_inventory(
         )
         embedding_paths.difference_update(quarantined_paths)
         for source_path in sorted(embedding_paths):
+            if source_path == configured_lock:
+                raise ManifestError(
+                    "the generated knowledge lock cannot be an embedding input"
+                )
             owner = owned_by.get(source_path)
             if owner != component.id:
                 raise ManifestError(
@@ -383,15 +445,15 @@ def load_inventory(
                 )
             absolute = root / source_path
             safe_path = validate_source_path(root, absolute)
-            text = _read_stable_utf8(absolute, safe_path)
-            scan_secrets(safe_path, text)
+            governed = governed_by_path[safe_path]
+            scan_secrets(safe_path, governed.text)
             sources_by_path[safe_path] = SourceFile(
                 path=safe_path,
                 absolute_path=absolute,
                 component_id=component.id,
-                text=text,
-                sha256=sha256_text(text),
-                byte_count=len(text.encode("utf-8")),
+                text=governed.text,
+                sha256=governed.sha256,
+                byte_count=governed.byte_count,
                 categories=_categories_for(
                     safe_path,
                     documentation=component_docs[component.id],
@@ -406,5 +468,8 @@ def load_inventory(
         manifest_sha256=sha256_text(raw_bytes.decode("utf-8")),
         owned_by=owned_by,
         quarantined_paths=frozenset(quarantined_paths),
+        governed_files=tuple(
+            governed_by_path[path] for path in sorted(governed_by_path)
+        ),
         sources=tuple(sources_by_path[path] for path in sorted(sources_by_path)),
     )

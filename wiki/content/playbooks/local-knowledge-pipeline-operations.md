@@ -29,7 +29,7 @@ Run every command from the repository root with the project virtual environment 
 | Artifact | Role | Committed |
 |---|---|:---:|
 | `project.manifest.toml` | Human-authored ownership, responsibility, source, chunking, and local-service contract | Yes |
-| `project.manifest.lock.json` | Generated deterministic content/chunk inventory checked by CI | Yes |
+| `project.manifest.lock.json` | Generated deterministic ownership/content evidence plus embedding-source chunk inventory checked by CI | Yes |
 | `.local/knowledge/sync-receipt.json` | Machine-local proof of the last successful Chroma synchronization | No |
 | Obsidian `wiki/` | Permanent project knowledge and architecture source of truth | Yes |
 | ChromaDB collection | Rebuildable semantic-retrieval projection | No |
@@ -48,7 +48,7 @@ No cloud API key is required or permitted for this pipeline.
 
 | Command | Runtime need | Mutates state | Use |
 |---|---|---:|---|
-| `python scripts/knowledge.py lock` | None | `project.manifest.lock.json` | Rebuild the deterministic expected source/chunk inventory |
+| `python scripts/knowledge.py lock` | None | `project.manifest.lock.json` | Rebuild governed-file hashes and the expected embedding-source/chunk inventory |
 | `python scripts/knowledge.py check` | None | No | Run the same fail-closed drift checks used by CI |
 | `python scripts/knowledge.py sync` | Local Ollama + ChromaDB | Chroma collection and local receipt | Embed and reconcile the live local index |
 | `python scripts/knowledge.py verify` | Local Ollama + ChromaDB | No | Compare the live collection, model identity, and receipt with the current lock |
@@ -77,7 +77,7 @@ python scripts/knowledge.py lock
 python scripts/knowledge.py check
 ```
 
-Review the lock diff. Expected changes should identify only the components, source hashes, and chunks affected by the code/documentation change. A large unrelated diff indicates an ownership glob, normalization, or chunk-policy error.
+Review the lock diff. Every governed owned text file appears under `governed_files`, even when it is not an embedding input; quarantined paths remain here while staying absent from `sources`. Expected changes should identify only the owner/component hashes, source hashes, and chunks affected by the change. The configured generated lock is the sole self-reference exception because `check` compares its complete canonical content. A large unrelated diff indicates an ownership glob, normalization, or chunk-policy error.
 
 `lock` is offline and does not prove that embeddings were generated.
 
@@ -119,7 +119,7 @@ CI runs:
 python scripts/knowledge.py check
 ```
 
-It deliberately does not start Ollama or ChromaDB and does not read the machine-local receipt. The job fails on manifest schema errors, unowned/duplicate ownership, missing documentation, prohibited inputs, or source/chunk/lock drift. This makes the check deterministic and offline, but it verifies expected state only. Local `verify` supplies the separate live-index guarantee.
+It deliberately does not start Ollama or ChromaDB and does not read the machine-local receipt. The job fails on manifest schema errors, unowned/duplicate ownership, missing documentation, prohibited inputs, governed-file drift, or embedding source/chunk/lock drift. This makes the check deterministic and offline, but it verifies expected state only. Local `verify` supplies the separate live-index guarantee.
 
 Do not weaken the CI command with `continue-on-error`, shell fallbacks, warning-only modes, or automatic lock regeneration.
 

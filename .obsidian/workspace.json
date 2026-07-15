@@ -178,6 +178,11 @@
   },
   "active": "f63797c7069ad41e",
   "lastOpenFiles": [
+    "tests/unit/__pycache__/test_knowledge_lockfile.cpython-312-pytest-9.1.1.pyc",
+    "tests/unit/test_knowledge_lockfile.py",
+    "frontend/node_modules/next/dist/docs/01-app/03-api-reference/07-adapters/11-use-cases.md",
+    "wiki/log.md",
+    "tests/unit/__pycache__/test_database_configuration.cpython-312-pytest-9.1.1.pyc",
     "tests/unit/test_database_configuration.py",
     "tests/unit/__pycache__/test_knowledge_cli.cpython-312-pytest-9.1.1.pyc",
     "tests/unit/__pycache__/test_knowledge_chroma.cpython-312-pytest-9.1.1.pyc",
@@ -186,9 +191,6 @@
     "tests/unit/test_knowledge_chroma.py",
     "tests/unit/test_knowledge_cli.py",
     "project.manifest.lock.json",
-    "project.manifest.toml",
-    "tests/integration/__pycache__/test_knowledge_sync.cpython-312.pyc",
-    "tests/unit/__pycache__/test_knowledge_ollama.cpython-312.pyc",
     "CHANGELOG.md",
     "wiki/content/playbooks/local-knowledge-pipeline-operations.md",
     "wiki/content/decisions/local-knowledge-pipeline-v1.md",
@@ -211,8 +213,6 @@
     "wiki/content/entities/nats-langgraph-bridge.md",
     "wiki/content/entities/rag-agent.md",
     "wiki/content/entities/vlm-agent.md",
-    "wiki/content/concepts/odoo-erp-panel.md",
-    "wiki/content/entities/orderbook-heatmap.md",
-    "wiki/content/entities/ppo-portfolio-manager.md"
+    "wiki/content/concepts/odoo-erp-panel.md"
   ]
 }

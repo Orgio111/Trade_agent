@@ -363,11 +363,15 @@ Create a secrets file before deploying:
 ```bash
 kubectl create namespace quantex
 
+# Load these values from a local secret manager. Bash process substitution keeps
+# the values out of the kubectl command arguments.
 kubectl -n quantex create secret generic quantex-secrets \
-  --from-literal=nvidia-api-key="nvapi-..." \
-  --from-literal=openrouter-api-key="sk-or-v1-..." \
-  --from-literal=groq-api-key="gsk_..." \
-  --from-literal=postgres-password="secret"
+  --from-file=nvidia-api-key=<(printf '%s' "${NVIDIA_API_KEY:?NVIDIA_API_KEY is required}") \
+  --from-file=openrouter-api-key=<(printf '%s' "${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}") \
+  --from-file=groq-api-key=<(printf '%s' "${GROQ_API_KEY:?GROQ_API_KEY is required}") \
+  --from-file=postgres-password=<(printf '%s' "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}") \
+  --from-file=database-url=<(printf '%s' "${DATABASE_URL:?DATABASE_URL is required}") \
+  --from-file=grafana-admin-password=<(printf '%s' "${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}")
 ```
 
 ### Brain Weights (ConfigMap)
@@ -400,7 +404,7 @@ kubectl -n quantex scale deployment quantex-frontend --replicas=3
 ```bash
 # Port-forward Grafana
 kubectl -n quantex port-forward svc/quantex-grafana 3001:3000
-# Open http://localhost:3001 (admin / quantex123)
+# Open http://localhost:3001 (user: admin; password: quantex-secrets/grafana-admin-password)
 
 # Port-forward Prometheus
 kubectl -n quantex port-forward svc/quantex-prometheus 9090:9090

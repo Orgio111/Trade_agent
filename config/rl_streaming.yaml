@@ -7,7 +7,8 @@
 streaming_rl:
   # Memory stores
   redis_url: "redis://localhost:6379/0"
-  postgres_dsn: "postgresql://postgres:postgres@localhost:5432/trading"
+  # Inject POSTGRES_DSN at runtime; credentials must not be stored in this file.
+  postgres_dsn: null
   qdrant_url: "http://localhost:6333"
   qdrant_collection: "trade_memory_streaming"
 

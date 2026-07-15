@@ -10,7 +10,7 @@
 _Synthesis pages — the big picture of a topic._
 
 - [[brain-ecosystem]] — single source of truth for all 12 brain weights, tiers, registration files, and aggregation flow. (stable, updated 2026-06-30)
-- [[infrastructure-overview]] — legacy deployment inventory; the 2026-07-14 audit found 21 Compose services and recommends a smaller profiled core. (draft, updated 2026-07-14)
+- [[infrastructure-overview]] — legacy deployment inventory; credentials are injected through local environment or Kubernetes Secret references. (draft, updated 2026-07-16)
 - [[multi-agent-pipeline]] — LangGraph design intent; current risk/execution and latency claims require reconciliation with the audited runtime. (draft, updated 2026-07-14)
 
 ## Concepts

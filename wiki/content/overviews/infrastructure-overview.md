@@ -9,7 +9,7 @@ tags:
   - nginx
   - deployment
 created: 2026-06-30
-updated: 2026-07-14
+updated: 2026-07-16
 status: draft
 ---
 
@@ -170,11 +170,15 @@ resources:
 ### K8s Secrets
 
 ```bash
+# Load these values from a local secret manager. Bash process substitution keeps
+# the values out of the kubectl command arguments.
 kubectl -n quantex create secret generic quantex-secrets \
-  --from-literal=nvidia-api-key="nvapi-..." \
-  --from-literal=openrouter-api-key="sk-or-v1-..." \
-  --from-literal=groq-api-key="gsk_..." \
-  --from-literal=postgres-password="secret"
+  --from-file=nvidia-api-key=<(printf '%s' "${NVIDIA_API_KEY:?NVIDIA_API_KEY is required}") \
+  --from-file=openrouter-api-key=<(printf '%s' "${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}") \
+  --from-file=groq-api-key=<(printf '%s' "${GROQ_API_KEY:?GROQ_API_KEY is required}") \
+  --from-file=postgres-password=<(printf '%s' "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}") \
+  --from-file=database-url=<(printf '%s' "${DATABASE_URL:?DATABASE_URL is required}") \
+  --from-file=grafana-admin-password=<(printf '%s' "${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}")
 ```
 
 ### Brain Weights ConfigMap
@@ -263,7 +267,8 @@ Layer A (Python)                Layer B (Go)                 Layer C (Next.js)
 ### Grafana
 
 - **URL:** http://localhost:3001 (Docker) / http://localhost:3000 (K8s)
-- **Credentials:** admin / quantex123
+- **User:** `admin`
+- **Password source:** `GRAFANA_ADMIN_PASSWORD` (Docker) or `quantex-secrets/grafana-admin-password` (K8s)
 - **Dashboards:** Auto-provisioned from `monitoring/grafana/dashboards/`
 - **Datasources:** Auto-provisioned from `monitoring/grafana/datasources/`
 

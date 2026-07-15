@@ -64,7 +64,8 @@ dead_mans_switch:
 
 storage:
   duckdb_path: ./storage/duckdb/quantex.duckdb
-  postgres_url: postgresql://quantex:quantex@localhost:5432/quantex
+  # Inject DATABASE_URL at runtime; credentials must not be stored in this file.
+  postgres_url: null
   backups_dir: ./storage/backups
 
 logging:

@@ -2,6 +2,10 @@
 
 > Append-only timeline of every operation on the wiki. Newest at top. Reverse chronological so the current state is the first thing you read.
 
+## [2026-07-16] note | Deployment credential injection
+
+Updated [[infrastructure-overview]] and synchronized deployment examples so PostgreSQL DSNs and Grafana passwords come from local runtime environment variables or explicit Kubernetes Secret keys. Removed plaintext credential fallbacks without changing trading, strategy, risk, or execution logic.
+
 ## [2026-07-16] note | Local knowledge infrastructure hardening
 
 Aligned [[local-knowledge-pipeline-v1]] and [[local-knowledge-pipeline-operations]] with the executable path/type admission rules and the machine-global, collection-scoped synchronization lease. Pinned the Chroma client consistently, extended drift CI to Codex branches, and replaced literal Compose credentials with explicit local environment inputs without changing trading behavior.

@@ -11,7 +11,7 @@ from typing import Any
 
 from .chunking import chunk_id, chunk_text
 from .errors import DriftError, ManifestError
-from .manifest import ManifestInventory, load_inventory
+from .manifest import GovernedFile, ManifestInventory, load_inventory
 
 
 LockData = dict[str, Any]
@@ -70,10 +70,25 @@ def _source_lock(inventory: ManifestInventory, source) -> LockData:
     }
 
 
+def _governed_file_lock(governed: GovernedFile) -> LockData:
+    """Serialize ownership and canonical content evidence without file text."""
+
+    return {
+        "path": governed.path,
+        "component": governed.component_id,
+        "owner": governed.owner,
+        "sha256": governed.sha256,
+        "bytes": governed.byte_count,
+    }
+
+
 def build_lock(inventory: ManifestInventory) -> LockData:
     """Resolve the manifest into deterministic, vector-free CI evidence."""
 
     settings = inventory.manifest.knowledge
+    governed_files = [
+        _governed_file_lock(governed) for governed in inventory.governed_files
+    ]
     sources = [_source_lock(inventory, source) for source in inventory.sources]
     component_contracts = [
         {
@@ -105,9 +120,12 @@ def build_lock(inventory: ManifestInventory) -> LockData:
             "overlap_chars": settings.overlap_chars,
         },
         "components": component_contracts,
+        "governed_files": governed_files,
         "sources": sources,
         "summary": {
             "component_count": len(component_contracts),
+            "governed_file_count": len(governed_files),
+            "governed_bytes": sum(item["bytes"] for item in governed_files),
             "source_count": len(sources),
             "chunk_count": sum(len(source["chunks"]) for source in sources),
             "content_bytes": sum(source["bytes"] for source in sources),
@@ -157,14 +175,27 @@ def load_lock(path: str | Path) -> LockData:
         raise DriftError(f"cannot read generated knowledge lock: {lock_file}") from exc
     if not isinstance(data, dict) or data.get("schema_version") != 1:
         raise DriftError("generated knowledge lock has an unsupported schema")
-    if not isinstance(data.get("sources"), list) or not isinstance(
-        data.get("summary"), dict
+    if (
+        not isinstance(data.get("governed_files"), list)
+        or not isinstance(data.get("sources"), list)
+        or not isinstance(data.get("summary"), dict)
     ):
         raise DriftError("generated knowledge lock is structurally invalid")
     return data
 
 
 def _drift_summary(expected: LockData, actual: LockData) -> str:
+    expected_governed = {
+        item["path"]: item for item in expected.get("governed_files", [])
+    }
+    actual_governed = {item["path"]: item for item in actual.get("governed_files", [])}
+    governed_added = sorted(set(expected_governed) - set(actual_governed))
+    governed_removed = sorted(set(actual_governed) - set(expected_governed))
+    governed_changed = sorted(
+        path
+        for path in set(expected_governed) & set(actual_governed)
+        if expected_governed[path] != actual_governed[path]
+    )
     expected_sources = {item["path"]: item for item in expected.get("sources", [])}
     actual_sources = {item["path"]: item for item in actual.get("sources", [])}
     added = sorted(set(expected_sources) - set(actual_sources))
@@ -177,6 +208,12 @@ def _drift_summary(expected: LockData, actual: LockData) -> str:
     parts: list[str] = []
     if expected.get("manifest_sha256") != actual.get("manifest_sha256"):
         parts.append("manifest changed")
+    if governed_added:
+        parts.append("new governed files: " + ", ".join(governed_added[:8]))
+    if governed_removed:
+        parts.append("removed governed files: " + ", ".join(governed_removed[:8]))
+    if governed_changed:
+        parts.append("changed governed files: " + ", ".join(governed_changed[:8]))
     if added:
         parts.append("new sources: " + ", ".join(added[:8]))
     if removed:

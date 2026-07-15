@@ -192,7 +192,13 @@ class PostgresStore:
     def __init__(self, dsn: str | None = None):
         if not POSTGRES_AVAILABLE:
             raise RuntimeError("psycopg2 not installed: pip install psycopg2-binary")
-        self.dsn = dsn or os.getenv("POSTGRES_DSN", "postgresql://postgres:***@localhost:5432/trading")
+        resolved_dsn = dsn or os.getenv("POSTGRES_DSN")
+        if not resolved_dsn or not resolved_dsn.strip():
+            raise RuntimeError(
+                "POSTGRES_DSN is required to initialize PostgresStore; "
+                "inject it through the runtime secret configuration"
+            )
+        self.dsn = resolved_dsn
         self._connected = False
         self._init_schema()
 

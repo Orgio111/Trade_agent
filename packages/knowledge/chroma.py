@@ -107,6 +107,7 @@ class ChromaVectorStore:
     def _verify_client_version(self) -> None:
         if self._client_version_verified:
             return
+        actual: Any
         try:
             if self._client_version_resolver is not None:
                 actual = self._client_version_resolver()
