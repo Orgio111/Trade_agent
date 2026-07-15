@@ -66,6 +66,16 @@ class CoverageSettings(StrictModel):
     legacy_repository_exceptions: tuple[str, ...] = ()
 
 
+class UpstreamReference(StrictModel):
+    """Pinned provenance and reuse policy for one external reference system."""
+
+    id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]+$")
+    repository: str = Field(pattern=r"^https://github\.com/[^/\s]+/[^/\s]+$")
+    revision: str = Field(pattern=r"^[0-9a-f]{40}$")
+    license: str = Field(min_length=2)
+    reuse_policy: Literal["code-and-patterns", "patterns-only"]
+
+
 class Component(StrictModel):
     """One architecture component with one primary responsibility."""
 
@@ -78,6 +88,14 @@ class Component(StrictModel):
     architecture: tuple[str, ...]
     embedding_inputs: tuple[str, ...] = ()
     forbidden_imports: tuple[str, ...] = ()
+    upstream_references: tuple[UpstreamReference, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_unique_upstream_ids(self) -> Component:
+        ids = [reference.id for reference in self.upstream_references]
+        if len(ids) != len(set(ids)):
+            raise ValueError("upstream reference ids must be unique per component")
+        return self
 
 
 class Quarantine(StrictModel):

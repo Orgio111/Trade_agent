@@ -45,7 +45,7 @@ def test_second_writer_is_rejected(tmp_path: Path) -> None:
     lease = tmp_path / "knowledge.lock"
 
     with LocalProcessLock(lease):
-        with pytest.raises(KnowledgeError, match="another knowledge operation"):
+        with pytest.raises(KnowledgeError, match="another local projection operation"):
             with LocalProcessLock(lease):
                 pytest.fail("the second writer must not acquire the lease")
 

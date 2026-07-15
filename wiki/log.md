@@ -2,6 +2,14 @@
 
 > Append-only timeline of every operation on the wiki. Newest at top. Reverse chronological so the current state is the first thing you read.
 
+## [2026-07-16] ingest | Local agent references and Hermes integration v1
+
+Analyzed [[tradingagents]], [[journalit]], [[obsidian-ai]], and [[obsidian-memory-for-ai]] at pinned upstream revisions and recorded their exact license boundaries. Implemented [[hermes-local-integration-v1]] as a clean-room, local-only control plane: bounded Ollama workflows, append-only secret-scanned Obsidian events, persist-first projection into the isolated `trade-agent-runtime-memory-v1` Chroma collection, and loopback FastAPI operations in [[hermes-memory-operations]]. [[open-source-agent-integration-analysis]] contains the requested per-repository architecture, reusable patterns, integration mapping, and code-level contracts. No trading, strategy, signal, risk, broker, or execution logic changed. Validation completed with 412 repository tests, strict scoped Ruff/format/mypy gates, and a 250-event Windows journal benchmark at 21.786 ms create p95 and 6.640 ms idempotent-replay p95.
+
+## [2026-07-16] note | Local knowledge pipeline built and live-verified
+
+Completed [[local-knowledge-pipeline-v1]] and [[local-knowledge-pipeline-operations]] as an executable, fully local contract across code, durable documentation, architecture ownership, and embeddings. The offline manifest/lock check passes, all 361 repository tests pass from the frozen local dependency environment, the 19 legacy vector paths remain quarantined with zero overlap against embedding sources, and no trading, strategy, risk, sizing, broker, or execution logic changed. Local Ollama `nomic-embed-text` and ChromaDB 1.5.9 completed full document/vector checksum verification, an idempotent second synchronization embedded zero unchanged chunks, and source-attributed owner-filtered retrieval passed. The offline benchmark planned 340 sources and 1,019 chunks in 14.116 seconds under allocation tracing (72.187 chunks/second, 10.30 MB peak); the deterministic synthetic planner reached 8,480.828 chunks/second and the batched fake embed/store path reached 670.284 chunks/second.
+
 ## [2026-07-16] note | Deployment credential injection
 
 Updated [[infrastructure-overview]] and synchronized deployment examples so PostgreSQL DSNs and Grafana passwords come from local runtime environment variables or explicit Kubernetes Secret keys. Removed plaintext credential fallbacks without changing trading, strategy, risk, or execution logic.

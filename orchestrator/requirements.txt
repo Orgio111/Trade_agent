@@ -15,9 +15,14 @@ python-dotenv>=1.0
 rich>=13.7
 loguru>=0.7.2
 aiohttp>=3.9
-prometheus-client>=0.20
+prometheus-client==0.25.0
 python-multipart>=0.0.9  # Form data support
-nats-py>=2.7  # NATS JetStream client
+nats-py==2.15.0  # NATS JetStream client
+ccxt==4.5.59  # Exchange adapters used by MOSS ingestion
+langgraph==1.2.7  # Stateful agent and RL workflows
+ag2==0.14.0  # AutoGen-compatible local multi-agent orchestration
+ollama==0.6.2  # Local Ollama client used by AutoGen adapters
+fix-busted-json==0.0.19  # Structured Ollama response repair for AG2
 
 # ── REMOVED: Heavy ML packages (saved ~4.8 GB) ──────────
 # These are imported lazily (try/except) by brains — not needed at startup.

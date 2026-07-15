@@ -313,3 +313,42 @@ def test_remote_knowledge_endpoints_are_rejected_by_manifest(
 
     with pytest.raises(ManifestError, match="loopback"):
         load_inventory(manifest)
+
+
+def test_upstream_provenance_is_pinned_in_generated_lock(tmp_path: Path) -> None:
+    manifest = write_test_project(tmp_path)
+    _replace(
+        manifest,
+        'forbidden_imports = ["openai"]',
+        """forbidden_imports = ["openai"]
+upstream_references = [
+  { id = "reference-system", repository = "https://github.com/example/reference-system", revision = "0123456789abcdef0123456789abcdef01234567", license = "MIT", reuse_policy = "code-and-patterns" },
+]""",
+    )
+
+    lock = build_lock(load_inventory(manifest))
+
+    assert lock["components"][0]["upstream_references"] == [
+        {
+            "id": "reference-system",
+            "license": "MIT",
+            "repository": "https://github.com/example/reference-system",
+            "reuse_policy": "code-and-patterns",
+            "revision": "0123456789abcdef0123456789abcdef01234567",
+        }
+    ]
+
+
+def test_unpinned_upstream_revision_is_rejected(tmp_path: Path) -> None:
+    manifest = write_test_project(tmp_path)
+    _replace(
+        manifest,
+        'forbidden_imports = ["openai"]',
+        """forbidden_imports = ["openai"]
+upstream_references = [
+  { id = "reference-system", repository = "https://github.com/example/reference-system", revision = "main", license = "MIT", reuse_policy = "code-and-patterns" },
+]""",
+    )
+
+    with pytest.raises(ManifestError, match="revision"):
+        load_inventory(manifest)

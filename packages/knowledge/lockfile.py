@@ -98,6 +98,10 @@ def build_lock(inventory: ManifestInventory) -> LockData:
             "documentation": list(component.documentation),
             "architecture": list(component.architecture),
             "tests": list(component.tests),
+            "upstream_references": [
+                reference.model_dump(mode="json")
+                for reference in component.upstream_references
+            ],
         }
         for component in sorted(inventory.manifest.components, key=lambda item: item.id)
     ]

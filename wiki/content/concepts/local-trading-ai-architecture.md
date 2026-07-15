@@ -3,7 +3,7 @@ title: Local Trading AI Architecture
 type: concept
 tags: [local-ai, ollama, rtx4050, real-time-trading, incremental-learning]
 created: 2026-06-30
-updated: 2026-07-14
+updated: 2026-07-16
 sources: []
 status: draft
 ---
@@ -95,10 +95,13 @@ def select_model(context: dict) -> str:
 - [[incremental-candle-state]] — memory architecture concept
 - [[model-sequential-loading]] — VRAM management technique
 - [[signal-aggregation-logic]] — brain weight aggregation (existing)
+- [[hermes-local-integration-v1]] — software-engineering workflow and permanent-memory control plane, isolated from trading authority
 
 ## Contradictions / updates
 
 **2026-07-14 hardware audit:** 8B 4-bit model weights consume nearly all 6 GB VRAM before KV cache and runtime overhead, so qwen3:8b/deepseek-r1:8b are not safe always-on choices. Model load and sub-200 ms generation figures are unverified. Execution must not use an LLM. The current target in [[trade-project-full-integration-build-plan]] is one 3–4B Ollama model at 4K context and concurrency one, used asynchronously; deterministic code owns signals, risk, and orders.
+
+**2026-07-16 engineering integration:** [[hermes-local-integration-v1]] serializes local Ollama requests by default on the RTX 4050 and uses model output only as non-authoritative engineering/research artifacts. It does not change this page's deterministic risk and execution boundary.
 
 ## Sources
 

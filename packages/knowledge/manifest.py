@@ -374,7 +374,10 @@ def load_inventory(
         for governed_path in sorted(component_paths[component.id]):
             if not governed_path.endswith(".py"):
                 continue
-            governed = governed_by_path[governed_path]
+            governed = governed_by_path.get(governed_path)
+            if governed is None:
+                # Only the configured generated lock is omitted from evidence.
+                continue
             scan_forbidden_imports(
                 governed_path,
                 governed.text,

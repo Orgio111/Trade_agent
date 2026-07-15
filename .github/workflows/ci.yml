@@ -51,6 +51,13 @@ jobs:
       - name: Ruff lint
         run: ruff check orchestrator/ --exit-zero
 
+      - name: Hermes and knowledge quality gates
+        run: |
+          ruff check packages/hermes/ packages/knowledge/ scripts/benchmark_hermes.py tests/unit/test_hermes_*.py tests/integration/test_hermes_api.py
+          ruff format --check packages/hermes/ packages/knowledge/ scripts/benchmark_hermes.py tests/unit/test_hermes_*.py tests/integration/test_hermes_api.py
+          mypy packages/hermes/ --ignore-missing-imports --follow-imports=skip
+          mypy packages/knowledge/ --ignore-missing-imports
+
       - name: MyPy typecheck
         run: mypy orchestrator/ --ignore-missing-imports || true
 
@@ -68,12 +75,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pytest pytest-asyncio pytest-timeout pandas numpy
-          cd orchestrator && pip install -r requirements.txt
+          pip install uv==0.11.24
+          uv sync --frozen --all-extras
 
       - name: Run tests
         run: |
-          python -m pytest tests/ -v --timeout=60
+          uv run --frozen pytest tests/ -v --timeout=60
 
   # ── ML Model Retrain (scheduled) ──────────────────────
   retrain:

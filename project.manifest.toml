@@ -320,6 +320,46 @@ embedding_inputs = [
 ]
 
 [[components]]
+id = "hermes-integration"
+owner = "software-engineering/hermes"
+primary_responsibility = "Project validated local-agent artifacts into permanent and retrieval memory."
+owned_paths = [
+  "packages/hermes/**/*.py",
+  "scripts/benchmark_hermes.py",
+  "tests/unit/test_hermes_*.py",
+  "tests/integration/test_hermes_api.py",
+]
+tests = [
+  "tests/unit/test_hermes_*.py",
+  "tests/integration/test_hermes_api.py",
+]
+documentation = [
+  "wiki/content/playbooks/hermes-memory-operations.md",
+  "wiki/content/comparisons/open-source-agent-integration-analysis.md",
+]
+architecture = [
+  "wiki/content/decisions/hermes-local-integration-v1.md",
+]
+embedding_inputs = [
+  "packages/hermes/**/*.py",
+  "scripts/benchmark_hermes.py",
+]
+forbidden_imports = [
+  "anthropic",
+  "ccxt",
+  "google",
+  "openai",
+  "qdrant_client",
+  "sentence_transformers",
+]
+upstream_references = [
+  { id = "tradingagents", repository = "https://github.com/TauricResearch/TradingAgents", revision = "01477f9afb7a47b849ed4c9259d3a9a4738d9fda", license = "Apache-2.0", reuse_policy = "code-and-patterns" },
+  { id = "journalit", repository = "https://github.com/Cursivez/journalit", revision = "00f1f7044b0a6ab5b49bda682b582f87741c5d09", license = "proprietary-source-available", reuse_policy = "patterns-only" },
+  { id = "obsidian-ai", repository = "https://github.com/spencermarx/obsidian-ai", revision = "14d045b65db2b82ae4ebc946f9db750c3212182f", license = "MIT", reuse_policy = "code-and-patterns" },
+  { id = "obsidian-memory-for-ai", repository = "https://github.com/jrcruciani/obsidian-memory-for-ai", revision = "7af41fe60a068e4440022d3507c4a3aee81892d0", license = "none-declared", reuse_policy = "patterns-only" },
+]
+
+[[components]]
 id = "api-services"
 owner = "software-engineering/services"
 primary_responsibility = "Expose application capabilities through local service APIs."

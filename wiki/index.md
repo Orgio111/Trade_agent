@@ -2,7 +2,7 @@
 
 > Content catalog for the trading & quant second brain. Organized by category. ZCode updates this on every ingest. **Read this first** when answering a query — then drill into pages.
 >
-> **State:** 2 sources · 62 pages · last updated 2026-07-16
+> **State:** 6 sources · 69 pages · last updated 2026-07-16
 
 ---
 
@@ -11,7 +11,7 @@ _Synthesis pages — the big picture of a topic._
 
 - [[brain-ecosystem]] — single source of truth for all 12 brain weights, tiers, registration files, and aggregation flow. (stable, updated 2026-06-30)
 - [[infrastructure-overview]] — legacy deployment inventory; credentials are injected through local environment or Kubernetes Secret references. (draft, updated 2026-07-16)
-- [[multi-agent-pipeline]] — LangGraph design intent; current risk/execution and latency claims require reconciliation with the audited runtime. (draft, updated 2026-07-14)
+- [[multi-agent-pipeline]] — LangGraph design intent; current risk/execution claims remain experimental, while Hermes engineering workflows are isolated outside the hot path. (draft, updated 2026-07-16)
 
 ## Concepts
 _Methods and ideas, synthesized across all sources._
@@ -34,7 +34,7 @@ _Methods and ideas, synthesized across all sources._
 - [[build-your-own-x]] — meta-learning philosophy: build from scratch to understand. 200+ tutorials across 30+ CS categories. (1 source, updated 2026-06-26)
 - [[dynamic-brain-weight-adjustment]] — attention-entropy-based regime scaling for ensemble brain weights. (stable, updated 2026-06-26)
 - [[custom-trading-brain-architecture]] — proposed LSTM/Transformer brain architecture for temporal pattern recognition. (1 source, updated 2026-06-26)
-- [[local-trading-ai-architecture]] — fully autonomous trading AI optimized for RTX 4050 + Ollama with incremental candle state. (1 source, updated 2026-06-30)
+- [[local-trading-ai-architecture]] — local RTX 4050/Ollama architecture with deterministic trading authority and an isolated Hermes engineering control plane. (1 source, updated 2026-07-16)
 - [[order-flow-imbalance]] — signed order-book pressure; the cleanest mechanical price-formation signal. Now-pressure, not a forecast. (1 source, updated 2026-06-25)
 - [[tick-rule-classification]] — trade direction proxy comparing price to previous trade; standard when bid/ask unavailable. (1 source, updated 2026-06-26)
 - [[cumulative-volume-delta]] — running sum of signed trade volume; net buying/selling pressure. Complement to OFI. (1 source, updated 2026-06-26)
@@ -82,6 +82,7 @@ _Instruments, venues, tools, people, firms._
 ## Comparisons
 _Analyses and side-by-side comparisons (often filed from queries)._
 
+- [[open-source-agent-integration-analysis]] — license-aware extraction and clean local integration plan for TradingAgents, Journalit, Obsidian AI, and Obsidian Memory for AI. (stable, updated 2026-07-16)
 - [[trade-project-full-integration-build-plan]] — evidence-backed target architecture, safety gates, roadmap, verified paper-core checkpoint, and scoped project-knowledge storage supersession. (stable, updated 2026-07-15)
 
 ## Playbooks
@@ -91,12 +92,14 @@ _How-tos, processes, checklists._
 - [[signal-aggregation-logic]] — Go orchestrator weighted aggregation formula, weight mismatch fixes, proposed rebalancing. (updated 2026-06-26)
 - [[nn-brain-development-guide]] — step-by-step playbook for building, training, and deploying custom NN brain. (stable, updated 2026-06-26)
 - [[local-knowledge-pipeline-operations]] — local lock/check/sync/verify/query operations, security exclusions, failure recovery, and release checklist. (stable, updated 2026-07-16)
+- [[hermes-memory-operations]] — loopback Hermes event, workflow, Obsidian, Chroma, recovery, and verification operations. (stable, updated 2026-07-16)
 
 ## Decisions
 _Decision logs: what was decided, when, why._
 
 - [[deterministic-paper-core-v1]] — reference semantics and safety invariants for the verified market-event → risk → paper-fill vertical slice. (stable, updated 2026-07-15)
 - [[local-knowledge-pipeline-v1]] — manifest-owned, CI-enforced project knowledge using ChromaDB 1.5.9 and local Ollama `nomic-embed-text`. (stable, updated 2026-07-16)
+- [[hermes-local-integration-v1]] — bounded local Ollama workflows plus append-only Obsidian memory and an isolated runtime Chroma projection. (stable, updated 2026-07-16)
 
 ## Sources
 _Per-source summary pages — one per ingested source._
@@ -104,6 +107,10 @@ _Per-source summary pages — one per ingested source._
 - [[cont-order-flow-imbalance-2014]] — Cont, Kukanov & Stoikov (2014), OFI foundational source. (updated 2026-06-25)
 - [[codecrafters-build-your-own-x]] — CodeCrafters' Build your own X: 200+ CS tutorials for building systems from scratch. (updated 2026-06-26)
 - [[codecrafters]] — CodeCrafters: developer education platform, source of Build your own X and trading bot tutorials. (updated 2026-06-26)
+- [[tradingagents]] — Apache-2.0 LangGraph reference; typed orchestration patterns adopted without its trading authority. (updated 2026-07-16)
+- [[journalit]] — proprietary Obsidian journal reference; only clean-room observable patterns are used. (updated 2026-07-16)
+- [[obsidian-ai]] — MIT agent-adapter, session, streaming, and vault-context reference. (updated 2026-07-16)
+- [[obsidian-memory-for-ai]] — unlicensed memory protocol reference; append/event/provenance concepts only. (updated 2026-07-16)
 
 ---
 

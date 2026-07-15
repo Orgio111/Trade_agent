@@ -3,7 +3,7 @@ title: "Multi-Agent Trading Pipeline"
 type: concept
 tags: [pipeline, langgraph, multi-agent, orchestration, parallel, vlm, rag, swarm, risk, scalping, fast-path, dual-path]
 created: 2026-07-01
-updated: 2026-07-14
+updated: 2026-07-16
 status: draft
 ---
 
@@ -220,6 +220,8 @@ This allows the NATS bridge to publish accurate `ScalpDecisionEvent` metadata.
 ## Related
 
 - [[trade-project-full-integration-build-plan]] — audited runtime gaps and replacement build sequence
+- [[hermes-local-integration-v1]] — non-authoritative bounded local-agent workflow and memory control plane; it does not replace this trading graph
+- [[open-source-agent-integration-analysis]] — upstream pattern and license analysis behind the Hermes boundary
 - [[scalping-engine]] — CPU-only fast-path decision engine
 - [[nats-langgraph-bridge]] — NATS event trigger, publishes ScalpDecisionEvent
 - [[vlm-agent]] — Vision analysis node (heavy path only)
@@ -234,6 +236,8 @@ This allows the NATS bridge to publish accurate `ScalpDecisionEvent` metadata.
 ## Contradictions / updates
 
 **2026-07-14 repository audit:** the current graph connects VLM to RAG sequentially, the risk node constructs synthetic portfolio inputs, and the execution node returns a simulated record rather than placing through the broker abstraction. The log/publish node also does not itself provide the durable NATS/ledger semantics implied above. Latency figures are design targets, not measured end-to-end guarantees. Keep this page as experimental design context; [[trade-project-full-integration-build-plan]] defines the promotion path.
+
+**2026-07-16 Hermes boundary:** generic multi-agent engineering/research orchestration now lives in [[hermes-local-integration-v1]]. It cannot publish signals, approve risk, access brokers, or execute orders, and its Obsidian/Chroma work stays outside this hot path.
 
 ## Sources
 

@@ -55,6 +55,8 @@ Adopt a dedicated **project-knowledge** pipeline with:
 
 The TOML manifest is the ownership and indexing contract. Obsidian pages under `wiki/` remain the durable source of truth; ChromaDB and the local receipt are rebuildable retrieval projections, never authoritative copies.
 
+Runtime Hermes journal events are governed separately by [[hermes-local-integration-v1]]. They remain canonical Markdown in the explicitly configured external Obsidian vault and project only into `trade-agent-runtime-memory-v1`; they never enter the project collection `trade-agent-project-knowledge-v1`. The manifest now also pins upstream repository revision, license, and reuse policy for components derived from external reference systems.
+
 ## Scope boundary and supersession
 
 This decision supersedes the pgvector/Qdrant recommendations in [[trade-project-full-integration-build-plan]] and [[rag-agent]] **only for project knowledge**: source code, architecture, documentation, research synthesis, and lessons learned.
