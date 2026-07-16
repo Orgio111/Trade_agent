@@ -170,6 +170,11 @@ class InMemoryVectorStore:
                 "namespace metadata drift: " + ", ".join(sorted(mismatches))
             )
 
+    async def require_namespace(self, metadata: Mapping[str, Scalar]) -> None:
+        if self.metadata is None:
+            raise VectorStoreError("namespace does not exist")
+        await self.ensure_namespace(metadata)
+
     async def inventory(self) -> dict[str, StoredRecord]:
         return {
             record_id: StoredRecord(

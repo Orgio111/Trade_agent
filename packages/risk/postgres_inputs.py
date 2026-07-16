@@ -105,11 +105,12 @@ class PostgresRiskInputRepository:
                 """
                 SELECT state_id, source_sequence, reconciled_at, payload
                 FROM portfolio_snapshots
-                WHERE account_id = $1
+                WHERE account_id = $1 AND reconciled_at <= $2
                 ORDER BY source_sequence DESC
                 LIMIT 2
                 """,
                 account,
+                now,
             )
             if len(rows) > 1 and int(rows[0]["source_sequence"]) == int(
                 rows[1]["source_sequence"]

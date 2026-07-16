@@ -1,108 +1,102 @@
 ---
 title: Local Trading AI Architecture
 type: concept
-tags: [local-ai, ollama, rtx4050, real-time-trading, incremental-learning]
+tags: [local-ai, ollama, rtx4050, provenance, deterministic-risk]
 created: 2026-06-30
 updated: 2026-07-16
-sources: []
-status: draft
+sources:
+  - "[[canonical-local-paper-runtime-v1]]"
+  - "[[hermes-local-integration-v1]]"
+status: stable
 ---
 
 # Local Trading AI Architecture
 
 ## Definition
 
-A fully autonomous, real-time trading intelligence system optimized for local execution on consumer hardware (RTX 4050 6GB VRAM, 16GB RAM) using Ollama as the LLM runtime. The system processes 1-minute candle increments incrementally — never recomputing full history — and maintains compressed memory state across all timescales.
+Trade_agent uses one host-local Ollama runtime for model inference while deterministic Python owns data validation, risk authorization, and paper execution. Model output is untrusted candidate input. It can never approve risk, create an order directly, disable the kill switch, or substitute for the execution ledger.
 
-## Intuition
+## Approved model registry
 
-Traditional trading AI systems require cloud GPUs, full-history retraining, and separate services for vision/reasoning/execution. This architecture proves that a **single-machine, sequential-model, incremental-state** design can achieve sub-200ms latency for scalping decisions while maintaining deep reasoning capability for macro decisions — all without internet dependency after model download.
+`packages/local_ai/models.py` is the single immutable role registry. Hermes re-exports it instead of maintaining a second mapping.
 
-## Mechanics / math
+| Role | Exact Ollama model | Permitted use |
+|---|---|---|
+| `reasoning` | `qwen3:8b` | Candidate reasoning and bounded local workflows |
+| `fast` | `phi3:3.8b` | Latency-sensitive candidate reasoning |
+| `research` | `deepseek-r1:8b` | Offline/background research |
+| `vision` | `moondream` | Chart/image interpretation outside deterministic authority |
+| `tool_formatting` | `mistral` | Structured local output formatting |
+| `embedding` | `nomic-embed-text` | Local Obsidian/Chroma projection |
 
-### VRAM Budget (6GB RTX 4050)
+An untagged registry name such as `mistral` or `moondream` may match Ollama's explicit `:latest` representation. No other alias, provider, or model is admitted. Cloud inference and OpenAI-compatible remote endpoints are outside the canonical runtime.
 
-| Model | 4-bit VRAM | Role | Load Strategy |
-|-------|------------|------|---------------|
-| phi3:3.8b | ~2.5GB | Scalping (always warm) | Persistent |
-| qwen3:8b | ~5.2GB | Normal reasoning | On-demand |
-| deepseek-r1:8b | ~5.2GB | Macro (async) | On-demand |
-| mistral:7b | ~4.5GB | Tool execution | On-demand |
-| moondream | ~1.8GB | Vision (optional) | On-demand |
-| nomic-embed-text | ~0.5GB | Embeddings | Persistent |
+## Candidate provenance
 
-**Constraint**: Only ONE 8B-class model fits in VRAM at a time. Solution: **sequential loading with phi3 warm**.
+Every `CandidateForRiskEvent` records:
 
-### Incremental State (No Recompute)
+- `provider=ollama`;
+- a role restricted to `reasoning` or `fast`;
+- the exact model selected by that role;
+- a required 64-character model digest supplied by the future candidate producer;
+- the exact market event, market snapshot, candidate content, trace, creation time, checksum, and deterministic event ID.
 
+The deterministic risk verdict copies the same provenance and binds it to candidate hash, candidate event ID, market event ID, account, policy, and portfolio snapshot. The envelope currently validates digest shape and continuity; because the default candidate producer does not exist, capture-time comparison against Ollama's inventory digest remains to be implemented. Provenance makes a result auditable; it does not make the result authoritative.
+
+## Local endpoint policy
+
+Ollama URLs are accepted only when they use plain local HTTP and resolve to:
+
+- `127.0.0.1` or another loopback address;
+- `localhost`;
+- `host.docker.internal` for Docker-to-host access.
+
+Credentials, URL query parameters, fragments, and non-root paths are rejected. Runtime settings do not load `.env` files. This preserves an explicit local-only boundary and prevents a configuration change from silently routing trading intelligence to a cloud service.
+
+## Readiness
+
+The read-only control plane queries Ollama `/api/tags` and `/api/ps` and requires the exact registry to be installed. The check does not generate model output. Missing models make runtime readiness fail closed. See [[canonical-local-paper-runtime-v1]] and [[local-ai-deployment-guide]].
+
+## Hardware policy
+
+The RTX 4050 has a constrained 6 GB VRAM budget. Therefore:
+
+- model loading and inference are not part of deterministic risk or execution latency;
+- concurrent large-model inference is not assumed;
+- Hermes serializes GPU inference by default;
+- model warm-state and latency must be measured locally instead of asserted from design estimates;
+- a missing or slow model must cause abstention/failure, never a risk bypass.
+
+## Responsibility boundary
+
+```text
+Ollama model
+  -> provenance-bound candidate
+  -> deterministic risk engine + PostgreSQL authority
+  -> exact approval
+  -> deterministic PaperBroker execution
 ```
-Level 0: Active Candle (updated every 60s)
-  - OHLCV + 50 features + regime hint
 
-Level 1: Rolling Buffer (200 candles, fixed)
-  - Compressed feature vectors (64-dim each)
-  - Streaming HMM regime state (5 states)
+The `mistral` tool-formatting role does not own execution. Execution is ordinary deterministic code. `nomic-embed-text` creates retrieval embeddings only; retrieval content cannot mutate risk or broker state.
 
-Level 2: Key Levels (persistent, event-driven)
-  - Support/Resistance zones (volume-weighted)
-  - Volume profile nodes (high-volume areas)
+## Strengths and weaknesses
 
-Level 3: Session Context (daily reset)
-  - VWAP, session high/low, daily bias
-
-Level 4: Strategy Performance (per-trade update)
-  - Win/loss, avg R, regime-conditioned stats
-```
-
-### Model Routing Logic
-
-```python
-def select_model(context: dict) -> str:
-    if context.get("task") == "vision":
-        return "moondream"
-    if context.get("task") == "execution":
-        return "mistral"
-    if context.get("mode") == "scalp" or context.get("urgency") == "high":
-        return "phi3:3.8b"      # <100ms, always warm
-    if context.get("mode") == "deep":
-        return "deepseek-r1:8b" # async, >2s
-    return "qwen3:8b"           # <300ms, load on demand
-```
-
-## How we use it
-
-- **Scalping path**: phi3:3.8b (warm) → features → decision → risk → execute (~185ms)
-- **Normal path**: qwen3:8b (load 500ms + infer 250ms) → decision
-- **Macro path**: deepseek-r1:8b (background) → writes to memory
-- **Vision path**: moondream (on screenshot) → chart analysis → memory
-- **Execution**: mistral:7b (load → tool calls → unload)
-
-## Strengths & weaknesses
-
-| Strength | Weakness |
-|----------|----------|
-| Zero cloud cost / privacy | 6GB VRAM limits concurrent models |
-| Sub-200ms scalping latency | Sequential loading adds latency spikes |
-| Incremental state = no retrain | Phi3 reasoning ceiling lower than 8B |
-| Fully offline after download | No multi-GPU scaling |
-| Deterministic execution | Model swap requires Ollama API call |
-
-## Related
-
-- [[trade-project-full-integration-build-plan]] — current 6 GB VRAM model and runtime decision
-- [[rtx4050-trading-system]] — hardware-specific deployment entity
-- [[local-ai-deployment-guide]] — installation playbook
-- [[incremental-candle-state]] — memory architecture concept
-- [[model-sequential-loading]] — VRAM management technique
-- [[signal-aggregation-logic]] — brain weight aggregation (existing)
-- [[hermes-local-integration-v1]] — software-engineering workflow and permanent-memory control plane, isolated from trading authority
+| Strength | Limitation |
+|---|---|
+| Fully local inference and embeddings | 6 GB VRAM constrains concurrency and warm-model choices |
+| One exact role registry prevents routing drift | Capture-time digest verification still belongs in the missing candidate producer |
+| Provenance survives candidate-to-verdict transport | The default runtime has no candidate producer yet |
+| Deterministic risk/execution works independently of model internals | Model quality and latency are not yet promotion evidence |
 
 ## Contradictions / updates
 
-**2026-07-14 hardware audit:** 8B 4-bit model weights consume nearly all 6 GB VRAM before KV cache and runtime overhead, so qwen3:8b/deepseek-r1:8b are not safe always-on choices. Model load and sub-200 ms generation figures are unverified. Execution must not use an LLM. The current target in [[trade-project-full-integration-build-plan]] is one 3–4B Ollama model at 4K context and concurrency one, used asynchronously; deterministic code owns signals, risk, and orders.
+Earlier versions of this page assigned execution to `mistral`, described unverified sub-200/300 ms inference, and treated sequential loading as an implemented production policy. [[canonical-local-paper-runtime-v1]] supersedes those claims: execution is model-free and paper-only, model health is read-only, and latency remains a benchmark question.
 
-**2026-07-16 engineering integration:** [[hermes-local-integration-v1]] serializes local Ollama requests by default on the RTX 4050 and uses model output only as non-authoritative engineering/research artifacts. It does not change this page's deterministic risk and execution boundary.
+## Related
 
-## Sources
-
-- Internal design session 2026-06-30
+- [[canonical-local-paper-runtime-v1]]
+- [[deterministic-paper-core-v1]]
+- [[local-ai-deployment-guide]]
+- [[hermes-local-integration-v1]]
+- [[model-sequential-loading]]
+- [[rtx4050-trading-system]]

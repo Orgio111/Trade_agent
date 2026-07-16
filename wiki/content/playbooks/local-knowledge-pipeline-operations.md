@@ -103,6 +103,8 @@ python scripts/knowledge.py verify
 
 A pass requires the live collection and local receipt to match the lock's project, collection/schema version, embedding model, content identities, and chunk inventory. Run this after every `sync`, model update, collection restore, or Chroma container/volume move.
 
+`verify` is strictly read-only: it opens the configured collection without creating or modifying it and fails closed when that collection is absent. Only `sync` may initialize the manifest-owned collection.
+
 ### 5. Test retrieval
 
 ```powershell

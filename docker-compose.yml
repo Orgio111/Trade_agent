@@ -1,7 +1,7 @@
 # ═══════════════════════════════════════════════════════════
-# QUANTEX — Docker Compose (Full Production Stack)
-# Layer 1: Infra | Layer 2: Storage | Layer 3: Streaming
-# Layer 4: Services | Layer 5-7: Application
+# QUANTEX — canonical local paper/replay runtime
+# The default graph is intentionally small; pre-canonical services are
+# quarantined behind the explicit `legacy` profile below.
 # ═══════════════════════════════════════════════════════════
 
 # Default startup is the canonical local paper/replay runtime. Pre-canonical
@@ -92,10 +92,9 @@ services:
         limits: { cpus: "1.0", memory: 1G }
 
   # ── LAYER 2-4: EVENT STREAM BUS ──────────────────────
-  # NATS JetStream is the backbone of the Trinity Architecture:
-  #   Layer A (Python brains) publish → signals.raw
-  #   Layer B (Go orchestrator) subscribes → aggregates → signals.aggregated
-  #   Layer C (Rust execution) subscribes → signals.aggregated → executes
+  # NATS JetStream carries the canonical v1 boundaries:
+  # raw market -> quality gate; candidate -> deterministic risk; exact
+  # approval -> paper execution. No model may publish an execution command.
 
   nats:
       image: nats:2.10-alpine
@@ -129,7 +128,7 @@ services:
     ports:
       - "127.0.0.1:${CONTROL_PLANE_PORT:-8001}:8001"
     environment:
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
       NATS_URL: nats://nats:4222
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       RUNTIME_MODE: ${RUNTIME_MODE:-paper_live}
@@ -158,6 +157,78 @@ services:
       resources:
         limits: { cpus: "0.5", memory: 512M }
 
+  market-data-worker:
+    build:
+      context: .
+      dockerfile: infra/workers/Dockerfile
+    command: ["python", "-m", "workers.market_data"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      NATS_URL: nats://nats:4222
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      RUNTIME_MODE: paper_live
+      ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
+      NATS_STREAM: QUANTEX_CORE
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+
+  decision-worker:
+    build:
+      context: .
+      dockerfile: infra/workers/Dockerfile
+    command: ["python", "-m", "workers.decision"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      NATS_URL: nats://nats:4222
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      RUNTIME_MODE: paper_live
+      ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
+      NATS_STREAM: QUANTEX_CORE
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits: { cpus: "0.75", memory: 384M }
+
+  execution-worker:
+    build:
+      context: .
+      dockerfile: infra/workers/Dockerfile
+    command: ["python", "-m", "workers.execution"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      NATS_URL: nats://nats:4222
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      RUNTIME_MODE: paper_live
+      ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
+      NATS_STREAM: QUANTEX_CORE
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 384M }
+
   influxdb:
     profiles: ["legacy"]
     image: influxdb:2.7
@@ -184,13 +255,8 @@ services:
     expose:
       - "8001"
     environment:
-      NVIDIA_API_KEY: ${NVIDIA_API_KEY}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
-      GROQ_API_KEY: ${GROQ_API_KEY}
       INFERENCE_BUDGET_TIER: ${INFERENCE_BUDGET_TIER:-free}
-      # Optional token for local OpenAI-compatible inference adapters only.
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
       REDIS_HOST: redis
       INITIAL_BALANCE: ${INITIAL_BALANCE:-1000.0}
       FORWARDED_ALLOW_IPS: "*"
@@ -224,7 +290,7 @@ services:
     ports: ["8081:8081"]
     environment:
       REDIS_HOST: redis
-      POSTGRES_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      POSTGRES_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
       NATS_URL: nats://nats:4222
     volumes:
       - ./data:/app/data
@@ -371,8 +437,6 @@ services:
     environment:
       REDIS_HOST: redis
       NATS_URL: nats://nats:4222
-      BINANCE_API_KEY: ${BINANCE_API_KEY}
-      BINANCE_API_SECRET: ${BINANCE_API_SECRET}
       BINANCE_TESTNET: "true"
       EXECUTION_MODE: paper
     volumes:
@@ -624,8 +688,19 @@ services:
     ports: ["3001:3000"]
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
       GF_INSTALL_PLUGINS: grafana-piechart-panel
+    secrets:
+      - grafana_admin_password
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        test -s /run/secrets/grafana_admin_password || {
+          echo "Grafana legacy profile requires a non-empty admin secret" >&2
+          exit 1
+        }
+        exec /run.sh
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
@@ -649,3 +724,7 @@ volumes:
   certbot_certs:
   prometheus_data:
   grafana_data:
+
+secrets:
+  grafana_admin_password:
+    environment: GRAFANA_ADMIN_PASSWORD

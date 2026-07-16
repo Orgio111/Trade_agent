@@ -254,7 +254,7 @@ class KnowledgeSynchronizer:
         self.store = store
         self.lock_digest = lock_sha256(lock)
 
-    async def _identity_and_namespace(self) -> ModelIdentity:
+    async def _validated_identity(self) -> ModelIdentity:
         identity = await self.embedder.identity()
         expected = self.inventory.manifest.knowledge
         if identity.requested_model != expected.embedding_model:
@@ -263,15 +263,15 @@ class KnowledgeSynchronizer:
             raise LiveVerificationError(
                 "embedder dimension does not match the manifest"
             )
-        await self.store.ensure_namespace(
-            _stable_namespace_metadata(self.inventory, identity)
-        )
         return identity
 
     async def sync(self) -> SyncReport:
         """Embed only missing/corrupt chunks, verify, then delete stale chunks."""
 
-        identity = await self._identity_and_namespace()
+        identity = await self._validated_identity()
+        await self.store.ensure_namespace(
+            _stable_namespace_metadata(self.inventory, identity)
+        )
         desired = _desired_records(self.inventory, self.lock)
         existing = await self.store.inventory()
         expected_dimension = identity.dimension
@@ -403,7 +403,10 @@ class KnowledgeSynchronizer:
     async def verify_live(self) -> dict[str, Any]:
         """Compare the real local collection and receipt to the checked lock."""
 
-        identity = await self._identity_and_namespace()
+        identity = await self._validated_identity()
+        await self.store.require_namespace(
+            _stable_namespace_metadata(self.inventory, identity)
+        )
         desired = _desired_records(self.inventory, self.lock)
         actual = await self.store.inventory()
         if set(actual) != set(desired):

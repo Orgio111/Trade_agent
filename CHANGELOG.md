@@ -6,6 +6,10 @@ All notable project changes are recorded here. This file follows Keep a Changelo
 
 ### Added
 
+- A canonical local paper/replay runtime with three async Python workers, a read-only FastAPI control plane, exact local Ollama role/provenance contracts, and a bounded `QUANTEX_CORE` JetStream subject set.
+- PostgreSQL runtime durability migration 003 with event inbox/outbox/offset scaffolding, immutable portfolio snapshots and instrument constraints, single-signal verdict/candidate-event binding, and position/tax-lot projection schemas.
+- Durable JetStream and PostgreSQL adapters for explicit ACK/redelivery, producer deduplication IDs, authoritative risk inputs, atomic candidate/verdict persistence, exact approval lookup, and paper-only execution ledger recovery.
+- Architecture and deployment documentation in `canonical-local-paper-runtime-v1`, including explicit bootstrap, candidate-producer, transactional inbox/outbox, DLQ, projection, and reconciliation gaps.
 - A clean-room, local-only Hermes integration layer with strict agent/event contracts, bounded asynchronous DAG workflows, exact Ollama model-role routing, and serialized GPU inference by default.
 - A create-only Obsidian event journal with UTC paths, content-derived identity, secret scanning, symlink/junction containment, machine-local per-event leases, idempotent receipts, and conflict detection.
 - A separate `trade-agent-runtime-memory-v1` Chroma projection using local `nomic-embed-text`, canonical Markdown provenance, persist-first failure semantics, and bounded retrieval.
@@ -20,6 +24,12 @@ All notable project changes are recorded here. This file follows Keep a Changelo
 
 ### Changed
 
+- Split Chroma namespace initialization from live verification so `verify` and `query` open an existing collection read-only and fail closed when it is absent.
+- Made the canonical local paper runtime the default Docker Compose graph; pre-canonical orchestration, cloud/vLLM inference, Go/Rust runtime, legacy risk/execution, frontend, proxy, and observability services now require the explicit `legacy` profile.
+- Added a frozen minimal `workers` dependency group for the shared non-root canonical image, excluding legacy ML and research dependencies from the default runtime build.
+- Removed inactive legacy-profile interpolation blockers from the default Compose render; only `POSTGRES_PASSWORD` is required for the canonical graph, while legacy Grafana still fails closed without its own explicit password.
+- Bound infrastructure ports to loopback, kept execution limited to `paper_live`/`replay` and `PaperBroker`, and changed legacy mutation/risk automation surfaces to fail closed without changing strategy or trading logic.
+- Synchronized the Obsidian architecture, event, model, deployment, and build-plan pages with the active runtime and marked the historical LangGraph multi-agent pipeline as experimental/quarantined.
 - Extended the architecture manifest and generated lock with the single-responsibility `hermes-integration` component and external-reference provenance; no strategy, signal, risk, broker, or execution behavior changed.
 - Extracted the existing machine-local process lease into a shared knowledge utility so project and runtime projections use one cross-platform locking implementation.
 - Scoped project-knowledge storage to ChromaDB while leaving PostgreSQL ledger state and legacy trading-pattern Qdrant/NIM paths unchanged.

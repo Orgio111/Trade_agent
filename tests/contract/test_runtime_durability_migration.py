@@ -45,6 +45,9 @@ def test_runtime_migration_has_idempotency_and_immutability_guards() -> None:
     assert "trg_signals_immutable" in sql
     assert "trg_portfolio_snapshots_immutable" in sql
     assert "trg_instrument_constraints_immutable" in sql
+    assert "uq_risk_decision_signal_once" in sql
+    assert "candidate_event_id" in sql
+    assert "uq_signal_candidate_event" in sql
 
 
 def test_portfolio_and_constraint_keys_are_versioned() -> None:

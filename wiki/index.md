@@ -2,7 +2,7 @@
 
 > Content catalog for the trading & quant second brain. Organized by category. ZCode updates this on every ingest. **Read this first** when answering a query — then drill into pages.
 >
-> **State:** 6 sources · 69 pages · last updated 2026-07-16
+> **State:** 6 sources · 70 pages · last updated 2026-07-16
 
 ---
 
@@ -10,8 +10,8 @@
 _Synthesis pages — the big picture of a topic._
 
 - [[brain-ecosystem]] — single source of truth for all 12 brain weights, tiers, registration files, and aggregation flow. (stable, updated 2026-06-30)
-- [[infrastructure-overview]] — legacy deployment inventory; credentials are injected through local environment or Kubernetes Secret references. (draft, updated 2026-07-16)
-- [[multi-agent-pipeline]] — LangGraph design intent; current risk/execution claims remain experimental, while Hermes engineering workflows are isolated outside the hot path. (draft, updated 2026-07-16)
+- [[infrastructure-overview]] — canonical nine-service local paper deployment, loopback boundaries, and explicit legacy-profile quarantine. (stable, updated 2026-07-16)
+- [[multi-agent-pipeline]] — quarantined LangGraph/VLM/RAG/swarm design and the contract required for any future candidate-producer integration. (draft, updated 2026-07-16)
 
 ## Concepts
 _Methods and ideas, synthesized across all sources._
@@ -27,14 +27,14 @@ _Methods and ideas, synthesized across all sources._
 - [[incremental-candle-state]] — 4-level incremental state management for O(1) per-tick candle processing. (stable, updated 2026-06-30)
 - [[microstructure]] — market microstructure concepts: OFI, tick-rule, CVD. (stable, updated 2026-06-30)
 - [[model-sequential-loading]] — VRAM-aware sequential model loading for RTX 4050 6GB. (stable, updated 2026-06-30)
-- [[nats-event-system]] — NATS JetStream event backbone: 16 event types (incl. ACP v2), subject-based routing, stream configuration, base event fields (priority, trace_id, context). (stable, updated 2026-07-01)
+- [[nats-event-system]] — exact `QUANTEX_CORE` v1 subjects, manual-ACK/redelivery semantics, producer dedupe, and current inbox/outbox/DLQ gaps. (stable, updated 2026-07-16)
 - [[broker-abstraction-layer]] — Unified broker interface: Binance/FIX/Paper behind BaseBroker ABC. (stable, updated 2026-06-30)
 - [[real-time-trading-dashboard]] — Next.js + WebSocket + NATS dashboard architecture for 12-brain trading cockpit. (1 source, updated 2026-06-30)
 - [[attention-based-regime-detection]] — using Transformer attention weights (entropy, pattern shape) for automatic market regime classification. (research, updated 2026-06-26)
 - [[build-your-own-x]] — meta-learning philosophy: build from scratch to understand. 200+ tutorials across 30+ CS categories. (1 source, updated 2026-06-26)
 - [[dynamic-brain-weight-adjustment]] — attention-entropy-based regime scaling for ensemble brain weights. (stable, updated 2026-06-26)
 - [[custom-trading-brain-architecture]] — proposed LSTM/Transformer brain architecture for temporal pattern recognition. (1 source, updated 2026-06-26)
-- [[local-trading-ai-architecture]] — local RTX 4050/Ollama architecture with deterministic trading authority and an isolated Hermes engineering control plane. (1 source, updated 2026-07-16)
+- [[local-trading-ai-architecture]] — exact six-role local Ollama registry, candidate provenance, endpoint admission, and deterministic authority boundary. (stable, updated 2026-07-16)
 - [[order-flow-imbalance]] — signed order-book pressure; the cleanest mechanical price-formation signal. Now-pressure, not a forecast. (1 source, updated 2026-06-25)
 - [[tick-rule-classification]] — trade direction proxy comparing price to previous trade; standard when bid/ask unavailable. (1 source, updated 2026-06-26)
 - [[cumulative-volume-delta]] — running sum of signed trade volume; net buying/selling pressure. Complement to OFI. (1 source, updated 2026-06-26)
@@ -83,12 +83,12 @@ _Instruments, venues, tools, people, firms._
 _Analyses and side-by-side comparisons (often filed from queries)._
 
 - [[open-source-agent-integration-analysis]] — license-aware extraction and clean local integration plan for TradingAgents, Journalit, Obsidian AI, and Obsidian Memory for AI. (stable, updated 2026-07-16)
-- [[trade-project-full-integration-build-plan]] — evidence-backed target architecture, safety gates, roadmap, verified paper-core checkpoint, and scoped project-knowledge storage supersession. (stable, updated 2026-07-15)
+- [[trade-project-full-integration-build-plan]] — evidence-backed roadmap plus the canonical local paper runtime and remaining transactional/bootstrap gates. (stable, updated 2026-07-16)
 
 ## Playbooks
 _How-tos, processes, checklists._
 
-- [[local-ai-deployment-guide]] — step-by-step deployment of local trading AI on RTX 4050 + Ollama. (stable, updated 2026-06-30)
+- [[local-ai-deployment-guide]] — safe default Compose startup, exact Ollama checks, read-only readiness, and fail-closed bootstrap status. (stable, updated 2026-07-16)
 - [[signal-aggregation-logic]] — Go orchestrator weighted aggregation formula, weight mismatch fixes, proposed rebalancing. (updated 2026-06-26)
 - [[nn-brain-development-guide]] — step-by-step playbook for building, training, and deploying custom NN brain. (stable, updated 2026-06-26)
 - [[local-knowledge-pipeline-operations]] — local lock/check/sync/verify/query operations, security exclusions, failure recovery, and release checklist. (stable, updated 2026-07-16)
@@ -97,7 +97,8 @@ _How-tos, processes, checklists._
 ## Decisions
 _Decision logs: what was decided, when, why._
 
-- [[deterministic-paper-core-v1]] — reference semantics and safety invariants for the verified market-event → risk → paper-fill vertical slice. (stable, updated 2026-07-15)
+- [[deterministic-paper-core-v1]] — deterministic domain semantics extended by durable JetStream/PostgreSQL adapters and paper-only worker entrypoints. (stable, updated 2026-07-16)
+- [[canonical-local-paper-runtime-v1]] — default local Compose authority graph, Ollama provenance, read-only control plane, durable boundaries, and known gaps. (stable, updated 2026-07-16)
 - [[local-knowledge-pipeline-v1]] — manifest-owned, CI-enforced project knowledge using ChromaDB 1.5.9 and local Ollama `nomic-embed-text`. (stable, updated 2026-07-16)
 - [[hermes-local-integration-v1]] — bounded local Ollama workflows plus append-only Obsidian memory and an isolated runtime Chroma projection. (stable, updated 2026-07-16)
 

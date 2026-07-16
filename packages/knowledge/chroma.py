@@ -151,6 +151,24 @@ class ChromaVectorStore:
             raise VectorStoreError("Chroma namespace has not been initialized")
         return self._collection
 
+    def _bind_namespace(
+        self,
+        collection: Any,
+        expected: Mapping[str, Scalar],
+    ) -> None:
+        actual = getattr(collection, "metadata", None)
+        if not isinstance(actual, dict):
+            raise VectorStoreError("Chroma collection metadata is unavailable")
+        mismatches = [
+            key for key, value in expected.items() if actual.get(key) != value
+        ]
+        if mismatches:
+            raise VectorStoreError(
+                "Chroma namespace metadata drift; bump the collection version: "
+                + ", ".join(sorted(mismatches))
+            )
+        self._collection = collection
+
     async def ensure_namespace(self, metadata: Mapping[str, Scalar]) -> None:
         """Create once, then reject model/schema namespace mismatches."""
 
@@ -168,18 +186,25 @@ class ChromaVectorStore:
             raise
         except Exception as exc:
             raise VectorStoreError("cannot initialize Chroma collection") from exc
-        actual = getattr(collection, "metadata", None)
-        if not isinstance(actual, dict):
-            raise VectorStoreError("Chroma collection metadata is unavailable")
-        mismatches = [
-            key for key, value in expected.items() if actual.get(key) != value
-        ]
-        if mismatches:
-            raise VectorStoreError(
-                "Chroma namespace metadata drift; bump the collection version: "
-                + ", ".join(sorted(mismatches))
+        self._bind_namespace(collection, expected)
+
+    async def require_namespace(self, metadata: Mapping[str, Scalar]) -> None:
+        """Open an existing namespace without creating or modifying it."""
+
+        expected = json_scalar_mapping(metadata)
+        try:
+            client = await self._get_client()
+            collection = await _await_if_needed(
+                client.get_collection(
+                    name=self._collection_name,
+                    embedding_function=None,
+                )
             )
-        self._collection = collection
+        except VectorStoreError:
+            raise
+        except Exception as exc:
+            raise VectorStoreError("Chroma namespace does not exist") from exc
+        self._bind_namespace(collection, expected)
 
     async def inventory(self) -> dict[str, StoredRecord]:
         """Read complete records in bounded pages for content-integrity checks."""

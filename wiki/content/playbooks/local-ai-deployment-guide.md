@@ -1,256 +1,155 @@
 ---
 title: Local AI Deployment Guide
 type: playbook
-tags: [deployment, ollama, rtx4050, trading-ai, windows, wsl2]
+tags: [deployment, ollama, docker-compose, local-first, paper-trading]
 created: 2026-06-30
-updated: 2026-06-30
-sources: [[local-trading-ai-architecture], [rtx4050-trading-system]]
+updated: 2026-07-16
+sources:
+  - "[[canonical-local-paper-runtime-v1]]"
+  - "[[local-trading-ai-architecture]]"
+  - "[[infrastructure-overview]]"
 status: stable
 ---
 
 # Local AI Deployment Guide
 
-## When to Use
+## Purpose
 
-Deploy a fully autonomous trading AI on local hardware (RTX 4050 / 16GB RAM) using Ollama. No cloud dependencies after initial model download.
+Start and inspect the canonical local paper/replay runtime. This playbook never enables live trading, never starts a cloud inference provider, and never uses the legacy profile.
 
 ## Prerequisites
 
-| Requirement | Minimum | Recommended |
-|-------------|---------|-------------|
-| GPU | RTX 3050 (4GB) | RTX 4050+ (6GB+) |
-| RAM | 12GB | 16GB+ |
-| Storage | 50GB free | 100GB+ NVMe |
-| OS | Windows 10/11, Linux | Windows 11 + WSL2 or native Linux |
-| Network | For model download only | Offline-capable after setup |
+- Docker Desktop or Docker Engine with Compose v2.
+- Host-local Ollama reachable at `http://127.0.0.1:11434`.
+- Sufficient local disk for PostgreSQL, NATS, ChromaDB, and the approved models.
+- A PostgreSQL password supplied through the current process or an approved local secret manager.
+- No live broker key is required or used.
 
-## How to Run
+## 1. Install the exact local models
 
-### 1. Install Ollama
-
-**Windows (PowerShell Admin):**
 ```powershell
-winget install Ollama.Ollama
-# Or download from https://ollama.ai/download
-```
-
-**Linux/WSL2:**
-```bash
-curl -fsSL https://ollama.ai/install.sh | sh
-```
-
-### 2. Pull Models (Sequential)
-
-```bash
-# Embeddings (required first)
+ollama pull qwen3:8b
+ollama pull phi3:3.8b
+ollama pull deepseek-r1:8b
+ollama pull moondream
+ollama pull mistral
 ollama pull nomic-embed-text
 
-# Core models (order by priority)
-ollama pull phi3:3.8b         # Always-warm scalping model
-ollama pull qwen3:8b          # Main reasoning
-ollama pull mistral:7b        # Tool execution
-ollama pull deepseek-r1:8b    # Deep macro analysis
-ollama pull moondream         # Vision (optional)
-
-# Verify
 ollama list
 ```
 
-### 3. Configure Ollama for RTX 4050
+Do not substitute cloud models or arbitrary aliases. The runtime registry and provenance contract are defined in [[local-trading-ai-architecture]]. On a 6 GB RTX 4050, keep concurrency conservative and benchmark actual warm/cold behavior locally.
 
-**Windows (Environment Variables):**
+## 2. Supply local configuration
+
+Required:
+
+- `POSTGRES_PASSWORD`
+
+Optional safe overrides include `POSTGRES_PORT`, `REDIS_PORT`, `NATS_PORT`, `NATS_MONITOR_PORT`, `CONTROL_PLANE_PORT`, and `PAPER_ACCOUNT_ID`. The worker mode is `paper_live`; no live mode is admitted.
+
+Keep secrets outside source control and do not print them into logs. Worker configuration does not load dotenv files on its own.
+Variables used only by quarantined `legacy` services are not required to render or start the default graph. The legacy Grafana service independently fails at startup unless `GRAFANA_ADMIN_PASSWORD` is supplied.
+
+## 3. Verify the default boundary
+
 ```powershell
-$env:OLLAMA_NUM_PARALLEL = "1"
-$env:OLLAMA_MAX_LOADED_MODELS = "1"
-$env:OLLAMA_FLASH_ATTENTION = "1"
-$env:OLLAMA_KV_CACHE_TYPE = "f16"
-$env:OLLAMA_GPU_LAYERS = "35"
-# Make permanent:
-[Environment]::SetEnvironmentVariable("OLLAMA_NUM_PARALLEL", "1", "User")
-# ... repeat for others
+docker compose config --services
 ```
 
-**Linux/WSL2 (~/.bashrc or /etc/environment):**
-```bash
-export OLLAMA_NUM_PARALLEL=1
-export OLLAMA_MAX_LOADED_MODELS=1
-export OLLAMA_FLASH_ATTENTION=1
-export OLLAMA_KV_CACHE_TYPE=f16
-export OLLAMA_GPU_LAYERS=35
+Expected default services:
+
+```text
+postgres
+redis
+migrate
+chroma
+nats
+control-plane
+market-data-worker
+decision-worker
+execution-worker
 ```
 
-### 4. Pre-warm Phi3 (Always-Warm Model)
+If pre-canonical services appear without an explicit profile, stop and treat it as deployment drift. Do not use `--profile legacy` for this playbook.
 
-```bash
-# Keep phi3 loaded in background
-ollama run phi3:3.8b "System ready. Respond with: OK" &
-# Verify
-ollama ps
+## 4. Start the runtime
+
+```powershell
+docker compose up -d
+docker compose ps
 ```
 
-### 5. Install Python Dependencies
+The one-shot migration service must complete successfully before the control plane and workers start. PostgreSQL, Redis, NATS, ChromaDB, and the control plane publish loopback ports only.
 
-```bash
-# Create venv
-python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# Linux:
-source .venv/bin/activate
+## 5. Inspect health and readiness
 
-# Install
-pip install --upgrade pip
-pip install fastapi uvicorn websockets chromadb python-binance pandas numpy pyyaml ollama
+```powershell
+Invoke-RestMethod http://127.0.0.1:8001/health
+Invoke-RestMethod http://127.0.0.1:8001/ready
+Invoke-RestMethod http://127.0.0.1:8001/api/v1/runtime
+Invoke-RestMethod http://127.0.0.1:8222/healthz
 ```
 
-### 6. Project Structure
+Interpretation:
 
-```
-trading_ai/
-├── config.yaml          # All parameters
-├── main.py              # FastAPI orchestrator
-├── models.py            # Pydantic models
-├── state.py             # IncrementalState
-├── router.py            # OllamaRouter
-├── risk.py              # RiskEngine
-├── memory.py            # LocalMemory (ChromaDB)
-├── execution.py         # ExecutionEngine
-├── features.py          # Feature extraction
-├── vision.py            # Vision pipeline
-└── requirements.txt
-```
+- `/health` proves only that the read-only FastAPI process is alive.
+- `/ready` checks PostgreSQL, NATS, and the exact Ollama registry; it returns HTTP 503 when a dependency is unavailable.
+- `execution_enabled=false` is correct while the kill switch is active or uninitialized.
+- Even `ready=true` does not mean the full candidate-to-fill loop is available.
 
-### 7. Configuration (config.yaml)
+The API has no mutation endpoint. It cannot seed risk inputs or disable the kill switch.
 
-```yaml
-# config.yaml
-system:
-  symbol: "BTCUSDT"
-  timeframe: "1m"
-  paper_mode: true
-  exchange: "binance_testnet"
+## 6. Understand the intentional fail-closed state
 
-model:
-  warm_model: "phi3:3.8b"
-  reasoning_model: "qwen3:8b"
-  execution_model: "mistral:7b"
-  vision_model: "moondream"
-  deep_model: "deepseek-r1:8b"
-  embedding_model: "nomic-embed-text"
+The default runtime currently seeds none of the following:
 
-risk:
-  max_position_pct: 0.05
-  max_daily_drawdown: 0.03
-  max_concurrent: 3
-  kill_streak: 5
+- an active risk policy;
+- a reconciled portfolio snapshot;
+- effective instrument constraints;
+- an inactive kill-switch row;
+- a candidate producer.
 
-memory:
-  chroma_path: "./memory"
-  buffer_size: 200
-  regime_states: 5
+Therefore the runtime can validate raw market envelopes, but it cannot autonomously produce an executable candidate. Any candidate submitted without all authoritative risk inputs fails closed. This is an implementation boundary, not an operator error.
 
-execution:
-  maker_preference: true
-  default_type: "LIMIT"
+## 7. Observe without mutating
+
+```powershell
+docker compose logs --tail 100 control-plane
+docker compose logs --tail 100 market-data-worker
+docker compose logs --tail 100 decision-worker
+docker compose logs --tail 100 execution-worker
 ```
 
-### 8. Run the System
+Canonical worker logs sanitize failure types and do not copy rejected NATS payloads. Avoid dumping environment variables or database connection strings during troubleshooting.
 
-```bash
-# Terminal 1: Start orchestrator
-python main.py
+## 8. Stop safely
 
-# Terminal 2: Test with simulated candles (or connect real WS)
-python test_client.py
+```powershell
+docker compose down
 ```
 
-### 9. Health Checks
+This preserves PostgreSQL, NATS, Redis, and Chroma volumes. Removing volumes destroys durable local state and requires explicit operator intent; it is not part of routine shutdown.
 
-```bash
-# Ollama status
-ollama ps
-curl http://localhost:11434/api/tags
+## Verification checklist
 
-# ChromaDB
-python -c "import chromadb; c=chromadb.PersistentClient('./memory'); print(c.list_collections())"
+- [ ] `docker compose config --services` contains only the nine default services.
+- [ ] Ollama lists all six exact approved models.
+- [ ] `migrate` completed successfully.
+- [ ] `/health` responds on loopback.
+- [ ] `/ready` reports dependency details without secrets.
+- [ ] `execution_enabled` remains false until durable state is explicitly initialized.
+- [ ] No live broker or cloud inference service is running.
+- [ ] No legacy profile was started.
 
-# FastAPI
-curl http://localhost:8000/health
+## Known gaps and next operations
 
-# Model latency test
-python -c "
-import ollama, time
-for m in ['phi3:3.8b', 'qwen3:8b']:
-    start=time.time()
-    r=ollama.generate(m, 'test', options={'num_predict': 10})
-    print(f'{m}: {time.time()-start:.2f}s')
-"
-```
-
-## Verification
-
-### Expected Results
-
-| Check | Pass Criteria |
-|-------|---------------|
-| `ollama ps` | phi3:3.8b shows as loaded |
-| `nvidia-smi` | VRAM ~3-4GB used (phi3 + embeddings + OS) |
-| Latency test | phi3 <100ms, qwen3 <300ms |
-| ChromaDB | Collections: trades, patterns |
-| FastAPI | `/health` returns 200 OK |
-
-### Smoke Test
-
-```python
-# test_client.py
-import asyncio, websockets, json, time
-
-async def test():
-    async with websockets.connect("ws://localhost:8000/candle") as ws:
-        # Send fake candle
-        candle = {
-            "timestamp": int(time.time()*1000),
-            "open": 50000, "high": 50100, "low": 49900, "close": 50050,
-            "volume": 100.5, "symbol": "BTCUSDT"
-        }
-        await ws.send(json.dumps(candle))
-        response = await ws.recv()
-        print(json.loads(response))
-
-asyncio.run(test())
-```
-
-Expected: Response with `signal`, `execution`, `state` within 200ms (warm phi3).
-
-## Common Issues
-
-| Issue | Fix |
-|-------|-----|
-| OOM on model load | Reduce `OLLAMA_GPU_LAYERS` to 30, enable CPU offload |
-| Phi3 not staying warm | Increase `OLLAMA_MAX_LOADED_MODELS` to 2, keep phi3 small |
-| Slow first inference | Run warmup: `ollama run phi3:3.8b "warmup"` |
-| ChromaDB memory | Limit buffer_size in config.yaml |
-| Windows WSL2 GPU | Ensure NVIDIA drivers in WSL (`nvidia-smi` in WSL) |
-
-## Maintenance
-
-```bash
-# Weekly: Update models
-ollama pull phi3:3.8b && ollama pull qwen3:8b
-
-# Monthly: Clean ChromaDB
-python -c "
-import chromadb
-c = chromadb.PersistentClient('./memory')
-# Archive old trades, keep last 10k
-"
-
-# Monitor disk
-du -sh ./memory
-```
+Do not improvise database seed rows manually. The next required deployment feature is a tested bootstrap command that validates and records policy, portfolio, constraints, and kill-switch state with provenance and audit. Transactional inbox/outbox wiring and durable dead-letter replay must follow before reliability claims are raised.
 
 ## Related
 
-- [[local-trading-ai-architecture]] — architecture concept
-- [[rtx4050-trading-system]] — hardware entity
-- [[incremental-candle-state]] — memory concept
+- [[canonical-local-paper-runtime-v1]]
+- [[infrastructure-overview]]
+- [[local-trading-ai-architecture]]
+- [[deterministic-paper-core-v1]]
+- [[nats-event-system]]

@@ -11,7 +11,7 @@ from typing import Iterable
 
 from packages.brokers import PaperBroker, PaperBrokerConfig
 from packages.domain import MarketEvent
-from packages.event_bus import CoreSubject, InMemoryEventBus
+from packages.event_bus import InMemoryEventBus
 from packages.execution import (
     ExecutionResult,
     ExecutionService,
@@ -214,9 +214,12 @@ class ReplayHarness:
         candidate: CandidateSignal,
         observed_at: datetime,
     ) -> MarketSnapshot:
+        spread_bps = candidate.spread_bps
+        if spread_bps is None:
+            raise ValueError("execution market snapshot requires a measured spread")
         with localcontext() as context:
             context.prec = 50
-            half_spread = candidate.spread_bps / Decimal("20000")
+            half_spread = spread_bps / Decimal("20000")
             return MarketSnapshot(
                 venue=candidate.venue,
                 market_type=candidate.market_type,

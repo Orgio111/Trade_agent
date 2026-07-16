@@ -190,6 +190,22 @@ async def test_live_verify_detects_missing_vector(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_live_verify_never_initializes_a_missing_namespace(
+    tmp_path: Path,
+) -> None:
+    manifest = write_test_project(tmp_path)
+    embedder = DeterministicFakeEmbedder()
+    store = InMemoryVectorStore()
+    service = _service(manifest, embedder=embedder, store=store)
+
+    with pytest.raises(VectorStoreError, match="namespace does not exist"):
+        await service.verify_live()
+
+    assert store.metadata is None
+    assert store.activation_calls == 0
+
+
+@pytest.mark.asyncio
 async def test_live_verify_detects_wrong_document_with_same_id_and_metadata(
     tmp_path: Path,
 ) -> None:

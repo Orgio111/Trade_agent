@@ -12,7 +12,7 @@ tags:
   - local-ai
   - roadmap
 created: 2026-07-14
-updated: 2026-07-15
+updated: 2026-07-16
 sources:
   - "[[infrastructure-overview]]"
   - "[[multi-agent-pipeline]]"
@@ -34,7 +34,7 @@ status: stable
 | Multi-agent runtime | 2/5 | 2/5 | 4/5 | 2/5 | Keep off the order hot path |
 | Event-driven workers | 3/5 | 5/5 | 5/5 | 4/5 | Use as the production-shaped core |
 | Rust low-latency execution | 1/5 | 4/5 | 4/5 | 3/5 | Defer until profiling proves a need |
-| Hybrid local/cloud LLM | 4/5 | 4/5 | 5/5 | 4/5 | Use only as an asynchronous advisory lane |
+| Hybrid local/cloud LLM | 4/5 | 2/5 | 4/5 | 4/5 | Reject; canonical inference is local Ollama only |
 
 **Decision:** build an event-driven modular monolith deployed as three workers—market data, decision, and execution—plus a FastAPI control plane and the existing Next.js dashboard. Use NATS JetStream for durable inter-worker events, PostgreSQL as the authoritative ledger, Redis for disposable hot state, and Parquet for immutable research data. AI models may enrich or critique a candidate, but deterministic code alone owns risk approval and order placement.
 
@@ -46,8 +46,8 @@ This is the best version of the Trade project for the stated hardware and budget
 
 The repository contains many valuable parts, but it is not yet one coherent trading system:
 
-- The current Docker Compose file defines 21 services, which exceeds the useful local operating envelope of an RTX 4050 laptop with 16 GB RAM. [[infrastructure-overview]] still describes an older 13-service topology.
-- The event vocabulary in [[nats-event-system]] is a useful design direction, but Python, Go, and Rust currently do not share one wire contract.
+- The pre-canonical Docker Compose topology defined 21 services, which exceeded the useful local operating envelope. [[canonical-local-paper-runtime-v1]] now makes a nine-service local paper core the default and quarantines the larger topology behind `legacy`.
+- [[nats-event-system]] now defines one canonical Python-worker v1 contract. Python, Go, and Rust legacy paths still do not share that contract and remain quarantined.
 - The current [[multi-agent-pipeline]] documentation describes production execution and parallel VLM/RAG work; the code currently sequences VLM then RAG, creates synthetic risk state, and returns simulated execution.
 - The repository has several risk engines, execution implementations, backtest engines, and vector-memory systems. None is a single authoritative runtime.
 - The test baseline on 2026-07-14 is 144 passing Python tests when the broken MOSS integration test is excluded. Full collection fails because tests import a missing MossCompositeEngine. The Next.js production build and Go compilation tests pass; Go has no test files. Rust could not be verified because Cargo is unavailable in the current environment.
@@ -86,6 +86,29 @@ Deliberately incomplete and blocked from live promotion:
 
 The next implementation gate is durable PostgreSQL decision/order/cash/position state plus crash-recovery reconciliation. No live key or live order path should be enabled before that gate and protective exits are complete.
 
+### Canonical local paper runtime checkpoint — 2026-07-16
+
+[[canonical-local-paper-runtime-v1]] supersedes the deployment and durability gaps described in the 2026-07-15 checkpoint where explicitly stated. The default Compose graph now starts PostgreSQL, a checksum-locked migration job, NATS JetStream, Redis, ChromaDB, a read-only control plane, and the three canonical Python workers. Pre-canonical orchestrators, cloud/vLLM inference, Go/Rust runtime, legacy risk/execution, UI, and observability require the explicit `legacy` profile.
+
+Implemented:
+
+- One immutable six-role Ollama registry (`qwen3:8b`, `phi3:3.8b`, `deepseek-r1:8b`, `moondream`, `mistral`, `nomic-embed-text`) with local-endpoint admission and read-only health checks.
+- Candidate and risk envelopes bind `provider=ollama`, exact role/model, a required model digest, market event, candidate content, and deterministic IDs. Only reasoning/fast roles can produce candidates; inference-time digest capture remains part of the missing producer.
+- One exact `QUANTEX_CORE` stream owns `market.raw.v1`, validated/rejected market outcomes, candidate, approved/rejected risk, and intent/update order subjects.
+- Manual ACK, bounded NAK/redelivery, terminal settlement, deterministic producer message IDs, and stream-configuration drift detection.
+- PostgreSQL-backed risk inputs, atomic candidate-plus-verdict persistence, exact durable approval lookup, durable execution ledger, and paper-only async execution.
+- Migration `003_runtime_durability.sql`: inbox/outbox/offset scaffolding, immutable portfolio snapshots and instrument constraints, candidate-event binding, one verdict per signal, and position/tax-lot projection schemas.
+- A read-only FastAPI control plane exposing health/readiness/runtime state. It cannot mutate kill-switch, candidate, risk, order, or broker state.
+
+Still fail-closed and intentionally incomplete:
+
+- No default candidate producer connects `market.validated.v1` to `signals.candidate.v1`.
+- No audited bootstrap process seeds active policy, reconciled portfolio, effective constraints, or inactive kill-switch state.
+- Inbox/outbox/offset tables are not wired to callback transactions and ACK; there is no durable dead-letter replay workflow.
+- Position/tax-lot projections, protective order lifecycle, startup reconciliation, immutable raw capture, and shadow/live promotion remain blockers.
+
+The next gate is therefore not another agent or model. It is an audited runtime bootstrap plus transactional inbox/outbox and crash-recovery reconciliation. No trading logic changed, no live broker was added, and cloud inference is not part of the canonical architecture.
+
 ### Project-knowledge storage supersession — 2026-07-15
 
 [[local-knowledge-pipeline-v1]] supersedes this plan's pgvector/Qdrant recommendation **only for repository project knowledge**. Code, architecture, documentation, research synthesis, and lessons learned now use `project.manifest.toml`, a deterministic lock, ChromaDB 1.5.9 in local Docker server mode, and local Ollama `nomic-embed-text`; the operational workflow is [[local-knowledge-pipeline-operations]]. PostgreSQL remains authoritative for execution/portfolio state, while the legacy trading-pattern memory in [[rag-agent]] remains quarantined and unchanged. This addendum changes no strategy, risk, broker, or execution logic.
@@ -97,8 +120,8 @@ The next implementation gate is durable PostgreSQL decision/order/cash/position 
 | Markets | BTC/USDT and ETH/USDT spot, 1m/5m | More symbols, derivatives, cross-venue |
 | Runtime | Python workers + FastAPI + Next.js | Extract measured hotspots to Go/Rust |
 | Data | Binance + Bybit, candles/trades/L2/funding/OI | Full-depth archives, on-chain, richer news |
-| Models | One 3–4B Ollama model, one embedding model | Hosted NIM critic, optional VLM and specialist models |
-| Storage | PostgreSQL + pgvector, Redis, Parquet | Qdrant only after a retrieval benchmark justifies it |
+| Models | Exact local Ollama registry with serialized/conservative GPU use | Additional local models only through measured evidence and a new ADR |
+| Storage | PostgreSQL authority, Redis disposable state, Chroma project knowledge, Parquet research | Add stores only after a measured requirement and ownership decision |
 | Validation | Replay, walk-forward, paper | Shadow, canary, portfolio strategies |
 | Deployment | Docker Compose core profile | Kubernetes only when a real availability requirement exists |
 

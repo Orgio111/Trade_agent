@@ -9,9 +9,10 @@ tags:
   - replay
   - paper-trading
 created: 2026-07-15
-updated: 2026-07-15
+updated: 2026-07-16
 sources:
   - "[[trade-project-full-integration-build-plan]]"
+  - "[[canonical-local-paper-runtime-v1]]"
   - "[[nats-event-system]]"
   - "[[broker-abstraction-layer]]"
 status: stable
@@ -21,59 +22,75 @@ status: stable
 
 ## Context
 
-The repository previously had several disconnected event, risk, execution, and backtest paths. None supplied one reproducible market-event-to-fill trace with a fail-closed authorization boundary. [[trade-project-full-integration-build-plan]] therefore made a deterministic paper/replay vertical slice the first build gate.
+The repository previously had disconnected event, risk, execution, and backtest paths. None supplied one reproducible market-event-to-fill trace with a fail-closed authorization boundary. [[trade-project-full-integration-build-plan]] therefore made a deterministic paper/replay vertical slice the first build gate.
 
 ## Decision
 
-Adopt the new `packages/` and `workers/` core as the reference semantics for normalized candles, data-quality verdicts, candidate signals, risk decisions, paper order intents, fills, reconciliation, and replay.
+Use `packages/` and `workers/` as the reference semantics for normalized market events, quality verdicts, candidate signals, deterministic risk decisions, paper order intents, fills, reconciliation, and replay. [[canonical-local-paper-runtime-v1]] now makes this reference core the default Compose runtime.
 
-This decision does **not** promote the system to live trading. `ExecutionService` accepts only `replay` and `paper_live` source modes. The only implemented broker for this core is deterministic `PaperBroker`.
+This decision does **not** promote live trading. Runtime modes are limited to `replay` and `paper_live`; `AsyncPaperExecutionService` accepts only `PaperBroker` and has no live broker port.
 
 ## Safety invariants
 
-- A parsed market event must match both its payload checksum and its deterministic provenance-bound event ID.
-- Strategies emit candidates, never orders. Data age, spread, and expected slippage are supplied at the decision boundary rather than fabricated by the strategy.
-- Risk decisions are immutable and bound to account, venue, market type, signal, exact candidate hash, policy version, and portfolio snapshot.
-- Execution resolves the exact decision from an append-only decision authority before creating an intent; an arbitrary `approved=True` object is insufficient.
-- Intent and client order IDs are deterministic. The intent is reserved before broker submission.
-- A timeout after possible broker acceptance becomes `AMBIGUOUS`; it is reconciled by deterministic client ID and is never automatically resubmitted.
-- Decision and market-snapshot TTLs are checked immediately before intent creation.
-- Money arithmetic uses explicit high-precision local `Decimal` contexts. Replay output is invariant to ambient precision.
-- The database kill switch defaults active, and SQL order intents accept only `replay` and `paper_live`.
+- A market event must match its checksum, deterministic provenance-bound ID, source mode, time, and quality contract.
+- Strategies or models emit candidates, never approvals or orders.
+- Candidate envelopes require local Ollama provenance: exact role/model mapping and a 64-character digest preserved into the verdict; the future producer must verify it against the inference-time local inventory.
+- A candidate cannot understate authoritative market age or bid/ask spread.
+- Risk loads one active policy, one fresh reconciled portfolio snapshot, and one effective instrument-constraint version from PostgreSQL; missing, stale, ambiguous, or mismatched inputs fail closed.
+- Each signal receives one immutable verdict. The verdict binds account, signal, exact candidate hash/event, market event, policy, and portfolio snapshot.
+- Redelivery may reuse only that exact verdict; changed candidate or event identity is rejected.
+- Execution resolves the exact durable approval before creating an intent. An arbitrary `approved=True` object is insufficient.
+- Intent and client order IDs are deterministic, and the intent is persisted before the paper fill is calculated.
+- Decision/market TTL and price-deviation checks run immediately before intent creation.
+- Ambiguous or partially filled durable intents require reconciliation and are never blindly resubmitted.
+- Money arithmetic uses explicit high-precision local `Decimal` contexts.
+- The database kill switch defaults active; execution enablement requires an explicit durable inactive state.
 
-## Implemented artifacts
+## Durable runtime extension
 
-- `packages/domain`, `packages/event_contracts`, and `packages/data_quality`
-- `packages/risk`, `packages/execution`, `packages/brokers`, and `packages/replay`
-- `workers/market_data`, `workers/decision`, and `workers/execution`
-- `scripts/replay_market.py` and `scripts/apply_migrations.py`
-- `db/migrations/002_execution_ledger.sql`
-- `infra/compose/core.yml` and the dedicated migration image
-- Contract, unit, integration, replay, failure-injection, and migration tests
+The initial in-memory reference adapters remain useful for deterministic replay. The active workers now add:
+
+- `JetStreamEventBus` with manual ACK, bounded NAK/redelivery, terminal settlement, and producer message IDs;
+- `PostgresRiskInputRepository` for policy, portfolio, and instrument-constraint authority;
+- `PostgresDecisionStore.record_candidate_and_decision` for atomic candidate/verdict persistence;
+- `PostgresExecutionLedger` for durable paper intents, orders, and fills;
+- restart-safe paper execution that reuses terminal results and blocks ambiguous retry;
+- canonical worker entrypoints for market data, decision, and execution;
+- read-only dependency/kill-switch readiness through the control plane.
+
+## Database migrations
+
+- `001_core_schema.sql` establishes the migration and base schema.
+- `002_execution_ledger.sql` adds risk policy/decision, intent/order/fill, reconciliation, and kill-switch authority.
+- `003_runtime_durability.sql` adds event-processing scaffolding, candidate-event binding, immutable portfolio snapshots, versioned instrument constraints, one-verdict-per-signal enforcement, and position/tax-lot projection schemas.
+
+The migration image applies checksummed migrations before runtime services start.
 
 ## Evidence
 
-- Full Python suite: 294 passed on 2026-07-15.
-- Golden replay: six accepted candles, one candidate, one approved decision, one order, one fill, clean reconciliation.
-- The replay digest is identical under ambient `Decimal` precision 6, 10, 28, and 50.
-- ACK-loss tests prove an accepted broker order enters `AMBIGUOUS`, then reconciles without a second submit.
-- A temporary pgvector/PostgreSQL 16 instance applied migrations 001 and 002, reapplied with no changes, retained prefixed string ID columns, and defaulted the kill switch active.
+- Canonical market, risk, execution, reconciliation, and replay behavior has unit, contract, integration, migration, and failure-injection coverage.
+- Golden replay produces deterministic event/order/fill identities and a digest invariant to ambient `Decimal` precision.
+- Lost-ack/ambiguous-submit tests prohibit a second broker submit.
+- PostgreSQL adapter tests cover exact authorization, atomic candidate/verdict binding, stale/missing risk state, durable ledger behavior, and migration structure.
+- JetStream adapter/runtime tests cover explicit settlement, deduplication IDs, exact stream authority, retry bounds, and worker subject routing.
 
-## Deferred hard blockers
+## Remaining blockers
 
-1. Replace in-memory bus, decision store, and execution ledger with PostgreSQL/NATS-backed implementations and startup reconciliation.
-2. Build authoritative cash, tax-lot, position, realized/unrealized PnL, and loss-streak projections.
-3. Persist and reconcile protective stop/OCO or synthetic-stop lifecycles; current stop-based risk is estimated, not enforceable.
-4. Add immutable raw market capture, full venue order-book recovery, and promotion-grade backtesting.
-5. Expose durable kill-switch and promotion controls through the control plane and dashboard.
-6. Complete fault injection for process death, delayed venue visibility, corrupted fill replay, and database failover.
+1. Implement and separately own the missing `market.validated.v1 -> signals.candidate.v1` producer.
+2. Add an audited bootstrap process for active policy, reconciled portfolio, effective constraints, and kill-switch initialization.
+3. Wire migration 003's inbox/outbox/offset tables into the worker transaction and ACK lifecycle.
+4. Add durable dead-letter capture and operator replay.
+5. Implement authoritative cash, position, tax-lot, PnL, and loss-streak projectors from the fill ledger.
+6. Complete startup reconciliation and protective stop/OCO lifecycle.
+7. Add immutable raw market capture, venue sequence recovery, and promotion-grade backtesting.
 
 ## Revisit trigger
 
-Revisit this decision only after the durable ledger can recover from process restart and broker acknowledgement loss while producing the same cash, position, order, and fill state byte-for-byte.
+Revisit this decision only after transactional event processing, authoritative projections, restart reconciliation, and protective exits reproduce the same state under process-death and redelivery fault injection. Any live path requires a separate ADR and explicit human approval.
 
 ## Related
 
+- [[canonical-local-paper-runtime-v1]]
 - [[trade-project-full-integration-build-plan]]
 - [[nats-event-system]]
 - [[broker-abstraction-layer]]

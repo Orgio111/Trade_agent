@@ -76,13 +76,21 @@ def validate_candle(candle: BaseModel | Mapping[str, Any]) -> QualityVerdict:
 
     high = values["high"]
     low = values["low"]
-    comparable = [values[name] for name in ("open", "close", "low")]
-    if high is not None and all(value is not None for value in comparable) and high < max(comparable):
+    comparable = [
+        value
+        for name in ("open", "close", "low")
+        if (value := values[name]) is not None
+    ]
+    if high is not None and len(comparable) == 3 and high < max(comparable):
         reasons.append(
             QualityReason(QualityCode.HIGH_BELOW_PRICE, "high is below another OHLC value", "high")
         )
-    comparable = [values[name] for name in ("open", "close", "high")]
-    if low is not None and all(value is not None for value in comparable) and low > min(comparable):
+    comparable = [
+        value
+        for name in ("open", "close", "high")
+        if (value := values[name]) is not None
+    ]
+    if low is not None and len(comparable) == 3 and low > min(comparable):
         reasons.append(QualityReason(QualityCode.LOW_ABOVE_PRICE, "low is above another OHLC value", "low"))
 
     open_time = _datetime(data, "open_time", reasons)
@@ -96,4 +104,3 @@ def validate_candle(candle: BaseModel | Mapping[str, Any]) -> QualityVerdict:
             )
         )
     return QualityVerdict.from_reasons(reasons)
-

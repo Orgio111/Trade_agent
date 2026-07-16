@@ -357,10 +357,6 @@ id = "deterministic-paper-core"
 owner = "software-engineering/core"
 primary_responsibility = "Provide deterministic event, risk, and paper execution safety semantics."
 runtime_status = "active"
-authorities = [
-  { id = "risk.authorization", sensitive = true },
-  { id = "execution.paper", sensitive = true },
-]
 allowed_modes = ["paper_live", "replay"]
 event_contracts = [
   { id = "market-event", version = "1.0", role = "produces" },
@@ -427,7 +423,7 @@ forbidden_imports = [
 [[components]]
 id = "orchestration-runtime"
 owner = "software-engineering/orchestration"
-primary_responsibility = "Coordinate existing agents, inference, and runtime workers."
+primary_responsibility = "Provide the shared canonical worker transport and contract substrate."
 runtime_status = "active"
 depends_on = ["deterministic-paper-core", "local-ai-runtime"]
 entrypoints = [
@@ -435,14 +431,10 @@ entrypoints = [
 ]
 authorities = [
   { id = "orchestration.worker-lifecycle", sensitive = true },
-  { id = "inference.local-client", sensitive = false },
 ]
 allowed_modes = ["paper_live", "replay"]
 allowed_egress = [
   "nats://127.0.0.1:4222",
-  "postgresql://127.0.0.1:5432",
-  "http://127.0.0.1:11434",
-  "http://host.docker.internal:11434",
 ]
 allowed_models = [
   "qwen3:8b",
@@ -461,13 +453,16 @@ event_contracts = [
 ]
 license = { expression = "NOASSERTION", source = "none-declared" }
 owned_paths = [
-  "workers/**/*.py",
+  "workers/__init__.py",
+  "workers/config.py",
+  "workers/contracts.py",
+  "workers/nats_runtime.py",
   "packages/replay/**/*.py",
   "scripts/replay_market.py",
   "tests/contract/test_venue_kline_adapters.py",
   "tests/contract/test_worker_contracts.py",
   "tests/replay/**/*.py",
-  "tests/unit/test_async_execution_service.py",
+  "tests/unit/test_nats_runtime.py",
   "tests/unit/test_worker_config.py",
   "tests/integration/test_decision_vertical_slice.py",
   "tests/integration/test_replay_cli.py",
@@ -476,7 +471,7 @@ tests = [
   "tests/contract/test_venue_kline_adapters.py",
   "tests/contract/test_worker_contracts.py",
   "tests/replay/**/*.py",
-  "tests/unit/test_async_execution_service.py",
+  "tests/unit/test_nats_runtime.py",
   "tests/unit/test_worker_config.py",
   "tests/integration/test_decision_vertical_slice.py",
   "tests/integration/test_replay_cli.py",
@@ -488,13 +483,163 @@ architecture = [
   "wiki/content/concepts/local-trading-ai-architecture.md",
 ]
 embedding_inputs = [
-  "workers/**/*.py",
+  "workers/__init__.py",
+  "workers/config.py",
+  "workers/contracts.py",
+  "workers/nats_runtime.py",
   "packages/replay/**/*.py",
   "scripts/replay_market.py",
 ]
 forbidden_imports = [
   "anthropic",
   "google",
+  "openai",
+  "qdrant_client",
+  "sentence_transformers",
+]
+
+[[components]]
+id = "market-ingestion-runtime"
+owner = "software-engineering/market-data"
+primary_responsibility = "Validate raw market events and publish canonical quality verdicts."
+runtime_status = "active"
+depends_on = ["orchestration-runtime"]
+entrypoints = [
+  { path = "workers/market_data/__main__.py", kind = "worker", default = true },
+]
+authorities = [
+  { id = "market.quality-gate", sensitive = false },
+]
+allowed_modes = ["paper_live", "replay"]
+allowed_egress = [
+  "nats://127.0.0.1:4222",
+]
+event_contracts = [
+  { id = "market-raw", version = "1.0", role = "consumes" },
+  { id = "market-validated", version = "1.0", role = "produces" },
+  { id = "market-rejected", version = "1.0", role = "produces" },
+]
+license = { expression = "NOASSERTION", source = "none-declared" }
+owned_paths = [
+  "workers/market_data/**/*.py",
+  "tests/unit/test_market_data_runtime.py",
+]
+tests = [
+  "tests/unit/test_market_data_runtime.py",
+]
+documentation = [
+  "wiki/content/concepts/nats-event-system.md",
+]
+architecture = [
+  "wiki/content/decisions/canonical-local-paper-runtime-v1.md",
+  "wiki/content/decisions/deterministic-paper-core-v1.md",
+]
+embedding_inputs = [
+  "workers/market_data/**/*.py",
+]
+forbidden_imports = [
+  "anthropic",
+  "google",
+  "ollama",
+  "openai",
+  "qdrant_client",
+  "sentence_transformers",
+]
+
+[[components]]
+id = "risk-decision-runtime"
+owner = "software-engineering/risk"
+primary_responsibility = "Issue durable risk verdicts using deterministic hard rules only."
+runtime_status = "active"
+depends_on = ["orchestration-runtime", "database-migrations"]
+entrypoints = [
+  { path = "workers/decision/__main__.py", kind = "worker", default = true },
+]
+authorities = [
+  { id = "risk.authorization", sensitive = true },
+]
+allowed_modes = ["paper_live", "replay"]
+allowed_egress = [
+  "nats://127.0.0.1:4222",
+  "postgresql://127.0.0.1:5432",
+]
+event_contracts = [
+  { id = "candidate-for-risk", version = "1.0", role = "consumes" },
+  { id = "risk-decision", version = "1.0", role = "produces" },
+]
+license = { expression = "NOASSERTION", source = "none-declared" }
+owned_paths = [
+  "workers/decision/**/*.py",
+  "tests/unit/test_async_decision_service.py",
+]
+tests = [
+  "tests/unit/test_async_decision_service.py",
+]
+documentation = [
+  "wiki/content/concepts/local-trading-ai-architecture.md",
+]
+architecture = [
+  "wiki/content/decisions/canonical-local-paper-runtime-v1.md",
+  "wiki/content/decisions/deterministic-paper-core-v1.md",
+]
+embedding_inputs = [
+  "workers/decision/**/*.py",
+]
+forbidden_imports = [
+  "anthropic",
+  "google",
+  "ollama",
+  "openai",
+  "qdrant_client",
+  "sentence_transformers",
+]
+
+[[components]]
+id = "paper-execution-runtime"
+owner = "software-engineering/execution"
+primary_responsibility = "Execute exact persisted approvals through the deterministic paper broker."
+runtime_status = "active"
+depends_on = ["orchestration-runtime", "database-migrations"]
+entrypoints = [
+  { path = "workers/execution/__main__.py", kind = "worker", default = true },
+]
+authorities = [
+  { id = "execution.paper", sensitive = true },
+]
+allowed_modes = ["paper_live", "replay"]
+allowed_egress = [
+  "nats://127.0.0.1:4222",
+  "postgresql://127.0.0.1:5432",
+]
+event_contracts = [
+  { id = "risk-decision", version = "1.0", role = "consumes" },
+  { id = "order-intent", version = "1.0", role = "produces" },
+  { id = "order-update", version = "1.0", role = "produces" },
+]
+license = { expression = "NOASSERTION", source = "none-declared" }
+owned_paths = [
+  "workers/execution/**/*.py",
+  "tests/unit/test_async_execution_service.py",
+  "tests/unit/test_execution_runtime.py",
+]
+tests = [
+  "tests/unit/test_async_execution_service.py",
+  "tests/unit/test_execution_runtime.py",
+]
+documentation = [
+  "wiki/content/concepts/broker-abstraction-layer.md",
+]
+architecture = [
+  "wiki/content/decisions/canonical-local-paper-runtime-v1.md",
+  "wiki/content/decisions/deterministic-paper-core-v1.md",
+]
+embedding_inputs = [
+  "workers/execution/**/*.py",
+]
+forbidden_imports = [
+  "anthropic",
+  "google",
+  "ollama",
   "openai",
   "qdrant_client",
   "sentence_transformers",
@@ -831,8 +976,11 @@ owned_paths = [
   "realtime/Dockerfile",
   "frontend/Dockerfile",
   "install.ps1",
+  "tests/contract/test_default_compose_boundary.py",
 ]
-tests = []
+tests = [
+  "tests/contract/test_default_compose_boundary.py",
+]
 documentation = [
   "wiki/content/playbooks/local-ai-deployment-guide.md",
 ]

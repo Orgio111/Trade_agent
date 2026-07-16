@@ -1,167 +1,104 @@
 ---
-title: "NATS JetStream Event System"
+title: NATS JetStream Event System
 type: concept
-tags: [nats, event-system, jetstream, pub-sub, messaging, real-time]
+tags: [nats, event-system, jetstream, durability, idempotency, local-first]
 created: 2026-06-30
-updated: 2026-07-14
-status: draft
+updated: 2026-07-16
+sources:
+  - "[[canonical-local-paper-runtime-v1]]"
+  - "[[deterministic-paper-core-v1]]"
+status: stable
 ---
 
 # NATS JetStream Event System
 
 ## Definition
 
-The standardized event backbone of the Trade_agent system. All brain signals, market data, portfolio updates, and system events flow through NATS JetStream as typed, versioned messages. Every component publishes and subscribes via subject-based routing — no direct HTTP calls between services.
+The canonical runtime uses one local, file-backed JetStream named `QUANTEX_CORE`. It transports exact v1 byte envelopes between independently owned workers. NATS owns delivery and bounded redelivery; domain parsing, risk authorization, PostgreSQL transactions, and paper execution remain outside the bus.
 
-## Intuition
+## Canonical subjects
 
-NATS JetStream is the nervous system. When a brain computes a score, it publishes a `TradeSignalEvent` to `signals.raw.timesfm.BTCUSDT`. The Go aggregator subscribes to `signals.raw.>`, aggregates, and publishes `AggregatedSignalEvent` to `signals.aggregated`. The frontend WebSocket handler subscribes and pushes to the browser. Zero polling. Zero HTTP between services.
+| Subject | Producer | Consumer | Meaning |
+|---|---|---|---|
+| `market.raw.v1` | External/local raw producer | `market-data-worker` | Untrusted canonical `MarketEvent` input |
+| `market.validated.v1` | `market-data-worker` | Future candidate producer | Contract- and quality-approved market event |
+| `market.rejected.v1` | `market-data-worker` | Observability/replay tooling | Payload-free rejection identity and reason codes |
+| `signals.candidate.v1` | Future candidate producer | `decision-worker` | Ollama-provenance-bound, non-authoritative candidate |
+| `risk.approved.v1` | `decision-worker` | `execution-worker` | Persisted deterministic approval |
+| `risk.rejected.v1` | `decision-worker` | Observability/replay tooling | Persisted deterministic rejection |
+| `orders.intent.v1` | `execution-worker` | Observability/projectors | Persisted deterministic paper intent envelope |
+| `orders.updated.v1` | `execution-worker` | Observability/projectors | Paper order/fill result envelope |
 
-## Event Categories & NATS Subjects
+The stream owns the exact eight subjects. Startup fails if an existing stream's name, subjects, retention, storage, message size, duplicate window, or resource bounds drift.
 
-| Category | Subject Pattern | Events | Stream |
-|----------|----------------|--------|--------|
-| `signals` | `signals.raw.<source>.<symbol>` | TradeSignal, AggregatedSignal, ExecutedSignal | file, 7d |
-| `market` | `market.<type>.<symbol>` | MarketCandle, Orderbook, Ticker, Trade | file, 3d |
-| `portfolio` | `portfolio.<type>` | PnL, Balance, Position, Order, Risk | file, 30d |
-| `rl` | `rl.<type>.<agent>` | Reward, Weight, Training, Evaluation | file, 14d |
-| `ws` | `ws.<type>` | Update, Signal, Portfolio | memory |
-| `system` | `system.<type>` | Health, Error, Warning, Info, Risk check/approve/reject | memory, 7d |
-| `agent` | `agent.<type>.<symbol>` | ChartSnapshot, VLMAnalysis, RAGQuery, RAGResult | memory, 3d |
+## Stream bounds
 
-## Event Types
+| Setting | Value |
+|---|---:|
+| Storage | file |
+| Retention | limits |
+| Maximum age | 7 days |
+| Maximum bytes | 512 MiB |
+| Maximum message | 1 MiB |
+| Maximum consumers | 32 |
+| Replicas | 1 |
+| Server duplicate window | 120 seconds |
 
-| Class | Fields | Usage |
-|-------|--------|-------|
-| `TradeSignalEvent` | symbol, signal, confidence, price, entry/stop/tp | Brain → NATS (signals.raw) |
-| `AggregatedSignalEvent` | symbol, consensus, weights, brain_signals, regime | Go orchestrator → NATS (signals.aggregated) |
-| `ExecutedSignalEvent` | symbol, order_id, filled_qty, avg_price, status | Execution → NATS (signals.executed) |
-| `MarketDataEvent` | symbol, event_type, data (kline/ticker) | Market feed → NATS |
-| `OrderbookEvent` | bids, asks, imbalance, spread, mid_price | L2 → NATS → Frontend |
-| `PortfolioEvent` | balance, equity, total_pnl, drawdown | Portfolio → NATS → Frontend |
-| `RLEvent` | agent_id, reward, weights, metrics | RL engine → NATS |
-| `WSEvent` | event_type, payload (flexible data) | NATS → WebSocket → Frontend |
-| `SystemEvent` | level, message, component | Any component → NATS |
-| `ChartSnapshotEvent` | symbol, image_url, timeframe, indicators | VLM input → agent.vlm.chart_snapshot |
-| `VLMAnalysisEvent` | symbol, trend, pattern, support, resistance, confidence | VLM output → agent.vlm.analysis |
-| `RAGQueryEvent` | symbol, query, top_k, filters | RAG input → agent.rag.query |
-| `RAGResultEvent` | symbol, documents, query_time_ms | RAG output → agent.rag.result |
-| `RiskCheckEvent` | symbol, signal, confidence, drawdown, volatility | Risk input → system.risk.check |
-| `RiskApprovedEvent` | symbol, signal, approved_size, max_leverage | Risk pass → system.risk.approved |
-| `RiskRejectedEvent` | symbol, signal, reason, severity, cooldown | Risk block → system.risk.rejected |
+This is a single-node local runtime. It favors bounded laptop operation and deterministic restart behavior over high availability.
 
-## Base Event Fields (ACP v2)
+## Delivery contract
 
-All events inherit from `QuantexEvent` with these base fields:
+Canonical consumers use:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | str | UUID (8 chars) |
-| `timestamp` | float | Unix timestamp |
-| `source` | str | Component name |
-| `category` | str | Event category |
-| `subject` | str | Full NATS subject |
-| `priority` | str | `low`, `medium`, `high`, `critical` |
-| `trace_id` | str | Session/correlation ID for end-to-end tracing |
-| `context` | dict | Shared state (session_state, market_regime, last_signal) |
-| `metadata` | dict | Arbitrary key-value metadata |
+- durable names with an exact filter subject;
+- `DeliverPolicy.ALL` and explicit manual ACK;
+- bounded ACK wait, pending count, payload size, and delivery attempts;
+- exponential NAK delay for retryable handler failures;
+- terminal settlement after the configured delivery limit;
+- sanitized failure metadata that never copies message payloads.
 
-## Data Flow
+ACK occurs only after the handler completes, including its downstream durable publication. Producer publications require a deterministic `Nats-Msg-Id`; duplicate server acknowledgements are observable.
 
-```
-12 Brains (Layer A)          Go Aggregator (Layer B)      Frontend (Layer C)
-┌──────────────┐             ┌──────────────┐             ┌──────────────┐
-│ brain.compute│             │ subscribe     │             │ WebSocket    │
-│ → publish    │──signals.raw──▶│ → aggregate  │──signals.aggregated──▶│ → React UI │
-│   signal     │             │ → publish     │             │              │
-└──────────────┘             └──────────────┘             └──────────────┘
-       │                            │
-       ▼                            ▼
-  NATS JetStream              NATS JetStream
-  (4222)                      (4222)
-```
+## What this does not guarantee
 
-## NATS Stream Configuration
+JetStream remains at-least-once transport. The current worker callback flow does not atomically combine:
 
-```python
-NATS_STREAMS = {
-    "signals": {
-        "subjects": ["signals.raw.>", "signals.aggregated", "signals.executed"],
-        "storage": "file", "max_age_days": 7, "max_size_gb": 10,
-    },
-    "market": {"subjects": ["market.>"], "storage": "file", ...},
-    "portfolio": {"subjects": ["portfolio.>"], "storage": "file", ...},
-    "rl": {"subjects": ["rl.>"], "storage": "file", ...},
-    "ws": {"subjects": ["ws.>"], "storage": "memory", ...},
-    "system": {"subjects": ["system.>"], "storage": "memory", ...},
-    "agent": {"subjects": ["agent.>"], "storage": "memory", "max_age_days": 3},
-}
-```
+1. inbox admission;
+2. PostgreSQL domain mutation;
+3. outbox publication;
+4. input ACK.
 
-## Quick Usage
+Migration `003_runtime_durability.sql` creates `event_inbox`, `event_outbox`, and `consumer_offsets`, but no worker wires them yet. A crash between a domain commit and output publication/ACK can therefore replay work. Deterministic event IDs, unique database bindings, exact decision lookup, intent IDs, and `Nats-Msg-Id` reduce duplicate effects, but they are not an end-to-end exactly-once claim.
 
-```python
-from orchestrator.events import (
-    TradeSignalEvent, OrderbookEvent, PortfolioEvent,
-    quantex_event, raw_signal_subject
-)
+Terminal failures are currently `term`-settled after notification. There is no durable dead-letter subject/table publisher or operator replay command yet.
 
-# Create and publish a signal event
-event = TradeSignalEvent(
-    source="custom_nn",
-    symbol="BTCUSDT",
-    signal="long",
-    confidence=0.85,
-    price=50000.0,
-)
-await nc.publish(event.subject, event.to_json().encode())
+## Envelope integrity
 
-# Deserialize from any source
-data = json.loads(msg.data)
-event = quantex_event(data)
-```
+- Market events carry deterministic provenance-bound IDs and payload checksums.
+- Candidate events bind the exact market event, candidate content, Ollama role/model/digest, trace, and timestamp.
+- Risk events bind one candidate event and market event to one immutable verdict.
+- Order-intent events bind the exact persisted approval and deterministic intent.
+- Order-update events bind the risk event, intent event, order, and every fill.
 
-## Deserialization Factory
+Tampered or cross-mode envelopes fail validation and do not grant authority. See [[deterministic-paper-core-v1]].
 
-`quantex_event(data: dict)` — automatically creates the correct typed event from a dict by inspecting `category` and `event_type` fields. Handles all 9 event types.
+## Legacy event quarantine
 
-## How we use it
+The historical `orchestrator/events.py`, hierarchical `signals.raw.*`, Go aggregation subjects, ACP v2 events, WebSocket subjects, and Rust consumers remain pre-canonical. They do not share the canonical v1 worker contracts and are started only through legacy-profile services. They may be migrated only through a language-neutral schema, golden fixtures, replay compatibility, and manifest ownership.
 
-- Source file: `orchestrator/events.py` — all 9 event types in one file
-- Go aggregator: `realtime/nats_orchestrator.go` — subscribes, aggregates, publishes
-- Frontend: `frontend/src/app/page.tsx` — WebSocket handler routes NATS events to React state
-- Dashboard routing: see [[real-time-trading-dashboard]] for NATS subject → panel mapping
+## Strengths and limitations
 
-## Strengths & weaknesses
-
-**Strengths:**
-- Subject-based routing — decoupled publishers/subscribers
-- JetStream persistence — messages survive restarts (file storage)
-- Exactly-once delivery possible with deduplication
-- Sub-millisecond latency for local NATS
-
-**Weaknesses:**
-- No built-in schema evolution (manual versioning)
-- Stream retention limits (7d signals, 3d market data)
-- Single NATS node = single point of failure (no clustering configured)
+| Strength | Limitation |
+|---|---|
+| Exact subject authority and startup drift detection | Single NATS node; no high availability |
+| Explicit ACK and bounded redelivery | Transactional inbox/outbox not wired |
+| Deterministic producer deduplication IDs | Server dedupe window is finite |
+| Domain authority stays outside transport | No durable DLQ/replay workflow |
 
 ## Related
 
-- [[trade-project-full-integration-build-plan]] — canonical-contract, idempotency, and replay migration
-- [[real-time-trading-dashboard]] — WebSocket routing of NATS events to UI
-- [[brain-ecosystem]] — the 12 brains that produce signal events
-- [[multi-agent-pipeline]] — LangGraph pipeline that publishes ACP v2 events
-- [[nats-langgraph-bridge]] — bridge that subscribes candle events and triggers pipeline
-- [[vlm-agent]] — VLM chart analysis agent (publishes to agent.vlm.*)
-- [[rag-agent]] — RAG pattern retrieval agent (publishes to agent.rag.*)
-- [[odoo-erp-trading-integration]] — Odoo ERP events flow through this system
-- [[signal-aggregation-logic]] — how aggregated signals are computed
-
-## Contradictions / updates
-
-**2026-07-14 repository audit:** Python, Go, and Rust do not yet share one compatible wire schema. Subject use also mixes exact signals.raw with hierarchical signals.raw.source.symbol forms. JetStream provides at-least-once delivery; “exactly once” requires producer deduplication, consumer idempotency, and durable side-effect handling that are not yet verified. Treat this page as target vocabulary until the golden contract and replay tests in [[trade-project-full-integration-build-plan]] pass.
-
-## Sources
-
-- Internal code: `orchestrator/events.py`
-- Internal design: AGENTS.md §EVENT SYSTEM
+- [[canonical-local-paper-runtime-v1]]
+- [[deterministic-paper-core-v1]]
+- [[infrastructure-overview]]
+- [[multi-agent-pipeline]]
+- [[trade-project-full-integration-build-plan]]

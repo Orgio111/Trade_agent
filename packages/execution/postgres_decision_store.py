@@ -41,6 +41,17 @@ class PostgresDecisionStore:
         FROM risk_decisions
         WHERE id = $1
     """
+    _BY_SIGNAL = """
+        SELECT
+            rd.decision_payload,
+            rd.state_snapshot,
+            s.market_event_id,
+            s.candidate_event_id
+        FROM risk_decisions AS rd
+        JOIN signals AS s ON s.id = rd.signal_id
+        WHERE rd.signal_id = $1
+        LIMIT 2
+    """
     _BY_BINDING = """
         SELECT id
         FROM risk_decisions
@@ -52,17 +63,20 @@ class PostgresDecisionStore:
         INSERT INTO signals (
             id, trace_id, strategy_version_id, instrument_id, side,
             source_mode, reference_price, stop_price, take_profit_price,
-            confidence, feature_snapshot_id, market_event_id, payload, created_at
+            confidence, feature_snapshot_id, market_event_id,
+            candidate_event_id, payload, created_at
         )
         VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-            $13::jsonb, $14
+            $13, $14::jsonb, $15
         )
         ON CONFLICT (id) DO NOTHING
-        RETURNING payload, market_event_id, strategy_version_id, feature_snapshot_id
+        RETURNING payload, market_event_id, candidate_event_id,
+                  strategy_version_id, feature_snapshot_id
     """
     _SIGNAL_BY_ID = """
-        SELECT payload, market_event_id, strategy_version_id, feature_snapshot_id
+        SELECT payload, market_event_id, candidate_event_id,
+               strategy_version_id, feature_snapshot_id
         FROM signals
         WHERE id = $1
     """
@@ -101,6 +115,7 @@ class PostgresDecisionStore:
         *,
         portfolio_state: PortfolioState,
         market_event_id: str,
+        candidate_event_id: str,
         strategy_version_id: UUID | None = None,
         feature_snapshot_id: str | None = None,
     ) -> RiskDecision:
@@ -108,6 +123,8 @@ class PostgresDecisionStore:
 
         if not market_event_id.strip():
             raise DecisionAuthorizationError("market_event_id cannot be blank")
+        if not candidate_event_id.strip():
+            raise DecisionAuthorizationError("candidate_event_id cannot be blank")
         if candidate.signal_id != decision.signal_id:
             raise DecisionAuthorizationError(
                 "risk decision signal_id does not match candidate"
@@ -152,6 +169,7 @@ class PostgresDecisionStore:
                         candidate.confidence,
                         feature_snapshot_id,
                         market_event_id,
+                        candidate_event_id,
                         payload,
                         decision.evaluated_at,
                     )
@@ -173,6 +191,10 @@ class PostgresDecisionStore:
                     if str(row["market_event_id"]) != market_event_id:
                         raise DecisionAuthorizationError(
                             "signal_id is bound to a different market event"
+                        )
+                    if str(row["candidate_event_id"]) != candidate_event_id:
+                        raise DecisionAuthorizationError(
+                            "signal_id is bound to a different candidate event"
                         )
                     if row["strategy_version_id"] != strategy_version_id:
                         raise DecisionAuthorizationError(
@@ -308,6 +330,63 @@ class PostgresDecisionStore:
         except Exception as exc:
             raise DecisionStoreUnavailable(
                 "durable risk-decision lookup failed closed"
+            ) from exc
+
+    async def get_for_signal(
+        self,
+        signal_id: str,
+        *,
+        candidate_hash: str,
+        market_event_id: str,
+        candidate_event_id: str,
+    ) -> RiskDecision | None:
+        """Return the single immutable verdict already issued for a signal.
+
+        JetStream may redeliver an event after policy or portfolio state has
+        advanced. Reusing the first persisted verdict prevents a retry from
+        silently authorizing the same candidate against different inputs.
+        """
+
+        resolved_signal_id = signal_id.strip()
+        if not resolved_signal_id:
+            raise DecisionAuthorizationError("signal_id cannot be blank")
+        if len(candidate_hash) != 64:
+            raise DecisionAuthorizationError("candidate_hash must be a SHA-256 digest")
+        if not market_event_id.strip() or not candidate_event_id.strip():
+            raise DecisionAuthorizationError(
+                "market_event_id and candidate_event_id cannot be blank"
+            )
+        try:
+            async with self._pool.acquire() as connection:
+                rows = await connection.fetch(
+                    self._BY_SIGNAL,
+                    resolved_signal_id,
+                )
+            if len(rows) > 1:
+                raise DecisionAuthorizationError(
+                    "more than one risk decision exists for the signal"
+                )
+            if not rows:
+                return None
+            issued = self._decision_from_row(rows[0])
+            if issued.candidate_hash != candidate_hash:
+                raise DecisionAuthorizationError(
+                    "persisted signal verdict belongs to different candidate content"
+                )
+            if str(rows[0]["market_event_id"]) != market_event_id:
+                raise DecisionAuthorizationError(
+                    "persisted signal verdict belongs to a different market event"
+                )
+            if str(rows[0]["candidate_event_id"]) != candidate_event_id:
+                raise DecisionAuthorizationError(
+                    "persisted signal verdict belongs to a different candidate event"
+                )
+            return issued
+        except DecisionAuthorizationError:
+            raise
+        except Exception as exc:
+            raise DecisionStoreUnavailable(
+                "durable risk-decision signal lookup failed closed"
             ) from exc
 
     async def count(self) -> int:

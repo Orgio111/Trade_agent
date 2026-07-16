@@ -11,6 +11,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, localcontext
 import hashlib
+from typing import Literal
 
 from packages.domain.events import MarketEvent
 from packages.risk import CandidateSignal, InstrumentConstraints
@@ -78,7 +79,7 @@ class BaselineSmaStrategy:
             self._last_side.pop(event.instrument_id, None)
             return None
 
-        side = "buy" if fast > slow else "sell"
+        side: Literal["buy", "sell"] = "buy" if fast > slow else "sell"
         if self._last_side.get(event.instrument_id) == side:
             return None
         self._last_side[event.instrument_id] = side

@@ -59,9 +59,7 @@ class DefaultReadinessProbe:
         operation: Callable[[], Awaitable[tuple[DependencyStatus, bool]]],
     ) -> tuple[DependencyStatus, bool]:
         try:
-            return await asyncio.wait_for(
-                operation(), timeout=self._timeout_seconds
-            )
+            return await asyncio.wait_for(operation(), timeout=self._timeout_seconds)
         except TimeoutError:
             return DependencyStatus(healthy=False, detail="probe timed out"), False
         except Exception as exc:
@@ -81,23 +79,58 @@ class DefaultReadinessProbe:
             migration_count = await connection.fetchval(
                 "SELECT COUNT(*) FROM schema_migrations"
             )
-            kill_switch_active = await connection.fetchval(
+            authority = await connection.fetchrow(
                 """
-                SELECT active
-                FROM kill_switch_state
-                WHERE account_id = $1
+                SELECT
+                    (
+                        SELECT COUNT(*)
+                        FROM risk_policies
+                        WHERE active = TRUE
+                    ) AS active_policy_count,
+                    EXISTS (
+                        SELECT 1
+                        FROM portfolio_snapshots
+                        WHERE account_id = $1
+                    ) AS portfolio_initialized,
+                    EXISTS (
+                        SELECT 1
+                        FROM instrument_constraints
+                    ) AS constraints_initialized,
+                    (
+                        SELECT active
+                        FROM kill_switch_state
+                        WHERE account_id = $1
+                    ) AS kill_switch_active
                 """,
                 self._settings.account_id,
             )
         finally:
             await connection.close()
-        if kill_switch_active is None:
-            detail = f"migrations={migration_count}; kill switch is uninitialized"
-            return DependencyStatus(healthy=True, detail=detail), False
-        detail = f"migrations={migration_count}; kill_switch_active={bool(kill_switch_active)}"
-        return DependencyStatus(healthy=True, detail=detail), not bool(
-            kill_switch_active
+        if authority is None:
+            return (
+                DependencyStatus(
+                    healthy=True,
+                    detail=f"migrations={migration_count}; authority is uninitialized",
+                ),
+                False,
+            )
+        active_policy_count = int(authority["active_policy_count"])
+        portfolio_initialized = bool(authority["portfolio_initialized"])
+        constraints_initialized = bool(authority["constraints_initialized"])
+        kill_switch_active = authority["kill_switch_active"]
+        execution_enabled = (
+            active_policy_count == 1
+            and portfolio_initialized
+            and constraints_initialized
+            and kill_switch_active is False
         )
+        detail = (
+            f"migrations={migration_count}; active_policies={active_policy_count}; "
+            f"portfolio_initialized={portfolio_initialized}; "
+            f"constraints_initialized={constraints_initialized}; "
+            f"kill_switch_active={kill_switch_active}"
+        )
+        return DependencyStatus(healthy=True, detail=detail), execution_enabled
 
     async def _check_nats(self) -> tuple[DependencyStatus, bool]:
         client = await nats.connect(
@@ -109,7 +142,9 @@ class DefaultReadinessProbe:
             await client.flush(timeout=max(1, math.ceil(self._timeout_seconds)))
         finally:
             await client.close()
-        return DependencyStatus(healthy=True, detail="JetStream transport reachable"), True
+        return DependencyStatus(
+            healthy=True, detail="JetStream transport reachable"
+        ), True
 
     async def _check_ollama(self) -> tuple[DependencyStatus, bool]:
         async with LocalOllamaHealthClient(

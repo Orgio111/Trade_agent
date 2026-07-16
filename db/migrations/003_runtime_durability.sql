@@ -47,6 +47,10 @@ CREATE TABLE IF NOT EXISTS consumer_offsets (
     PRIMARY KEY (stream_name, durable_name)
 );
 
+-- Bind the model-produced candidate envelope to the immutable signal row.
+ALTER TABLE signals
+    ADD COLUMN IF NOT EXISTS candidate_event_id VARCHAR(64);
+
 -- Immutable portfolio state consumed by deterministic risk evaluation.
 CREATE TABLE IF NOT EXISTS portfolio_snapshots (
     account_id          VARCHAR(64) NOT NULL,
@@ -187,6 +191,13 @@ CREATE INDEX IF NOT EXISTS idx_event_outbox_pending
     WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_latest
     ON portfolio_snapshots (account_id, source_sequence DESC);
+-- One immutable candidate signal receives exactly one deterministic verdict.
+-- JetStream redelivery must reuse that verdict even after risk inputs advance.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_risk_decision_signal_once
+    ON risk_decisions (signal_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_signal_candidate_event
+    ON signals (candidate_event_id)
+    WHERE candidate_event_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_constraints_effective
     ON instrument_constraints (
         venue, market_type, instrument_id, effective_at DESC

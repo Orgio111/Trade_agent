@@ -102,7 +102,10 @@ jobs:
 
       - name: Run tests
         run: |
-          uv run --frozen pytest tests/ -v --timeout=60
+          # Keep quarantined legacy imports in a separate process so native ML
+          # teardown cannot accumulate state in the canonical runtime suite.
+          uv run --frozen pytest tests/contract tests/integration tests/replay tests/unit -q --timeout=60
+          uv run --frozen pytest tests/test_*.py -q --timeout=60
 
   # ── Build Docker Images ───────────────────────────────
   docker:
@@ -121,6 +124,14 @@ jobs:
           context: .
           file: ./orchestrator/Dockerfile
           tags: quantex/orchestrator:latest
+          load: true
+
+      - name: Build canonical local workers
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./infra/workers/Dockerfile
+          tags: quantex/canonical-workers:latest
           load: true
 
       - name: Build frontend

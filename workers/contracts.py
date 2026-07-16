@@ -125,10 +125,14 @@ class RiskDecisionEvent(_StrictEnvelope):
 
     @model_validator(mode="after")
     def bind_identity(self) -> RiskDecisionEvent:
-        if self.trace_id not in {
-            self.candidate.trace_id,
-            self.decision.trace_id,
-        } or self.candidate.trace_id != self.decision.trace_id:
+        if (
+            self.trace_id
+            not in {
+                self.candidate.trace_id,
+                self.decision.trace_id,
+            }
+            or self.candidate.trace_id != self.decision.trace_id
+        ):
             raise ValueError("event trace_id does not match decision and candidate")
         if self.model_role not in {
             LocalModelRole.REASONING,
@@ -301,7 +305,9 @@ class OrderUpdatedEvent(_StrictEnvelope):
             raise ValueError("order update event admits only replay or paper_live")
         if self.result.order.intent_id != self.result.intent.intent_id:
             raise ValueError("order result is not bound to its intent")
-        if any(fill.intent_id != self.result.intent.intent_id for fill in self.result.fills):
+        if any(
+            fill.intent_id != self.result.intent.intent_id for fill in self.result.fills
+        ):
             raise ValueError("fill result is not bound to its intent")
         checksum = compute_payload_checksum(self.content_payload())
         if self.content_sha256 and self.content_sha256 != checksum:

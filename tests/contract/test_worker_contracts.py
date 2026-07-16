@@ -108,6 +108,20 @@ def test_candidate_event_rejects_identity_and_checksum_tampering() -> None:
         CandidateForRiskEvent.model_validate(payload)
 
 
+def test_candidate_event_rejects_unapproved_model_role_mapping() -> None:
+    with pytest.raises(ValidationError, match="approved local role"):
+        CandidateForRiskEvent(
+            trace_id="trace-runtime-1",
+            market_event_id="b7a7ee48-90f6-40cc-890f-4d6bf8e2c6b0",
+            model_role=LocalModelRole.FAST,
+            model="mistral",
+            model_digest="a" * 64,
+            candidate=candidate(),
+            market=market(),
+            created_at=NOW,
+        )
+
+
 def test_risk_event_is_bound_to_exact_candidate_and_verdict() -> None:
     candidate_event = CandidateForRiskEvent(
         trace_id="trace-runtime-1",
@@ -151,4 +165,28 @@ def test_risk_event_rejects_candidate_substitution() -> None:
     )
 
     with pytest.raises(ValidationError, match="not bound"):
+        RiskDecisionEvent.model_validate(payload)
+
+
+def test_risk_event_cannot_relabel_embedding_model_as_trading_provenance() -> None:
+    candidate_event = CandidateForRiskEvent(
+        trace_id="trace-runtime-1",
+        market_event_id="b7a7ee48-90f6-40cc-890f-4d6bf8e2c6b0",
+        model_role=LocalModelRole.FAST,
+        model="phi3:3.8b",
+        model_digest="a" * 64,
+        candidate=candidate(),
+        market=market(),
+        created_at=NOW,
+    )
+    risk_event = RiskDecisionEvent.create(
+        candidate_event,
+        decision(candidate_event.candidate),
+        created_at=NOW,
+    )
+    payload = risk_event.model_dump(mode="python")
+    payload["model_role"] = LocalModelRole.EMBEDDING
+    payload["model"] = "nomic-embed-text"
+
+    with pytest.raises(ValidationError, match="reasoning or fast"):
         RiskDecisionEvent.model_validate(payload)

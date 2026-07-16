@@ -2,6 +2,22 @@
 
 > Append-only timeline of every operation on the wiki. Newest at top. Reverse chronological so the current state is the first thing you read.
 
+## [2026-07-16] verification | Canonical runtime and knowledge baseline
+
+Validated [[canonical-local-paper-runtime-v1]] Compose rendering with only the documented `POSTGRES_PASSWORD`; the profile-free graph contains exactly nine canonical services, while the quarantined Grafana path independently fails closed without its own secret. All 524 Python tests passed across isolated canonical and quarantined processes, and migrations 001-003 completed a fresh PostgreSQL apply followed by an idempotent no-op reapply in a disposable database. The offline [[local-knowledge-pipeline-operations]] benchmark planned 392 governed sources and 1,142 chunks in 23.861 seconds at 47.860 chunks/second with an 11.807 MB traced peak; the fake embed/store path processed 192 chunks at 514.361 chunks/second. ChromaDB 1.5.9 was healthy, but the local Ollama API timed out, so no new live embedding receipt was claimed. No trading logic, real order, cloud inference, `.env` file, or immutable raw source changed.
+
+## [2026-07-16] fix | Read-only knowledge verification
+
+Fixed a local knowledge verification boundary where `verify` reused the synchronization namespace initializer and could create a missing Chroma collection. Verification and query now require an existing namespace, validate its immutable model/schema metadata, and fail closed without creating or modifying the collection; only `sync` retains collection-initialization authority. Updated [[local-knowledge-pipeline-operations]] and added focused adapter and integration regression tests. No trading logic, live service, `.env` file, or immutable raw source changed.
+
+## [2026-07-16] note | Canonical worker image boundary
+
+Recorded the frozen minimal `workers` dependency group used by [[canonical-local-paper-runtime-v1]] and [[infrastructure-overview]]. The shared non-root image now installs only the canonical FastAPI, NATS, PostgreSQL, HTTP, and validation runtime surface; its final local build and import smoke test passed at 101,562,709 bytes. Legacy ML, forecasting, broker-research, and cloud dependencies remain outside the default image. No trading logic, live execution path, cloud inference, immutable raw source, or `.env` file changed.
+
+## [2026-07-16] note | Canonical local paper runtime v1
+
+Recorded [[canonical-local-paper-runtime-v1]] and synchronized [[infrastructure-overview]], [[deterministic-paper-core-v1]], [[nats-event-system]], [[local-trading-ai-architecture]], [[multi-agent-pipeline]], [[local-ai-deployment-guide]], and [[trade-project-full-integration-build-plan]]. The default Compose graph is now documented as a local paper/replay core with exact Ollama provenance, read-only control plane, deterministic PostgreSQL risk authority, paper-only execution, and explicit legacy-profile quarantine. Durable inbox/outbox/DLQ wiring, authoritative bootstrap inputs, position projections, startup reconciliation, and the missing candidate producer remain fail-closed gaps. No trading logic, live broker, cloud inference, or immutable raw source changed.
+
 ## [2026-07-16] ingest | Local agent references and Hermes integration v1
 
 Analyzed [[tradingagents]], [[journalit]], [[obsidian-ai]], and [[obsidian-memory-for-ai]] at pinned upstream revisions and recorded their exact license boundaries. Implemented [[hermes-local-integration-v1]] as a clean-room, local-only control plane: bounded Ollama workflows, append-only secret-scanned Obsidian events, persist-first projection into the isolated `trade-agent-runtime-memory-v1` Chroma collection, and loopback FastAPI operations in [[hermes-memory-operations]]. [[open-source-agent-integration-analysis]] contains the requested per-repository architecture, reusable patterns, integration mapping, and code-level contracts. No trading, strategy, signal, risk, broker, or execution logic changed. Validation completed with 412 repository tests, strict scoped Ruff/format/mypy gates, and a 250-event Windows journal benchmark at 21.786 ms create p95 and 6.640 ms idempotent-replay p95.

@@ -1,246 +1,89 @@
 ---
-title: "Multi-Agent Trading Pipeline"
+title: Multi-Agent Trading Pipeline
 type: concept
-tags: [pipeline, langgraph, multi-agent, orchestration, parallel, vlm, rag, swarm, risk, scalping, fast-path, dual-path]
+tags: [pipeline, langgraph, multi-agent, experimental, legacy, ollama]
 created: 2026-07-01
 updated: 2026-07-16
+sources:
+  - "[[canonical-local-paper-runtime-v1]]"
+  - "[[open-source-agent-integration-analysis]]"
 status: draft
 ---
 
 # Multi-Agent Trading Pipeline
 
-Production LangGraph state machine with **dual-path routing**: a CPU-only fast path (<5ms) for high-confidence scalping decisions, and a heavy GPU path (~500ms) for full multi-agent analysis.
+## Current classification
 
-## Definition
+The repository's LangGraph/VLM/RAG/swarm pipeline is an experimental pre-canonical design. It is not the default runtime, not a risk authority, and not an execution path. Its Compose services are quarantined behind the explicit `legacy` profile. [[canonical-local-paper-runtime-v1]] is the active paper/replay boundary.
 
-A deterministic, event-driven pipeline that replaces the previous disconnected systems with a single coordinated flow. The pipeline dynamically routes between two execution paths based on scalping confidence:
+## Historical design
 
-- **Fast Path** (<5ms): ScalpingEngine → risk gate → execution (skips VLM/RAG/swarm)
-- **Heavy Path** (~500ms): VLM → RAG → swarm debate → risk gate → execution
+The original graph intended to coordinate:
 
-Every agent is a specialist; the orchestrator is the hedge fund desk manager.
-
-## Intuition
-
-When a candle closes, the pipeline:
-1. **Validates** the candle data
-2. **Computes** technical indicators (RSI, MACD, ATR, regime)
-3. **Runs scalping engine** (CPU-only, <5ms) — checks momentum, rejection, trend alignment
-4. **Routes dynamically**:
-   - If scalping confidence > threshold (default 80%) → **fast path** (skip VLM/RAG/swarm)
-   - Otherwise → **heavy path** (full multi-agent analysis)
-5. **Checks** risk gates (drawdown, position size, volatility, leverage)
-6. **Executes** if approved (simulated in paper mode)
-7. **Logs** and publishes all results to NATS (including ScalpDecisionEvent for fast-path trades)
-
-## Dual-Path Architecture
-
-```
-                    ┌─────────────────────────────────────────────────────┐
-                    │              LangGraph State Machine v3             │
-                    │                                                     │
-                    │  candle_close ─→ data_ingest ─→ feature_engine      │
-                    │                                    │                │
-                    │                                    ▼                │
-                    │                              scalping_node          │
-                    │                              (CPU <5ms)            │
-                    │                                    │                │
-                    │                    ┌───────────────┴───────────┐    │
-                    │                    │ conf > threshold?         │    │
-                    │                    ▼ YES                       ▼ NO  │
-                    │              ┌──────────┐    ┌──→ vlm_agent ──┐    │
-                    │              │ risk_gate│    └──→ rag_agent ──┤    │
-                    │              │ (FAST)   │            ↓       │    │
-                    │              └────┬─────┘     swarm_strategy │    │
-                    │                   │              ↓           │    │
-                    │                   │         risk_gate (HEAVY)│    │
-                    │                   │              ↓           │    │
-                    │                   └──→ execution → log_and_publish │
-                    └─────────────────────────────────────────────────────┘
+```text
+candle ingest
+  -> feature extraction
+  -> CPU scalping branch or VLM/RAG/swarm branch
+  -> risk node
+  -> simulated execution node
+  -> logging/publication
 ```
 
-### Fast Path (Scalping)
-- **Trigger:** ScalpingEngine confidence > configurable threshold (default 80%)
-- **Latency:** <5ms (CPU-only, no I/O)
-- **Skips:** VLM analysis, RAG retrieval, swarm debate
-- **Use case:** High-confidence momentum breakouts, sharp rejections at S/R
-- **Events:** Publishes `ScalpDecisionEvent` to `signals.scalp.<symbol>`
+The design explored specialist-agent composition, conditional routing, trace propagation, and bounded fallback. Those are reusable orchestration patterns, but the historical implementation cannot be promoted as a trading hot path because it used synthetic risk state, simulated execution, inconsistent event contracts, and unverified latency claims.
 
-### Heavy Path (Full Analysis)
-- **Trigger:** Scalping confidence ≤ threshold, or HOLD signal
-- **Latency:** ~500ms (VLM + RAG + swarm)
-- **Includes:** VLM chart analysis, RAG pattern search, 7-agent swarm debate
-- **Use case:** Ambiguous signals, low-confidence setups, regime transitions
+## Reusable engineering patterns
 
-### Configurable Threshold
+Only the following patterns are candidates for clean integration:
 
-```bash
-# Environment variable (default: 80)
-export SCALPING_CONFIDENCE_THRESHOLD=70
+- typed immutable graph state;
+- explicit node input/output schemas;
+- bounded timeouts and deterministic fallbacks;
+- parallel advisory analysis where GPU capacity permits;
+- trace and provenance propagation;
+- human-reviewed promotion of model output into a candidate envelope;
+- replay fixtures for every graph transition.
 
-# Or per-pipeline override
-state = TradingState(scalping_confidence_threshold=60)
+These patterns may produce `CandidateForRiskEvent` only through a separately owned candidate-producer service. They must never emit approvals, order intents, or broker calls.
+
+## Canonical integration boundary
+
+```text
+optional local agent workflow
+  -> provider=ollama + exact model role/name/digest
+  -> CandidateForRiskEvent
+  -> signals.candidate.v1
+  -> deterministic decision-worker
+  -> risk.approved.v1 | risk.rejected.v1
 ```
 
-When threshold is lowered, more trades take the fast path (lower latency but less analysis). When raised, more trades go through the full heavy path (higher latency but more conviction).
+The canonical runtime currently supplies no candidate producer. Therefore the legacy LangGraph graph is not silently connected to `signals.candidate.v1`. Connecting it requires a new component owner, manifest authority, contract tests, model-locality tests, replay evidence, and an ADR.
 
-## Graph Topology
+## Hermes separation
 
-```
-data_ingest → feature_engine → scalping_node
-                                    │
-                            ┌───────┴───────┐
-                            │ conf > 80%?   │
-                            ▼ YES           ▼ NO
-                      risk_gate       vlm_agent → rag_agent → swarm → risk_gate
-                            │               │
-                            └───────┬───────┘
-                                    ▼
-                            execution → log_and_publish
-```
+[[hermes-local-integration-v1]] applies upstream agent patterns to software-engineering and research workflows only. Hermes can call the approved local Ollama registry and persist engineering knowledge to Obsidian/Chroma, but it cannot publish trading candidates, approve risk, access brokers, or execute orders. This prevents a generic agent framework from becoming an alternate trading authority.
 
-### Conditional Routing
+## Known gaps before reconsideration
 
-The scalping node uses LangGraph's `add_conditional_edges` for dynamic routing:
+- No canonical candidate-producer interface or service lifecycle.
+- No deterministic graph checkpoint/replay contract bound to the v1 event schemas.
+- No measured RTX 4050 concurrency, VRAM, or end-to-end latency budget.
+- No prompt/model-digest promotion registry for candidate-producing workflows.
+- No evidence that VLM/RAG/swarm output adds out-of-sample value over a model-free baseline.
+- Historical `orchestrator/` event, risk, and execution modules remain incompatible with the canonical worker authority boundary.
 
-```python
-graph.add_conditional_edges(
-    "scalping_node",
-    _route_after_scalping,  # Pure function: checks confidence vs threshold
-    {
-        "risk_gate": "risk_gate",    # Fast path
-        "vlm_agent": "vlm_agent",    # Heavy path
-    },
-)
-```
+## Revisit criteria
 
-The routing function is **pure** — it only reads state and returns the next node name. Strategy signal assignment happens in `scalping_node`, not in the router.
-
-## Node Details
-
-| Node | Function | Latency | Path | Blocking | Fallback |
-|------|----------|:-------:|:----:|:--------:|----------|
-| `data_ingest` | Validate candle OHLCV | <1ms | Both | Yes | Error → pipeline stops |
-| `feature_engine` | Compute RSI, MACD, ATR, regime | 5-20ms | Both | No | Minimal features |
-| `scalping_node` | CPU-only scalping decision | <5ms | Both | No | HOLD |
-| `vlm_agent` | Chart pattern recognition (GPU) | 1-3s | Heavy | No | trend="unknown" |
-| `rag_agent` | Vector search for similar patterns | 50-200ms | Heavy | No | Empty context |
-| `swarm_strategy` | 7-agent debate + voting | 5-30s | Heavy | Yes | Feature-based fallback |
-| `risk_gate` | 10-gate risk check | <1ms | Both | Yes | Reject all |
-| `execution` | Order placement | 50-500ms | Both | No | Skip |
-| `log_and_publish` | NATS event publishing | <1ms | Both | No | Log error |
-
-### Latency Comparison
-
-| Path | Total Latency | Use Case |
-|------|:-------------:|----------|
-| **Fast** (scalping) | **<10ms** | High-confidence momentum/rejection |
-| **Heavy** (full) | **~500ms** | Ambiguous, low-confidence, regime change |
-
-## Strategy Agent (Swarm Debate)
-
-The strategy node uses the existing `AgentSwarm` with 7 specialized agents:
-
-| Agent | Focus | Latency |
-|-------|-------|:-------:|
-| Scalping | 1-5m microstructure | Fast |
-| Swing | 4h-1d setups | Medium |
-| Sentiment | Fear & Greed index | Fast |
-| Regime | Market regime classification | Fast |
-| Anomaly | Volume spikes, manipulation | Fast |
-| DeepSeek | Deep reasoning analysis | Slow |
-| Market | Technical analysis | Medium |
-
-**Debate rounds:**
-1. Parallel independent analysis
-2. Cross-examination (agents challenge each other)
-3. Weighted vote aggregation with credibility scores
-4. Risk veto check (blocking)
-
-## Risk Gate
-
-10 cascading risk checks before execution:
-
-1. Kill switch (25% DD = halt)
-2. Daily loss limit (5%)
-3. Consecutive losses (4 = cooldown)
-4. Position count (max 3)
-5. Portfolio exposure (15% max)
-6. Leverage limit (10x)
-7. Volatility filter (95th percentile = kill)
-8. Correlation check (70% max)
-9. Time decay (inactivity penalty)
-10. Anti-overtrading (20 trades/hour)
-
-## Trace Propagation
-
-Every pipeline run generates a unique `trace_id` (UUID) that flows through:
-- Pipeline state → NATS events → Frontend WebSocket
-- Enables end-to-end debugging, replay, and audit
-
-## State Fields
-
-The `TradingState` carries scalping-specific fields for dual-path routing:
-
-| Field | Type | Default | Purpose |
-|-------|------|---------|---------|
-| `scalping_confidence` | int | 0 | 0-100, from ScalpingEngine |
-| `scalping_action` | str | "HOLD" | BUY, SELL, or HOLD |
-| `scalping_decision` | dict | {} | Full decision dict |
-| `use_scalping_fast_path` | bool | True | Enable/disable fast path |
-| `scalping_confidence_threshold` | int | 80 | Per-pipeline threshold override |
-
-## Pipeline Context
-
-The `log_and_publish_node` includes scalping metadata in `pipeline_context`:
-
-```json
-{
-  "scalping_threshold": 80,
-  "scalping_confidence": 92,
-  "scalping_action": "BUY",
-  "fast_path": true,
-  "strategy_source": "scalping_fast_path"
-}
-```
-
-This allows the NATS bridge to publish accurate `ScalpDecisionEvent` metadata.
-
-## How we use it
-
-- Source file: `orchestrator/langgraph_pipeline.py` (v3, dual-path)
-- Scalping engine: `orchestrator/scalping_engine.py` (CPU-only, <5ms)
-- Triggered by: `orchestrator/nats_langgraph_bridge.py` (NATS candle events)
-- Uses: `orchestrator/candle_buffer.py` (hot state), `orchestrator/vlm_agent.py`, `orchestrator/rag_agent.py`
-- Integrates: `orchestrator/swarm/debate_system.py` (existing swarm debate)
-- Risk: `orchestrator/risk/risk_engine.py` (existing 10-gate risk)
-- GPU: `orchestrator/gpu_optimizer.py` (RTX 4050 tuning)
-- Inference: `orchestrator/local_inference_server.py` (vLLM + FastAPI)
+Revisit this page only after the deterministic core has a bootstrapped risk state, transactional event processing, restart reconciliation, and a tested candidate-producer port. Any promoted graph must remain upstream of deterministic risk and function with execution disabled.
 
 ## Related
 
-- [[trade-project-full-integration-build-plan]] — audited runtime gaps and replacement build sequence
-- [[hermes-local-integration-v1]] — non-authoritative bounded local-agent workflow and memory control plane; it does not replace this trading graph
-- [[open-source-agent-integration-analysis]] — upstream pattern and license analysis behind the Hermes boundary
-- [[scalping-engine]] — CPU-only fast-path decision engine
-- [[nats-langgraph-bridge]] — NATS event trigger, publishes ScalpDecisionEvent
-- [[vlm-agent]] — Vision analysis node (heavy path only)
-- [[rag-agent]] — Pattern retrieval node (heavy path only)
-- [[nats-event-system]] — Event types including ScalpDecisionEvent, ScalpExecutedEvent
-- [[brain-ecosystem]] — 12 brains (separate from LangGraph pipeline)
-- [[ensemble-meta-model]] — Alternative signal fusion approach
-- [[signal-aggregation-logic]] — Go aggregator (separate aggregation path)
-- [[chart-segmentation]] — OpenCV chart feature extraction
-- local-inference-server — missing wiki page; vLLM path is not part of the audited MVP
-
-## Contradictions / updates
-
-**2026-07-14 repository audit:** the current graph connects VLM to RAG sequentially, the risk node constructs synthetic portfolio inputs, and the execution node returns a simulated record rather than placing through the broker abstraction. The log/publish node also does not itself provide the durable NATS/ledger semantics implied above. Latency figures are design targets, not measured end-to-end guarantees. Keep this page as experimental design context; [[trade-project-full-integration-build-plan]] defines the promotion path.
-
-**2026-07-16 Hermes boundary:** generic multi-agent engineering/research orchestration now lives in [[hermes-local-integration-v1]]. It cannot publish signals, approve risk, access brokers, or execute orders, and its Obsidian/Chroma work stays outside this hot path.
-
-## Sources
-
-- Internal code: `orchestrator/langgraph_pipeline.py`
-- Internal design: Multi-Agent Orchestration sketch (pasted text)
-- ACP protocol: `orchestrator/events.py` (v2 event types)
+- [[canonical-local-paper-runtime-v1]]
+- [[deterministic-paper-core-v1]]
+- [[nats-event-system]]
+- [[local-trading-ai-architecture]]
+- [[open-source-agent-integration-analysis]]
+- [[hermes-local-integration-v1]]
+- [[nats-langgraph-bridge]]
+- [[vlm-agent]]
+- [[rag-agent]]
+- [[scalping-engine]]

@@ -3178,12 +3178,21 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-timeout" },
+    { name = "pyyaml" },
     { name = "ruff" },
     { name = "scikit-learn" },
     { name = "stable-baselines3" },
     { name = "types-requests" },
     { name = "xgboost" },
     { name = "yfinance" },
+]
+workers = [
+    { name = "asyncpg" },
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "nats-py" },
+    { name = "pydantic" },
+    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.metadata]
@@ -3226,12 +3235,21 @@ dev = [
     { name = "pytest", specifier = ">=8.2,<10" },
     { name = "pytest-asyncio", specifier = ">=0.23,<2" },
     { name = "pytest-timeout", specifier = ">=2.3,<3" },
+    { name = "pyyaml", specifier = ">=6,<7" },
     { name = "ruff", specifier = ">=0.8,<1" },
     { name = "scikit-learn", specifier = "==1.9.0" },
     { name = "stable-baselines3", specifier = "==2.9.0" },
     { name = "types-requests", specifier = ">=2.31" },
     { name = "xgboost", specifier = "==3.3.0" },
     { name = "yfinance", specifier = "==1.5.1" },
+]
+workers = [
+    { name = "asyncpg", specifier = ">=0.29" },
+    { name = "fastapi", specifier = ">=0.115.0" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "nats-py", specifier = "==2.15.0" },
+    { name = "pydantic", specifier = ">=2.5" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.30.0" },
 ]
 
 [[package]]

@@ -24,11 +24,13 @@ class FakeConnection:
     def __init__(self) -> None:
         self.rows: dict[str, list[dict]] = {}
         self.fail = False
+        self.calls: list[tuple[str, tuple[object, ...]]] = []
 
     async def fetch(self, query, *args):
         if self.fail:
             raise ConnectionError("offline")
         sql = " ".join(query.split()).lower()
+        self.calls.append((sql, args))
         if "from risk_policies" in sql:
             return self.rows.get("policies", [])
         if "from portfolio_snapshots" in sql:
@@ -72,6 +74,11 @@ async def test_active_policy_and_fresh_portfolio_are_exactly_loaded() -> None:
         max_age_seconds=Decimal("5"),
     )
     assert loaded == state
+    portfolio_query, portfolio_args = next(
+        call for call in connection.calls if "from portfolio_snapshots" in call[0]
+    )
+    assert "reconciled_at <= $2" in portfolio_query
+    assert portfolio_args == (state.account_id, NOW + timedelta(seconds=5))
 
 
 @pytest.mark.asyncio

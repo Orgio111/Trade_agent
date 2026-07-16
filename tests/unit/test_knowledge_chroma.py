@@ -74,8 +74,11 @@ class _AsyncCollection:
 
 
 class _AsyncClient:
-    def __init__(self, collection: _AsyncCollection) -> None:
+    def __init__(self, collection: _AsyncCollection, *, exists: bool = False) -> None:
         self.collection = collection
+        self.exists = exists
+        self.get_calls = 0
+        self.get_or_create_calls = 0
 
     async def get_or_create_collection(
         self,
@@ -84,10 +87,25 @@ class _AsyncClient:
         metadata: dict[str, str | int | float | bool],
         embedding_function: None,
     ) -> _AsyncCollection:
+        self.get_or_create_calls += 1
         assert name == "project_knowledge_v1"
         assert embedding_function is None
+        self.exists = True
         if not self.collection.metadata:
             self.collection.metadata = dict(metadata)
+        return self.collection
+
+    async def get_collection(
+        self,
+        *,
+        name: str,
+        embedding_function: None,
+    ) -> _AsyncCollection:
+        self.get_calls += 1
+        assert name == "project_knowledge_v1"
+        assert embedding_function is None
+        if not self.exists:
+            raise RuntimeError("collection missing")
         return self.collection
 
 
@@ -95,6 +113,7 @@ def _store(
     collection: _AsyncCollection,
     *,
     runtime_version: str = "1.5.9",
+    client: _AsyncClient | None = None,
 ) -> ChromaVectorStore:
     return ChromaVectorStore(
         host="127.0.0.1",
@@ -104,7 +123,7 @@ def _store(
         expected_dimension=4,
         expected_client_version="1.5.9",
         inventory_batch_size=2,
-        client=_AsyncClient(collection),
+        client=client or _AsyncClient(collection),
         client_version_resolver=lambda: runtime_version,
     )
 
@@ -162,3 +181,17 @@ async def test_exact_chroma_client_version_is_enforced() -> None:
         match=r"expected 1\.5\.9, got 1\.5\.8",
     ):
         await store.ensure_namespace({"schema_version": 1, "project": "trade-agent"})
+
+
+@pytest.mark.asyncio
+async def test_require_namespace_never_creates_a_missing_collection() -> None:
+    collection = _AsyncCollection()
+    client = _AsyncClient(collection)
+    store = _store(collection, client=client)
+
+    with pytest.raises(VectorStoreError, match="namespace does not exist"):
+        await store.require_namespace({"schema_version": 1, "project": "trade-agent"})
+
+    assert client.get_calls == 1
+    assert client.get_or_create_calls == 0
+    assert collection.metadata == {}
