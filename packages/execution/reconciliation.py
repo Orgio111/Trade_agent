@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from packages.brokers.base import ExecutionBroker
-from packages.execution.ledger import InMemoryExecutionLedger
+from packages.execution.ports import ExecutionLedger
 
 
 class DiscrepancyKind(str, Enum):
@@ -49,7 +49,7 @@ class ReconciliationReport:
 class Reconciler:
     """Compare snapshots without changing ledger state or inventing fills."""
 
-    def __init__(self, ledger: InMemoryExecutionLedger, broker: ExecutionBroker) -> None:
+    def __init__(self, ledger: ExecutionLedger, broker: ExecutionBroker) -> None:
         self.ledger = ledger
         self.broker = broker
 

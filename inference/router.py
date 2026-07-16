@@ -1,14 +1,9 @@
 """
-QUANTEX Inference Router — Multi-provider intelligent orchestration.
+QUANTEX legacy inference router.
 
-Routes inference requests across Groq, NVIDIA NIM, and OpenRouter with:
-  - Semantic cache lookup (Qdrant) for 40-60% cost reduction
-  - Task-aware provider selection (reasoning → Groq, analysis → NVIDIA, fallback → OpenRouter)
-  - Deterministic fallback chains with retry logic
-  - Automatic failover to next available provider
-  - Per-request latency, token, and cost tracking
-  - Streaming passthrough for all providers
-  - Provider health monitoring and circuit breaking
+Local Ollama is the only active provider by default. Historical Groq, NVIDIA
+NIM, and OpenRouter adapters remain quarantined for compatibility and are not
+constructed unless the explicit legacy-cloud environment gate is enabled.
 
 Usage:
     router = InferenceRouter()
@@ -33,6 +28,14 @@ from .cache import SemanticCache
 from .cost_tracker import CostTracker
 
 logger = logging.getLogger("quantex.inference.router")
+
+LEGACY_CLOUD_INFERENCE_ENV = "QUANTEX_ENABLE_LEGACY_CLOUD_INFERENCE"
+_TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
+
+
+def _legacy_cloud_inference_enabled() -> bool:
+    """Keep external inference providers default-off and explicit."""
+    return os.getenv(LEGACY_CLOUD_INFERENCE_ENV, "").strip().lower() in _TRUTHY_ENV_VALUES
 
 
 # ── Task Types ───────────────────────────────────────────────────────────────
@@ -131,14 +134,13 @@ class RouterConfig:
     })
 
     provider_priority: dict = field(default_factory=lambda: {
-        # LOCAL-FIRST: local_ollama is always Tier 0 (zero API cost, offline)
-        TaskType.REASONING.value:   ["local_ollama", "groq", "nvidia_nim", "openrouter"],
-        TaskType.ANALYSIS.value:    ["local_ollama", "nvidia_nim", "groq", "openrouter"],
-        TaskType.FAST.value:        ["local_ollama", "groq", "nvidia_nim", "openrouter"],
-        TaskType.CLASSIFY.value:    ["local_ollama", "openrouter", "nvidia_nim", "groq"],
-        TaskType.CODING.value:      ["local_ollama", "openrouter", "groq", "nvidia_nim"],
-        TaskType.EMBEDDING.value:   ["local_ollama", "nvidia_nim", "openrouter", "groq"],
-        TaskType.URGENT.value:      ["local_ollama", "groq", "openrouter", "nvidia_nim"],
+        TaskType.REASONING.value:   ["local_ollama"],
+        TaskType.ANALYSIS.value:    ["local_ollama"],
+        TaskType.FAST.value:        ["local_ollama"],
+        TaskType.CLASSIFY.value:    ["local_ollama"],
+        TaskType.CODING.value:      ["local_ollama"],
+        TaskType.EMBEDDING.value:   ["local_ollama"],
+        TaskType.URGENT.value:      ["local_ollama"],
     })
 
     timeout_per_provider: dict = field(default_factory=lambda: {
@@ -157,8 +159,10 @@ class RouterConfig:
 
 # ── Provider Registry ────────────────────────────────────────────────────────
 
-def _create_providers() -> dict[str, BaseProvider]:
-    """Initialize all available providers. Unconfigured providers are still registered (is_available will return False)."""
+def _create_providers(
+    *, allow_legacy_cloud: bool | None = None
+) -> dict[str, BaseProvider]:
+    """Create local Ollama and, only behind an explicit gate, legacy cloud providers."""
     try:
         from .providers.local_ollama import LocalOllamaProvider
         ollama_provider = LocalOllamaProvider()
@@ -166,13 +170,27 @@ def _create_providers() -> dict[str, BaseProvider]:
         ollama_provider = None
         logger.debug("LocalOllamaProvider not available (install aiohttp)")
 
-    providers = {
-        "groq": GroqProvider(),
-        "nvidia_nim": NvidiaNIMProvider(),
-        "openrouter": OpenRouterProvider(),
-    }
+    providers: dict[str, BaseProvider] = {}
     if ollama_provider:
         providers["local_ollama"] = ollama_provider
+
+    cloud_enabled = (
+        _legacy_cloud_inference_enabled()
+        if allow_legacy_cloud is None
+        else allow_legacy_cloud
+    )
+    if cloud_enabled:
+        logger.warning(
+            "Legacy cloud inference explicitly enabled through %s",
+            LEGACY_CLOUD_INFERENCE_ENV,
+        )
+        providers.update(
+            {
+                "groq": GroqProvider(),
+                "nvidia_nim": NvidiaNIMProvider(),
+                "openrouter": OpenRouterProvider(),
+            }
+        )
     return providers
 
 
@@ -182,7 +200,7 @@ class InferenceRouter:
     """
     Intelligent multi-provider inference router.
 
-    Orchestrates requests across Groq, NVIDIA NIM, and OpenRouter with:
+    Orchestrates local Ollama requests with:
       1. Semantic cache lookup (Qdrant + in-memory fallback)
       2. Task-aware provider selection based on task_type
       3. Deterministic fallback chains with circuit breaker
@@ -383,9 +401,14 @@ class InferenceRouter:
         Returns:
             Ordered list of provider names to try
         """
-        # 1. Agent-specific provider override (highest priority)
+        def _registered(provider_names: list[str]) -> list[str]:
+            return [name for name in provider_names if name in self._providers]
+
+        # 1. Agent-specific provider override (highest priority). Historical
+        # cloud overrides cannot escape quarantine while their providers are
+        # absent from the registry.
         if task.provider_override:
-            return list(task.provider_override)
+            return _registered(list(task.provider_override))
 
         # 2. Model-based hint
         if task.model:
@@ -402,14 +425,24 @@ class InferenceRouter:
 
             if preferred:
                 chain = [preferred]
-                chain += [p for p in self.config.provider_priority.get(task.task_type, ["local_ollama", "groq", "nvidia_nim", "openrouter"]) if p != preferred]
-                return chain
+                chain += [
+                    p
+                    for p in self.config.provider_priority.get(
+                        task.task_type, ["local_ollama"]
+                    )
+                    if p != preferred
+                ]
+                return _registered(chain)
 
         # 3. Default: task-type-based routing
-        return list(self.config.provider_priority.get(
-            task.task_type,
-            ["local_ollama", "groq", "nvidia_nim", "openrouter"],
-        ))
+        return _registered(
+            list(
+                self.config.provider_priority.get(
+                    task.task_type,
+                    ["local_ollama"],
+                )
+            )
+        )
 
     async def _call_provider(
         self,

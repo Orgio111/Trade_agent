@@ -293,7 +293,11 @@ class MarketEvent(BaseModel):
             ingest_run_id=ingest_run_id,
             payload_checksum=checksum,
         )
-        resolved_id = event_id or uuid5(NAMESPACE_URL, canonical_json(identity))
+        resolved_id = (
+            UUID(str(event_id))
+            if event_id is not None
+            else uuid5(NAMESPACE_URL, canonical_json(identity))
+        )
         return cls(
             event_id=resolved_id,
             trace_id=trace_id,

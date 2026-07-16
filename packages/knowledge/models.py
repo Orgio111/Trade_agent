@@ -76,12 +76,71 @@ class UpstreamReference(StrictModel):
     reuse_policy: Literal["code-and-patterns", "patterns-only"]
 
 
+class RuntimePolicy(StrictModel):
+    """Repository-wide allowlists for components reachable in the default runtime."""
+
+    local_inference_hosts: tuple[str, ...] = ()
+    allowed_models: tuple[str, ...] = ()
+    allowed_modes: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_unique_values(self) -> RuntimePolicy:
+        for label, values in (
+            ("local inference hosts", self.local_inference_hosts),
+            ("allowed models", self.allowed_models),
+            ("allowed modes", self.allowed_modes),
+        ):
+            if len(values) != len(set(values)):
+                raise ValueError(f"runtime policy {label} must be unique")
+        return self
+
+
+class Entrypoint(StrictModel):
+    """One executable file exposed by an architecture component."""
+
+    path: str = Field(min_length=1)
+    kind: Literal["cli", "service", "worker"]
+    default: bool = False
+
+
+class AuthorityGrant(StrictModel):
+    """An explicit capability owned by exactly one component when sensitive."""
+
+    id: str = Field(pattern=r"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$")
+    sensitive: bool = False
+
+
+class EventContract(StrictModel):
+    """Versioned event boundary produced, consumed, or stored by a component."""
+
+    id: str = Field(pattern=r"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$")
+    version: str = Field(pattern=r"^[0-9]+\.[0-9]+(?:\.[0-9]+)?$")
+    role: Literal["produces", "consumes", "stores"]
+
+
+class LicenseMetadata(StrictModel):
+    """License provenance for code owned by a component."""
+
+    expression: str = Field(min_length=2, max_length=128)
+    source: Literal["repository", "upstream", "mixed", "none-declared"]
+    notice: str | None = Field(default=None, min_length=8, max_length=512)
+
+
 class Component(StrictModel):
     """One architecture component with one primary responsibility."""
 
     id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]+$")
     owner: str = Field(min_length=3)
     primary_responsibility: str = Field(min_length=8)
+    runtime_status: Literal["active", "experimental", "quarantined"] = "experimental"
+    depends_on: tuple[str, ...] = ()
+    entrypoints: tuple[Entrypoint, ...] = ()
+    authorities: tuple[AuthorityGrant, ...] = ()
+    allowed_modes: tuple[str, ...] = ()
+    allowed_egress: tuple[str, ...] = ()
+    allowed_models: tuple[str, ...] = ()
+    event_contracts: tuple[EventContract, ...] = ()
+    license: LicenseMetadata | None = None
     owned_paths: tuple[str, ...]
     tests: tuple[str, ...] = ()
     documentation: tuple[str, ...]
@@ -91,10 +150,27 @@ class Component(StrictModel):
     upstream_references: tuple[UpstreamReference, ...] = ()
 
     @model_validator(mode="after")
-    def validate_unique_upstream_ids(self) -> Component:
-        ids = [reference.id for reference in self.upstream_references]
-        if len(ids) != len(set(ids)):
-            raise ValueError("upstream reference ids must be unique per component")
+    def validate_component_contract(self) -> Component:
+        unique_contracts = {
+            "dependency ids": self.depends_on,
+            "entrypoint paths": tuple(item.path for item in self.entrypoints),
+            "authority ids": tuple(item.id for item in self.authorities),
+            "allowed modes": self.allowed_modes,
+            "allowed egress endpoints": self.allowed_egress,
+            "allowed models": self.allowed_models,
+            "upstream reference ids": tuple(
+                reference.id for reference in self.upstream_references
+            ),
+            "event contracts": tuple(
+                f"{item.id}@{item.version}:{item.role}" for item in self.event_contracts
+            ),
+        }
+        for label, values in unique_contracts.items():
+            if len(values) != len(set(values)):
+                raise ValueError(f"{label} must be unique per component")
+        if self.runtime_status == "active" and self.entrypoints:
+            if not any(item.default for item in self.entrypoints):
+                raise ValueError("active component entrypoints require a default")
         return self
 
 
@@ -113,6 +189,7 @@ class ProjectManifest(StrictModel):
     schema_version: Literal[1]
     project: str = Field(min_length=2)
     knowledge: KnowledgeSettings
+    runtime_policy: RuntimePolicy = RuntimePolicy()
     coverage: CoverageSettings
     components: tuple[Component, ...]
     quarantines: tuple[Quarantine, ...] = ()

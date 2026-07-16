@@ -14,12 +14,9 @@ from packages.brokers.base import (
 from packages.execution.ledger import (
     DuplicateFill,
     DuplicateLedgerIdentity,
-    InMemoryExecutionLedger,
-    LedgerInvariantViolation,
 )
 from packages.execution.decision_store import (
     DecisionAuthorizationError,
-    InMemoryDecisionStore,
 )
 from packages.execution.models import (
     ExecutionResult,
@@ -29,6 +26,8 @@ from packages.execution.models import (
     OrderType,
 )
 from packages.domain import SourceMode
+from packages.execution.ports import DecisionStore, ExecutionLedger
+from packages.risk import CandidateSignal, RiskDecision
 
 
 class ExecutionServiceError(RuntimeError):
@@ -52,9 +51,9 @@ class ExecutionService:
 
     def __init__(
         self,
-        ledger: InMemoryExecutionLedger,
+        ledger: ExecutionLedger,
         broker: ExecutionBroker,
-        decision_store: InMemoryDecisionStore,
+        decision_store: DecisionStore,
     ) -> None:
         self.ledger = ledger
         self.broker = broker
@@ -62,8 +61,8 @@ class ExecutionService:
 
     def submit(
         self,
-        decision: object,
-        candidate: object,
+        decision: RiskDecision,
+        candidate: CandidateSignal,
         *,
         account_id: str,
         market: MarketSnapshot,

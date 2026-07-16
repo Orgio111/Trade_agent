@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 load_dotenv()  # Load .env file for API keys (GROQ, NVIDIA, OPENROUTER)
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
@@ -24,8 +24,8 @@ from .agents import (
     DeepSeekAnalysisAgent, AgentOpinion,
 )
 from .backtest import BacktestEngine, DataLoader, BacktestResult
-from .paper_account import PaperAccount, OrderRequest
-from .position_manager import PositionManager, TradePlan, build_entry_ladder, build_exit_structure
+from .paper_account import PaperAccount
+from .position_manager import PositionManager, build_entry_ladder, build_exit_structure
 from .feature_engine import FeatureEngine
 from .ml_signals import MLSignalEngine
 from .database import Database, TradeRecord, PositionRecord, StrategyPerfRecord
@@ -146,6 +146,21 @@ brain_runners: dict[str, BrainRunner] = {}
 brain_runner_tasks: dict[str, asyncio.Task] = {}
 
 active_connections: list[WebSocket] = []
+
+
+LEGACY_MUTATION_DISABLED_DETAIL = {
+    "code": "legacy_mutation_endpoint_disabled",
+    "message": (
+        "This legacy endpoint cannot mutate paper state or create orders. "
+        "Submit commands through the canonical decision and execution workers, "
+        "which require a persisted deterministic risk decision."
+    ),
+}
+
+
+def _reject_legacy_mutation() -> None:
+    """Fail closed before any legacy account, position, or order mutation."""
+    raise HTTPException(status_code=410, detail=LEGACY_MUTATION_DISABLED_DETAIL)
 
 
 async def _compute_signal(
@@ -653,24 +668,14 @@ async def get_trades(limit: int = Query(50, ge=1, le=200)):
 
 @app.post("/api/v1/account/reset")
 async def reset_account(balance: float = Query(1000.0)):
-    if not paper_account:
-        return {"error": "Not initialized"}
-    paper_account.reset(balance)
-    return {"status": "ok", "balance": paper_account.balance}
+    _reject_legacy_mutation()
 
 
 # ── API: Price ──────────────────────────────────────────────────────
 
 @app.post("/api/v1/price")
 async def update_price(data: dict):
-    if not paper_account:
-        return {"error": "Not initialized"}
-    symbol = data.get("symbol", "BTCUSDT")
-    bid = data.get("bid", data.get("price", 0))
-    ask = data.get("ask", data.get("price", 0))
-    last = data.get("price", bid)
-    paper_account.update_price(symbol, bid, ask, last)
-    return {"status": "ok"}
+    _reject_legacy_mutation()
 
 
 # ── API: Signal ─────────────────────────────────────────────────────
@@ -1053,61 +1058,17 @@ async def timesfm_status():
 
 @app.post("/api/v1/trade")
 async def execute_trade(trade: dict):
-    if not paper_account:
-        return {"error": "Not initialized"}
-    request = OrderRequest(
-        symbol=trade.get("symbol", "BTCUSDT"),
-        side=trade.get("side", "buy"),
-        order_type=trade.get("order_type", "market"),
-        quantity=trade.get("quantity", 0.001),
-        price=trade.get("price"),
-        reduce_only=trade.get("reduce_only", False),
-        stop_loss=trade.get("stop_loss"),
-        take_profits=trade.get("take_profits"),
-    )
-    order = paper_account.place_order(request)
-    portfolio = paper_account.get_portfolio()
-    return {
-        "order_id": order.id, "status": order.status,
-        "avg_fill_price": order.avg_fill_price, "filled_quantity": order.filled_quantity,
-        "fees": order.fees, "portfolio": portfolio,
-    }
+    _reject_legacy_mutation()
 
 
 @app.post("/api/v1/positions/open")
 async def open_position(plan: dict):
-    if not position_manager or not paper_account:
-        return {"error": "Not initialized"}
-    trade_plan = TradePlan(
-        symbol=plan["symbol"], direction=plan["direction"],
-        entry_price=plan["entry_price"], quantity=plan.get("quantity", 0.001),
-        leverage=plan.get("leverage", 3), confidence=plan.get("confidence", 0.6),
-        stop_loss=plan["stop_loss"], take_profits=plan.get("take_profits", []),
-        reason=plan.get("reason", ""), regime=plan.get("regime", "unknown"),
-    )
-    order = paper_account.place_order(OrderRequest(
-        symbol=trade_plan.symbol, side="buy" if trade_plan.direction == "long" else "sell",
-        order_type="market", quantity=trade_plan.quantity, price=trade_plan.entry_price,
-        stop_loss=trade_plan.stop_loss, take_profits=trade_plan.take_profits,
-    ))
-    if order.status == "rejected":
-        return {"error": f"Order rejected: {order.status}"}
-    position = position_manager.open_position(trade_plan)
-    return {
-        "position_id": position.id, "order_id": order.id,
-        "status": order.status, "entry_price": trade_plan.entry_price,
-        "stop_loss": trade_plan.stop_loss, "take_profits": trade_plan.take_profits,
-    }
+    _reject_legacy_mutation()
 
 
 @app.post("/api/v1/positions/{position_id}/close")
 async def close_position(position_id: str):
-    if not position_manager:
-        return {"error": "Not initialized"}
-    result = position_manager.close_position(position_id)
-    if not result:
-        return {"error": "Position not found"}
-    return result
+    _reject_legacy_mutation()
 
 
 @app.get("/api/v1/positions/managed")

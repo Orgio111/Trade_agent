@@ -23,6 +23,23 @@ overlap_chars = 400
 embedding_batch_size = 16
 upsert_batch_size = 64
 
+[runtime_policy]
+local_inference_hosts = [
+  "127.0.0.1",
+  "::1",
+  "localhost",
+  "host.docker.internal",
+]
+allowed_models = [
+  "qwen3:8b",
+  "phi3:3.8b",
+  "deepseek-r1:8b",
+  "moondream",
+  "mistral",
+  "nomic-embed-text",
+]
+allowed_modes = ["offline", "paper_live", "replay", "research"]
+
 [coverage]
 include = [
   "project.manifest.toml",
@@ -53,6 +70,7 @@ include = [
   "frontend/src/**/*.css",
   "frontend/tests/**/*.ts",
   "frontend/*.ts",
+  "frontend/*.mjs",
   "frontend/Dockerfile",
   "frontend/package.json",
   "frontend/package-lock.json",
@@ -180,6 +198,21 @@ legacy_repository_exceptions = [
 id = "knowledge-pipeline"
 owner = "software-engineering/knowledge"
 primary_responsibility = "Build and verify the local project-knowledge projection."
+runtime_status = "active"
+entrypoints = [
+  { path = "scripts/knowledge.py", kind = "cli", default = true },
+]
+authorities = [
+  { id = "inference.project-embedding", sensitive = true },
+  { id = "knowledge.projection", sensitive = true },
+]
+allowed_modes = ["offline"]
+allowed_egress = [
+  "http://127.0.0.1:11434",
+  "http://127.0.0.1:8100",
+]
+allowed_models = ["nomic-embed-text"]
+license = { expression = "NOASSERTION", source = "none-declared" }
 owned_paths = [
   "project.manifest.toml",
   "project.manifest.lock.json",
@@ -216,9 +249,127 @@ forbidden_imports = [
 ]
 
 [[components]]
+id = "local-ai-runtime"
+owner = "software-engineering/local-ai"
+primary_responsibility = "Define and health-check the approved local Ollama model boundary."
+runtime_status = "active"
+authorities = [
+  { id = "inference.local-model-registry", sensitive = true },
+  { id = "inference.local-health", sensitive = false },
+]
+allowed_modes = ["offline", "paper_live", "replay", "research"]
+allowed_egress = [
+  "http://127.0.0.1:11434",
+  "http://host.docker.internal:11434",
+]
+allowed_models = [
+  "qwen3:8b",
+  "phi3:3.8b",
+  "deepseek-r1:8b",
+  "moondream",
+  "mistral",
+  "nomic-embed-text",
+]
+license = { expression = "NOASSERTION", source = "none-declared" }
+owned_paths = [
+  "packages/local_ai/**/*.py",
+  "tests/unit/test_local_ai.py",
+]
+tests = [
+  "tests/unit/test_local_ai.py",
+]
+documentation = [
+  "wiki/content/playbooks/local-ai-deployment-guide.md",
+]
+architecture = [
+  "wiki/content/decisions/hermes-local-integration-v1.md",
+]
+embedding_inputs = [
+  "packages/local_ai/**/*.py",
+]
+forbidden_imports = [
+  "anthropic",
+  "google",
+  "ollama",
+  "openai",
+  "qdrant_client",
+  "sentence_transformers",
+]
+
+[[components]]
+id = "control-plane"
+owner = "software-engineering/control-plane"
+primary_responsibility = "Expose read-only health and readiness for the canonical local runtime."
+runtime_status = "active"
+depends_on = [
+  "database-migrations",
+  "local-ai-runtime",
+  "orchestration-runtime",
+]
+entrypoints = [
+  { path = "packages/control_plane/__main__.py", kind = "service", default = true },
+]
+authorities = [
+  { id = "runtime.observe", sensitive = false },
+]
+allowed_modes = ["paper_live", "replay"]
+allowed_egress = [
+  "nats://127.0.0.1:4222",
+  "postgresql://127.0.0.1:5432",
+  "http://127.0.0.1:11434",
+  "http://host.docker.internal:11434",
+]
+allowed_models = [
+  "qwen3:8b",
+  "phi3:3.8b",
+  "deepseek-r1:8b",
+  "moondream",
+  "mistral",
+  "nomic-embed-text",
+]
+license = { expression = "NOASSERTION", source = "none-declared" }
+owned_paths = [
+  "packages/control_plane/**/*.py",
+  "tests/unit/test_control_plane.py",
+]
+tests = [
+  "tests/unit/test_control_plane.py",
+]
+documentation = [
+  "wiki/content/playbooks/local-ai-deployment-guide.md",
+]
+architecture = [
+  "wiki/content/comparisons/trade-project-full-integration-build-plan.md",
+]
+embedding_inputs = [
+  "packages/control_plane/**/*.py",
+]
+forbidden_imports = [
+  "anthropic",
+  "google",
+  "openai",
+  "qdrant_client",
+  "sentence_transformers",
+]
+
+[[components]]
 id = "deterministic-paper-core"
 owner = "software-engineering/core"
-primary_responsibility = "Provide deterministic paper and replay safety semantics."
+primary_responsibility = "Provide deterministic event, risk, and paper execution safety semantics."
+runtime_status = "active"
+authorities = [
+  { id = "risk.authorization", sensitive = true },
+  { id = "execution.paper", sensitive = true },
+]
+allowed_modes = ["paper_live", "replay"]
+event_contracts = [
+  { id = "market-event", version = "1.0", role = "produces" },
+  { id = "market-event", version = "1.0", role = "consumes" },
+  { id = "risk-decision", version = "1.0", role = "produces" },
+  { id = "order-intent", version = "1.0", role = "produces" },
+  { id = "order-update", version = "1.0", role = "consumes" },
+]
+license = { expression = "NOASSERTION", source = "none-declared" }
 owned_paths = [
   "packages/brokers/**/*.py",
   "packages/data_quality/**/*.py",
@@ -227,27 +378,26 @@ owned_paths = [
   "packages/event_contracts/**/*.py",
   "packages/event_contracts/**/*.json",
   "packages/execution/**/*.py",
-  "packages/replay/**/*.py",
   "packages/risk/**/*.py",
   "packages/strategies/**/*.py",
   "tests/contract/test_event_contracts.py",
-  "tests/contract/test_venue_kline_adapters.py",
-  "tests/replay/**/*.py",
   "tests/unit/test_data_quality.py",
   "tests/unit/test_execution_core.py",
+  "tests/unit/test_jetstream_adapter.py",
+  "tests/unit/test_postgres_decision_store.py",
+  "tests/unit/test_postgres_execution_ledger.py",
+  "tests/unit/test_postgres_risk_inputs.py",
   "tests/unit/test_risk_engine.py",
-  "tests/integration/test_decision_vertical_slice.py",
-  "tests/integration/test_replay_cli.py",
-  "scripts/replay_market.py",
 ]
 tests = [
   "tests/contract/test_event_contracts.py",
-  "tests/contract/test_venue_kline_adapters.py",
-  "tests/replay/**/*.py",
   "tests/unit/test_data_quality.py",
   "tests/unit/test_execution_core.py",
+  "tests/unit/test_jetstream_adapter.py",
+  "tests/unit/test_postgres_decision_store.py",
+  "tests/unit/test_postgres_execution_ledger.py",
+  "tests/unit/test_postgres_risk_inputs.py",
   "tests/unit/test_risk_engine.py",
-  "tests/integration/test_decision_vertical_slice.py",
 ]
 documentation = [
   "wiki/content/concepts/broker-abstraction-layer.md",
@@ -263,21 +413,104 @@ embedding_inputs = [
   "packages/event_contracts/**/*.py",
   "packages/event_contracts/**/*.json",
   "packages/execution/**/*.py",
-  "packages/replay/**/*.py",
   "packages/risk/**/*.py",
   "packages/strategies/**/*.py",
-  "scripts/replay_market.py",
+]
+forbidden_imports = [
+  "anthropic",
+  "google",
+  "openai",
+  "qdrant_client",
+  "sentence_transformers",
 ]
 
 [[components]]
 id = "orchestration-runtime"
 owner = "software-engineering/orchestration"
 primary_responsibility = "Coordinate existing agents, inference, and runtime workers."
+runtime_status = "active"
+depends_on = ["deterministic-paper-core", "local-ai-runtime"]
+entrypoints = [
+  { path = "scripts/replay_market.py", kind = "cli", default = true },
+]
+authorities = [
+  { id = "orchestration.worker-lifecycle", sensitive = true },
+  { id = "inference.local-client", sensitive = false },
+]
+allowed_modes = ["paper_live", "replay"]
+allowed_egress = [
+  "nats://127.0.0.1:4222",
+  "postgresql://127.0.0.1:5432",
+  "http://127.0.0.1:11434",
+  "http://host.docker.internal:11434",
+]
+allowed_models = [
+  "qwen3:8b",
+  "phi3:3.8b",
+  "deepseek-r1:8b",
+  "moondream",
+  "mistral",
+  "nomic-embed-text",
+]
+event_contracts = [
+  { id = "market-event", version = "1.0", role = "produces" },
+  { id = "market-event", version = "1.0", role = "consumes" },
+  { id = "risk-decision", version = "1.0", role = "consumes" },
+  { id = "order-intent", version = "1.0", role = "produces" },
+  { id = "order-update", version = "1.0", role = "consumes" },
+]
+license = { expression = "NOASSERTION", source = "none-declared" }
+owned_paths = [
+  "workers/**/*.py",
+  "packages/replay/**/*.py",
+  "scripts/replay_market.py",
+  "tests/contract/test_venue_kline_adapters.py",
+  "tests/contract/test_worker_contracts.py",
+  "tests/replay/**/*.py",
+  "tests/unit/test_async_execution_service.py",
+  "tests/unit/test_worker_config.py",
+  "tests/integration/test_decision_vertical_slice.py",
+  "tests/integration/test_replay_cli.py",
+]
+tests = [
+  "tests/contract/test_venue_kline_adapters.py",
+  "tests/contract/test_worker_contracts.py",
+  "tests/replay/**/*.py",
+  "tests/unit/test_async_execution_service.py",
+  "tests/unit/test_worker_config.py",
+  "tests/integration/test_decision_vertical_slice.py",
+  "tests/integration/test_replay_cli.py",
+]
+documentation = [
+  "wiki/content/concepts/multi-agent-pipeline.md",
+]
+architecture = [
+  "wiki/content/concepts/local-trading-ai-architecture.md",
+]
+embedding_inputs = [
+  "workers/**/*.py",
+  "packages/replay/**/*.py",
+  "scripts/replay_market.py",
+]
+forbidden_imports = [
+  "anthropic",
+  "google",
+  "openai",
+  "qdrant_client",
+  "sentence_transformers",
+]
+
+[[components]]
+id = "legacy-orchestration"
+owner = "software-engineering/orchestration-legacy"
+primary_responsibility = "Preserve quarantined legacy orchestration code for controlled migration."
+runtime_status = "quarantined"
+allowed_modes = []
+license = { expression = "NOASSERTION", source = "none-declared" }
 owned_paths = [
   "orchestrator/**/*.py",
   "orchestrator/brains/*.json",
   "inference/**/*.py",
-  "workers/**/*.py",
   "binance/**/*.py",
   "notifications/**/*.py",
   "config_dir/**/*.py",
@@ -310,7 +543,6 @@ embedding_inputs = [
   "orchestrator/**/*.py",
   "orchestrator/brains/*.json",
   "inference/**/*.py",
-  "workers/**/*.py",
   "binance/**/*.py",
   "notifications/**/*.py",
   "config_dir/**/*.py",
@@ -323,6 +555,38 @@ embedding_inputs = [
 id = "hermes-integration"
 owner = "software-engineering/hermes"
 primary_responsibility = "Project validated local-agent artifacts into permanent and retrieval memory."
+runtime_status = "active"
+depends_on = [
+  "deterministic-paper-core",
+  "knowledge-pipeline",
+  "local-ai-runtime",
+]
+entrypoints = [
+  { path = "packages/hermes/__main__.py", kind = "service", default = true },
+]
+authorities = [
+  { id = "inference.hermes-workflows", sensitive = true },
+  { id = "knowledge.engineering-journal", sensitive = true },
+]
+allowed_modes = ["offline", "research"]
+allowed_egress = [
+  "http://127.0.0.1:11434",
+  "http://127.0.0.1:8100",
+]
+allowed_models = [
+  "qwen3:8b",
+  "phi3:3.8b",
+  "deepseek-r1:8b",
+  "moondream",
+  "mistral",
+  "nomic-embed-text",
+]
+event_contracts = [
+  { id = "hermes-journal-event", version = "1.0", role = "produces" },
+  { id = "hermes-journal-event", version = "1.0", role = "stores" },
+  { id = "hermes-workflow-result", version = "1.0", role = "produces" },
+]
+license = { expression = "NOASSERTION", source = "mixed" }
 owned_paths = [
   "packages/hermes/**/*.py",
   "scripts/benchmark_hermes.py",
@@ -363,6 +627,9 @@ upstream_references = [
 id = "api-services"
 owner = "software-engineering/services"
 primary_responsibility = "Expose application capabilities through local service APIs."
+runtime_status = "quarantined"
+allowed_modes = []
+license = { expression = "NOASSERTION", source = "none-declared" }
 owned_paths = [
   "services/**/*.py",
 ]
@@ -383,6 +650,9 @@ embedding_inputs = [
 id = "realtime-transport"
 owner = "software-engineering/realtime"
 primary_responsibility = "Aggregate and transport realtime system events."
+runtime_status = "experimental"
+allowed_modes = ["paper_live", "replay"]
+license = { expression = "NOASSERTION", source = "none-declared" }
 owned_paths = [
   "realtime/**/*.go",
   "realtime/go.mod",
@@ -403,6 +673,9 @@ embedding_inputs = [
 id = "execution-runtime"
 owner = "software-engineering/execution"
 primary_responsibility = "Execute authorized orders through the Rust runtime."
+runtime_status = "quarantined"
+allowed_modes = []
+license = { expression = "NOASSERTION", source = "none-declared" }
 owned_paths = [
   "execution/src/**/*.rs",
   "execution/Cargo.toml",
@@ -424,12 +697,16 @@ embedding_inputs = [
 id = "frontend-ui"
 owner = "software-engineering/frontend"
 primary_responsibility = "Render the local trading operations interface."
+runtime_status = "experimental"
+allowed_modes = ["paper_live", "replay"]
+license = { expression = "NOASSERTION", source = "none-declared" }
 owned_paths = [
   "frontend/src/**/*.ts",
   "frontend/src/**/*.tsx",
   "frontend/src/**/*.css",
   "frontend/tests/**/*.ts",
   "frontend/*.ts",
+  "frontend/*.mjs",
   "frontend/package.json",
   "frontend/package-lock.json",
   "frontend/tsconfig.json",
@@ -448,21 +725,31 @@ embedding_inputs = [
   "frontend/src/**/*.tsx",
   "frontend/src/**/*.css",
   "frontend/*.ts",
+  "frontend/*.mjs",
 ]
 
 [[components]]
 id = "ci-governance"
 owner = "software-engineering/ci"
 primary_responsibility = "Enforce reproducible dependency and continuous-integration policy."
+runtime_status = "active"
+depends_on = ["knowledge-pipeline"]
+authorities = [
+  { id = "governance.ci-policy", sensitive = true },
+]
+allowed_modes = ["offline"]
+license = { expression = "NOASSERTION", source = "none-declared" }
 owned_paths = [
   ".github/workflows/*.yml",
   "pyproject.toml",
   "requirements.txt",
   "uv.lock",
   "tests/test_imports.py",
+  "tests/unit/test_legacy_safety_boundaries.py",
 ]
 tests = [
   "tests/test_imports.py",
+  "tests/unit/test_legacy_safety_boundaries.py",
 ]
 documentation = [
   "wiki/content/playbooks/local-knowledge-pipeline-operations.md",
@@ -479,15 +766,32 @@ embedding_inputs = [
 id = "database-migrations"
 owner = "software-engineering/database"
 primary_responsibility = "Evolve the durable database schema deterministically."
+runtime_status = "active"
+entrypoints = [
+  { path = "scripts/apply_migrations.py", kind = "cli", default = true },
+]
+authorities = [
+  { id = "database.schema-migration", sensitive = true },
+]
+allowed_modes = ["offline", "paper_live", "replay"]
+allowed_egress = ["postgresql://127.0.0.1:5432"]
+event_contracts = [
+  { id = "risk-decision", version = "1.0", role = "stores" },
+  { id = "order-intent", version = "1.0", role = "stores" },
+  { id = "order-update", version = "1.0", role = "stores" },
+]
+license = { expression = "NOASSERTION", source = "none-declared" }
 owned_paths = [
   "db/migrations/**/*.sql",
   "scripts/apply_migrations.py",
   "tests/contract/test_execution_migration.py",
   "tests/contract/test_migration_runner.py",
+  "tests/contract/test_runtime_durability_migration.py",
 ]
 tests = [
   "tests/contract/test_execution_migration.py",
   "tests/contract/test_migration_runner.py",
+  "tests/contract/test_runtime_durability_migration.py",
 ]
 documentation = [
   "wiki/content/playbooks/local-ai-deployment-guide.md",
@@ -504,6 +808,9 @@ embedding_inputs = [
 id = "deployment-infrastructure"
 owner = "software-engineering/deployment"
 primary_responsibility = "Package and deploy the local service topology reproducibly."
+runtime_status = "experimental"
+allowed_modes = ["paper_live", "replay"]
+license = { expression = "NOASSERTION", source = "none-declared" }
 owned_paths = [
   "docker-compose*.yml",
   "config/**/*.yaml",
@@ -549,6 +856,9 @@ embedding_inputs = [
 id = "monitoring"
 owner = "software-engineering/observability"
 primary_responsibility = "Define local health, alerting, and telemetry views."
+runtime_status = "experimental"
+allowed_modes = ["paper_live", "replay"]
+license = { expression = "NOASSERTION", source = "none-declared" }
 owned_paths = [
   "monitoring/**/*.yml",
   "monitoring/**/*.json",
@@ -569,6 +879,12 @@ embedding_inputs = [
 id = "project-governance"
 owner = "software-engineering/governance"
 primary_responsibility = "Maintain repository-wide engineering rules and release history."
+runtime_status = "active"
+authorities = [
+  { id = "governance.project-policy", sensitive = true },
+]
+allowed_modes = ["offline"]
+license = { expression = "NOASSERTION", source = "none-declared" }
 owned_paths = [
   ".gitignore",
   "AGENTS.md",
@@ -595,6 +911,12 @@ embedding_inputs = [
 id = "obsidian-knowledge-base"
 owner = "software-engineering/knowledge-curation"
 primary_responsibility = "Curate permanent project knowledge and architecture in Obsidian."
+runtime_status = "active"
+authorities = [
+  { id = "knowledge.permanent-memory", sensitive = true },
+]
+allowed_modes = ["offline", "research"]
+license = { expression = "NOASSERTION", source = "none-declared" }
 owned_paths = [
   "wiki/ZCODE.md",
   "wiki/README.md",

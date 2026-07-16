@@ -31,6 +31,14 @@ import websockets
 
 logger = logging.getLogger(__name__)
 
+LEGACY_PAPER_MUTATION_ENV = "QUANTEX_ENABLE_LEGACY_PAPER_MUTATIONS"
+_TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
+
+
+def _legacy_paper_mutations_enabled() -> bool:
+    """Return whether explicitly requested legacy paper-only mutation is enabled."""
+    return os.getenv(LEGACY_PAPER_MUTATION_ENV, "").strip().lower() in _TRUTHY_ENV_VALUES
+
 
 # ═══════════════════════════════════════════════════════════════════
 # ENUMS & DATA CLASSES
@@ -1029,6 +1037,11 @@ class ExecutionOrchestrator:
                 paper_config=PaperConfig(**config.get("paper", {})) if config.get("paper") else PaperConfig(),
             )
         self.config = config or ExecutionConfig()
+        if self.config.mode == ExecutionMode.LIVE:
+            raise RuntimeError(
+                "Legacy live execution is quarantined. Use the canonical execution "
+                "worker with a persisted deterministic risk decision."
+            )
         self.brokers: dict[ExecutionMode, BaseBroker] = {}
         self._init_brokers()
 
@@ -1037,8 +1050,10 @@ class ExecutionOrchestrator:
         # Always have paper broker for fallback
         self.brokers[ExecutionMode.PAPER] = PaperBroker(self.config.paper_config or PaperConfig())
 
-        if self.config.mode == ExecutionMode.LIVE or self.config.binance_config:
-            self.brokers[ExecutionMode.LIVE] = BinanceBroker(self.config.binance_config)
+        if self.config.binance_config:
+            logger.warning(
+                "Ignoring Binance configuration: legacy live execution is quarantined"
+            )
 
         if self.config.mode == ExecutionMode.FIX_SIM or self.config.fix_config:
             self.brokers[ExecutionMode.FIX_SIM] = FIXSimulator(self.config.fix_config)
@@ -1046,6 +1061,10 @@ class ExecutionOrchestrator:
     def get_broker(self, mode: ExecutionMode | None = None) -> BaseBroker:
         """Get broker for specific mode."""
         mode = mode or self.config.mode
+        if mode == ExecutionMode.LIVE:
+            raise PermissionError(
+                "Legacy live execution is disabled; canonical risk authorization is required"
+            )
         return self.brokers[mode]
 
     async def connect(self) -> bool:
@@ -1059,6 +1078,8 @@ class ExecutionOrchestrator:
 
     def set_mode(self, mode: ExecutionMode):
         """Change execution mode."""
+        if mode == ExecutionMode.LIVE:
+            raise PermissionError("Legacy live execution cannot be enabled")
         if mode in self.brokers:
             self.config.mode = mode
         else:
@@ -1067,11 +1088,21 @@ class ExecutionOrchestrator:
     async def place_order(self, order: Order, mode: ExecutionMode | None = None) -> OrderResult:
         """Place order using specified or default mode."""
         mode = mode or self.config.mode
+        if mode != ExecutionMode.PAPER or not _legacy_paper_mutations_enabled():
+            raise PermissionError(
+                "Legacy order mutation is disabled. The canonical execution worker "
+                "requires a persisted deterministic risk decision. For isolated paper "
+                f"tests only, explicitly set {LEGACY_PAPER_MUTATION_ENV}=true."
+            )
         broker = self.get_broker(mode)
         return await broker.place_order(order)
 
     async def cancel_order(self, order_id: str, symbol: str, mode: ExecutionMode | None = None) -> bool:
         mode = mode or self.config.mode
+        if mode != ExecutionMode.PAPER or not _legacy_paper_mutations_enabled():
+            raise PermissionError(
+                "Legacy order mutation is disabled; canonical execution authorization is required"
+            )
         broker = self.get_broker(mode)
         return await broker.cancel_order(order_id, symbol)
 

@@ -254,15 +254,20 @@ class OrderIntent:
                 _read_attr(candidate, "reference_price"), field_name="reference_price"
             )
 
+        decision_id = str(_read_attr(decision, "decision_id"))
+        venue = str(_read_attr(candidate, "venue")).strip().lower()
+        market_type = str(_read_attr(candidate, "market_type")).strip().lower()
+        instrument = str(_read_attr(candidate, "instrument", "symbol")).strip().upper()
+        side = OrderSide.coerce(_read_attr(candidate, "side"))
         payload = {
             "schema": "quantex.order-intent.v1",
             "account_id": resolved_account,
-            "decision_id": str(_read_attr(decision, "decision_id")),
+            "decision_id": decision_id,
             "signal_id": candidate_signal_id,
-            "venue": str(_read_attr(candidate, "venue")).strip().lower(),
-            "market_type": str(_read_attr(candidate, "market_type")).strip().lower(),
-            "instrument": str(_read_attr(candidate, "instrument", "symbol")).strip().upper(),
-            "side": OrderSide.coerce(_read_attr(candidate, "side")).value,
+            "venue": venue,
+            "market_type": market_type,
+            "instrument": instrument,
+            "side": side.value,
             "order_type": resolved_type.value,
             "quantity": canonical_decimal(quantity),
             "source_mode": _enum_value(_read_attr(candidate, "source_mode")),
@@ -282,13 +287,13 @@ class OrderIntent:
         return cls(
             intent_id=f"int_{intent_digest[:24]}",
             client_order_id=f"qx_{client_digest[:24]}",
-            account_id=payload["account_id"],
-            decision_id=payload["decision_id"],
+            account_id=resolved_account,
+            decision_id=decision_id,
             signal_id=candidate_signal_id,
-            venue=payload["venue"],
-            market_type=payload["market_type"],
-            instrument=payload["instrument"],
-            side=OrderSide(payload["side"]),
+            venue=venue,
+            market_type=market_type,
+            instrument=instrument,
+            side=side,
             order_type=resolved_type,
             quantity=quantity,
             source_mode=_coerce_source_mode(_read_attr(candidate, "source_mode")),

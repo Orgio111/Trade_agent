@@ -23,14 +23,7 @@ from typing import Any, Callable, Optional
 import numpy as np
 
 from services.execution import (
-    AccountInfo,
-    ExecutionMode,
     ExecutionOrchestrator,
-    Order,
-    OrderSide,
-    OrderType,
-    Position,
-    create_execution_orchestrator,
 )
 
 logger = logging.getLogger(__name__)
@@ -83,7 +76,9 @@ class RiskConfig:
     max_order_size_pct: float = 0.02    # 2% per order
 
     # Auto-liquidation
-    auto_liquidate_on_breach: bool = True
+    # Legacy risk must never create orders. Critical breaches are alerts for the
+    # canonical deterministic risk/execution workers, so this remains off.
+    auto_liquidate_on_breach: bool = False
     liquidation_buffer_pct: float = 0.01  # 1% buffer
 
 
@@ -405,23 +400,15 @@ class RiskEngine:
         return metrics
 
     async def _emergency_liquidate(self):
-        """Emergency liquidation of all positions."""
-        logger.critical("[RiskEngine] EMERGENCY LIQUIDATION TRIGGERED")
-        self._emit_alert(RiskLevel.CRITICAL, "EMERGENCY LIQUIDATION INITIATED")
-
-        positions = await self.execution.get_positions()
-        for pos in positions:
-            # Close position
-            side = OrderSide.SELL if pos.side == "BUY" else OrderSide.BUY
-            order = Order(
-                symbol=pos.symbol,
-                side=side,
-                type=OrderType.MARKET,
-                quantity=pos.size,
-                reduce_only=True,
-            )
-            await self.execution.place_order(order)
-            logger.warning(f"[RiskEngine] Liquidated {pos.symbol} {pos.size} @ market")
+        """Emit a critical alert without crossing the execution boundary."""
+        logger.critical(
+            "[RiskEngine] Critical breach detected; legacy auto-liquidation is "
+            "quarantined and no order was created"
+        )
+        self._emit_alert(
+            RiskLevel.CRITICAL,
+            "CRITICAL BREACH: canonical deterministic execution response required",
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════

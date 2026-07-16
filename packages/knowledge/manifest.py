@@ -12,6 +12,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from .authority import validate_runtime_authority
 from .chunking import canonical_text, sha256_text
 from .errors import ManifestError
 from .models import Component, ProjectManifest
@@ -426,6 +427,13 @@ def load_inventory(
                 + ", ".join(sorted(outside_coverage))
             )
         quarantined_paths.update(actual)
+
+    validate_runtime_authority(
+        manifest,
+        root=root,
+        owned_by=owned_by,
+        quarantined_paths=quarantined_paths,
+    )
 
     sources_by_path: dict[str, SourceFile] = {}
     for component in manifest.components:

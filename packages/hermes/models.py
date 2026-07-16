@@ -8,7 +8,6 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from enum import Enum
 from pathlib import PurePosixPath
-from types import MappingProxyType
 from typing import Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -16,35 +15,16 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from packages.domain.events import canonical_json, compute_payload_checksum
 from packages.knowledge.models import Scalar
+from packages.local_ai.models import (
+    LOCAL_MODEL_BY_ROLE as LOCAL_MODEL_BY_ROLE,
+    LocalModelRole as LocalModelRole,
+)
 
 
 class StrictModel(BaseModel):
     """Immutable contract that rejects unknown fields."""
 
     model_config = ConfigDict(extra="forbid", frozen=True, use_enum_values=False)
-
-
-class LocalModelRole(str, Enum):
-    """Engineering roles that resolve only to the approved local models."""
-
-    REASONING = "reasoning"
-    FAST = "fast"
-    RESEARCH = "research"
-    VISION = "vision"
-    TOOL_FORMATTING = "tool_formatting"
-    EMBEDDING = "embedding"
-
-
-LOCAL_MODEL_BY_ROLE: Mapping[LocalModelRole, str] = MappingProxyType(
-    {
-        LocalModelRole.REASONING: "qwen3:8b",
-        LocalModelRole.FAST: "phi3:3.8b",
-        LocalModelRole.RESEARCH: "deepseek-r1:8b",
-        LocalModelRole.VISION: "moondream",
-        LocalModelRole.TOOL_FORMATTING: "mistral",
-        LocalModelRole.EMBEDDING: "nomic-embed-text",
-    }
-)
 
 
 class JournalEventKind(str, Enum):

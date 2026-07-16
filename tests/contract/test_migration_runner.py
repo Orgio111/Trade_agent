@@ -10,6 +10,7 @@ def test_migrations_are_versioned_sorted_and_checksum_stable() -> None:
     assert [path.name for path in files] == [
         "001_init.sql",
         "002_execution_ledger.sql",
+        "003_runtime_durability.sql",
     ]
     assert all(len(checksum(path)) == 64 for path in files)
 

@@ -4,6 +4,8 @@
 # Layer 4: Services | Layer 5-7: Application
 # ═══════════════════════════════════════════════════════════
 
+# Default startup is the canonical local paper/replay runtime. Pre-canonical
+# services remain available only through the explicit `legacy` profile.
 services:
   # ── LAYER 1: INFRASTRUCTURE ─────────────────────────────
 
@@ -11,14 +13,13 @@ services:
     image: pgvector/pgvector:pg16
     container_name: quantex-postgres
     restart: unless-stopped
-    ports: ["5432:5432"]
+    ports: ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]
     environment:
       POSTGRES_DB: quantex
       POSTGRES_USER: quantex
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./db/migrations:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U quantex"]
       interval: 5s
@@ -32,7 +33,7 @@ services:
     image: redis:7.2-alpine
     container_name: quantex-redis
     restart: unless-stopped
-    ports: ["6379:6379"]
+    ports: ["127.0.0.1:${REDIS_PORT:-6379}:6379"]
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
@@ -48,6 +49,7 @@ services:
   # ── LAYER 2-3: STORAGE + STREAMING ─────────────────────
 
   qdrant:
+    profiles: ["legacy"]
     image: qdrant/qdrant:latest
     container_name: quantex-qdrant
     restart: unless-stopped
@@ -57,6 +59,21 @@ services:
     deploy:
       resources:
         limits: { cpus: "1.0", memory: 1G }
+
+  migrate:
+    build:
+      context: .
+      dockerfile: infra/migrations/Dockerfile
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-quantex}
+      PGUSER: ${POSTGRES_USER:-quantex}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   chroma:
     image: chromadb/chroma:1.5.9
@@ -85,8 +102,8 @@ services:
       container_name: quantex-nats
       restart: unless-stopped
       ports:
-        - "4222:4222"   # Client connections (brains, orchestrator, realtime)
-        - "8222:8222"   # HTTP monitoring / health
+        - "127.0.0.1:${NATS_PORT:-4222}:4222"
+        - "127.0.0.1:${NATS_MONITOR_PORT:-8222}:8222"
       command:
         - "--jetstream"
         - "--store_dir=/data"
@@ -103,7 +120,46 @@ services:
         resources:
           limits: { cpus: "0.5", memory: 256M }
 
+  control-plane:
+    build:
+      context: .
+      dockerfile: infra/workers/Dockerfile
+    command: ["python", "-m", "packages.control_plane"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${CONTROL_PLANE_PORT:-8001}:8001"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      NATS_URL: nats://nats:4222
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      RUNTIME_MODE: ${RUNTIME_MODE:-paper_live}
+      ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
+      CONTROL_PLANE_PORT: "8001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2)",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+
   influxdb:
+    profiles: ["legacy"]
     image: influxdb:2.7
     container_name: quantex-influxdb
     restart: unless-stopped
@@ -117,6 +173,7 @@ services:
   # ── LAYER 4-5: SERVICES ───────────────────────────────
 
   orchestrator:
+    profiles: ["legacy"]
     build:
       context: .
       dockerfile: orchestrator/Dockerfile
@@ -158,6 +215,7 @@ services:
   # ── NEW: MICROSERVICES ────────────────────────────────
 
   market-data:
+    profiles: ["legacy"]
     build:
       context: .
       dockerfile: services/market_data/Dockerfile
@@ -182,6 +240,7 @@ services:
         limits: { cpus: "1.0", memory: 1G }
 
   feature-engine:
+    profiles: ["legacy"]
     build:
       context: .
       dockerfile: services/feature_engine/Dockerfile
@@ -205,6 +264,7 @@ services:
         limits: { cpus: "1.0", memory: 1G }
 
   orderbook:
+    profiles: ["legacy"]
     build:
       context: .
       dockerfile: services/orderbook/Dockerfile
@@ -228,6 +288,7 @@ services:
         limits: { cpus: "1.0", memory: 1G }
 
   moe-router:
+    profiles: ["legacy"]
     build:
       context: .
       dockerfile: services/moe_router/Dockerfile
@@ -253,6 +314,7 @@ services:
         limits: { cpus: "1.0", memory: 1G }
 
   inference:
+    profiles: ["legacy"]
     build:
       context: .
       dockerfile: services/inference/Dockerfile
@@ -275,6 +337,7 @@ services:
         limits: { cpus: "1.0", memory: 1G }
 
   vllm:
+    profiles: ["legacy"]
     image: vllm/vllm-openai:latest
     container_name: quantex-vllm
     restart: unless-stopped
@@ -298,6 +361,7 @@ services:
               capabilities: [gpu]
 
   execution:
+    profiles: ["legacy"]
     build:
       context: .
       dockerfile: services/execution/Dockerfile
@@ -323,6 +387,7 @@ services:
         limits: { cpus: "1.0", memory: 1G }
 
   risk:
+    profiles: ["legacy"]
     build:
       context: .
       dockerfile: services/risk/Dockerfile
@@ -346,6 +411,7 @@ services:
         limits: { cpus: "0.5", memory: 512M }
 
   rl-learning:
+    profiles: ["legacy"]
     build:
       context: .
       dockerfile: services/rl_learning/Dockerfile
@@ -368,6 +434,7 @@ services:
         limits: { cpus: "1.0", memory: 1G }
 
   dashboard:
+    profiles: ["legacy"]
     build:
       context: .
       dockerfile: services/dashboard/Dockerfile
@@ -399,6 +466,7 @@ services:
         limits: { cpus: "1.0", memory: 1G }
 
   realtime:
+    profiles: ["legacy"]
     build: ./realtime
     container_name: quantex-realtime
     restart: unless-stopped
@@ -421,6 +489,7 @@ services:
         limits: { cpus: "1.0", memory: 1G }
 
   frontend:
+    profiles: ["legacy"]
     build: ./frontend
     container_name: quantex-frontend
     restart: unless-stopped
@@ -443,6 +512,7 @@ services:
   # ── LAYER 6: REVERSE PROXY ────────────────────────────
 
   nginx:
+    profiles: ["legacy"]
     build: ./deployment/nginx
     container_name: quantex-nginx
     restart: unless-stopped
@@ -492,6 +562,7 @@ services:
     image: certbot/certbot:v2.2.0
     container_name: quantex-certbot
     profiles:
+      - legacy
       - certbot
     volumes:
       - certbot_www:/var/www/certbot
@@ -510,6 +581,7 @@ services:
   # ── LAYER 7-8: MONITORING ────────────────────────────
 
   prometheus:
+    profiles: ["legacy"]
     image: prom/prometheus:latest
     container_name: quantex-prometheus
     restart: unless-stopped
@@ -527,6 +599,7 @@ services:
         limits: { cpus: "0.5", memory: 512M }
 
   nats-exporter:
+    profiles: ["legacy"]
     image: natsio/prometheus-nats-exporter:latest
     container_name: quantex-nats-exporter
     restart: unless-stopped
@@ -544,6 +617,7 @@ services:
         limits: { cpus: "0.25", memory: 128M }
 
   grafana:
+    profiles: ["legacy"]
     image: grafana/grafana:latest
     container_name: quantex-grafana
     restart: unless-stopped

@@ -7,6 +7,7 @@ import math
 import re
 from collections import Counter
 from pathlib import Path, PurePosixPath
+from urllib.parse import urlsplit
 
 from .errors import ManifestError, SecretDetectedError
 
@@ -54,6 +55,7 @@ ALLOWED_TEXT_SUFFIXES = frozenset(
         ".html",
         ".json",
         ".md",
+        ".mjs",
         ".ps1",
         ".py",
         ".rs",
@@ -148,6 +150,29 @@ def validate_source_path(root: Path, path: Path) -> str:
     if path.suffix.lower() not in ALLOWED_TEXT_SUFFIXES:
         raise ManifestError(f"unsupported embedding source type: {posix}")
     return posix
+
+
+def endpoint_host(endpoint: str) -> str:
+    """Return a normalized host from an egress origin without resolving DNS."""
+
+    if not endpoint or endpoint.strip() != endpoint or "://" not in endpoint:
+        raise ManifestError("invalid allowed egress endpoint")
+    parsed = urlsplit(endpoint)
+    if (
+        not parsed.scheme
+        or parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+    ):
+        raise ManifestError("invalid allowed egress endpoint")
+    try:
+        _ = parsed.port
+    except ValueError as exc:
+        raise ManifestError("invalid allowed egress endpoint") from exc
+    return parsed.hostname.casefold().rstrip(".")
 
 
 def _shannon_entropy(value: str) -> float:

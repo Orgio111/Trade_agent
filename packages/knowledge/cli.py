@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from .authority import authority_summary
 from .errors import KnowledgeError
 from .locking import LocalProcessLock
 from .lockfile import build_lock, check_lock, load_checked_lock, lock_sha256, write_lock
@@ -126,6 +127,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="path to the human-authored architecture manifest",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers.add_parser(
+        "validate",
+        help="validate ownership and runtime authority without a lock or network",
+    )
     subparsers.add_parser("lock", help="write deterministic offline evidence")
     subparsers.add_parser("check", help="fail on ownership/document/chunk drift")
     subparsers.add_parser("sync", help="incrementally embed and sync local Chroma")
@@ -142,6 +147,16 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if args.command == "validate":
+            inventory = load_inventory(args.manifest)
+            _json_print(
+                {
+                    "status": "valid",
+                    "manifest_sha256": inventory.manifest_sha256,
+                    **authority_summary(inventory.manifest),
+                }
+            )
+            return 0
         if args.command == "lock":
             inventory = load_inventory(args.manifest)
             lock = build_lock(inventory)

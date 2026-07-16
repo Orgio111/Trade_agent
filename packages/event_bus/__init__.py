@@ -1,7 +1,24 @@
-"""Transport-neutral event subjects and an in-memory test bus."""
+"""Transport-neutral event subjects with memory and JetStream adapters."""
 
+from .jetstream import (
+    ConsumerFailure,
+    DurableConsumerSettings,
+    JetStreamConfigurationError,
+    JetStreamEventBus,
+    JetStreamTransportError,
+    PublishReceipt,
+)
 from .memory import InMemoryEventBus, PublishedEvent
 from .subjects import CoreSubject
 
-__all__ = ["CoreSubject", "InMemoryEventBus", "PublishedEvent"]
-
+__all__ = [
+    "ConsumerFailure",
+    "CoreSubject",
+    "DurableConsumerSettings",
+    "InMemoryEventBus",
+    "JetStreamConfigurationError",
+    "JetStreamEventBus",
+    "JetStreamTransportError",
+    "PublishedEvent",
+    "PublishReceipt",
+]
