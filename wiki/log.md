@@ -2,6 +2,10 @@
 
 > Append-only timeline of every operation on the wiki. Newest at top. Reverse chronological so the current state is the first thing you read.
 
+## [2026-07-16] audit | Production readiness and autonomy verification
+
+Recorded [[production-readiness-audit-2026-07-16]] after an adversarial repository and runtime inspection. The current verdict is NO with production readiness 15/100: the machine runs a broken 23-container legacy profile, while the clean canonical runtime starts fail-closed but lacks both required producers, authoritative bootstrap, durable portfolio/PnL projections, transactional inbox/outbox/DLQ, protective-order lifecycle, and reliable NATS reconnection. Verification included 524 passing Python tests, canonical image builds and migrations, full-repository static analysis, dependency audits, local Ollama residency probes, live service inspection, a bounded soak, and isolated NATS fault injection. No trading logic, real order, cloud inference, `.env` file, or immutable raw source changed.
+
 ## [2026-07-16] verification | Canonical runtime and knowledge baseline
 
 Validated [[canonical-local-paper-runtime-v1]] Compose rendering with only the documented `POSTGRES_PASSWORD`; the profile-free graph contains exactly nine canonical services, while the quarantined Grafana path independently fails closed without its own secret. All 524 Python tests passed across isolated canonical and quarantined processes, and migrations 001-003 completed a fresh PostgreSQL apply followed by an idempotent no-op reapply in a disposable database. The offline [[local-knowledge-pipeline-operations]] benchmark planned 392 governed sources and 1,142 chunks in 23.861 seconds at 47.860 chunks/second with an 11.807 MB traced peak; the fake embed/store path processed 192 chunks at 514.361 chunks/second. ChromaDB 1.5.9 was healthy, but the local Ollama API timed out, so no new live embedding receipt was claimed. No trading logic, real order, cloud inference, `.env` file, or immutable raw source changed.

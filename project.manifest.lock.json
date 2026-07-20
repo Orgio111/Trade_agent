@@ -3658,6 +3658,13 @@
       "sha256": "751a5012995b7ce8cc83b13669985bd5337f88c99a8ebc1c40b43a7cd705a778"
     },
     {
+      "bytes": 21217,
+      "component": "obsidian-knowledge-base",
+      "owner": "software-engineering/knowledge-curation",
+      "path": "wiki/content/overviews/production-readiness-audit-2026-07-16.md",
+      "sha256": "e89fd6de09c36b3b462a8e3c4d700bbe07c0e3394cffa18db2740f124f854a0c"
+    },
+    {
       "bytes": 6652,
       "component": "obsidian-knowledge-base",
       "owner": "software-engineering/knowledge-curation",
@@ -3735,18 +3742,18 @@
       "sha256": "ada0394f98ccae5dda7471bb1e32a8e0f33a32326fc18090a94b6a0f21181407"
     },
     {
-      "bytes": 11611,
+      "bytes": 11807,
       "component": "obsidian-knowledge-base",
       "owner": "software-engineering/knowledge-curation",
       "path": "wiki/index.md",
-      "sha256": "82b394fefd9179b77424b7d7c4cb52c7ce27fc073fffa98fd472393bd82ede34"
+      "sha256": "1984219e13f6dfe0cefe0b93525d28396d867c7278fde87281c7bc1be16625c2"
     },
     {
-      "bytes": 32079,
+      "bytes": 32953,
       "component": "obsidian-knowledge-base",
       "owner": "software-engineering/knowledge-curation",
       "path": "wiki/log.md",
-      "sha256": "900b3a615afb0e7915a054dab8f588c98a0a65859212610beb1a5d62a53ac0fb"
+      "sha256": "c790353f436988167decc5a4952a367edec08e54806e9051e7cb1f5153c8ba38"
     },
     {
       "bytes": 64,
@@ -16433,6 +16440,73 @@
       "sha256": "751a5012995b7ce8cc83b13669985bd5337f88c99a8ebc1c40b43a7cd705a778"
     },
     {
+      "bytes": 21217,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3970,
+          "end_line": 62,
+          "id": "kn_c625d6562b4177fde646d3d566ee314d47e423ef3257d14a8b1b2d067fce7a13",
+          "index": 0,
+          "sha256": "8a969eeacdf0aaa19494917b94dff67c2521854a797110b200128fae75b8b7a0",
+          "start_line": 1
+        },
+        {
+          "chars": 3925,
+          "end_line": 113,
+          "id": "kn_49596dbd3f6ab1bc5a175be14b0a3ef911236f2582ccc1ae7daa1d48bf7314f5",
+          "index": 1,
+          "sha256": "d1b232e1c5d90b8a3b139ae46a43dc3d5430ebecb5e0d1c768de8687226c6fce",
+          "start_line": 58
+        },
+        {
+          "chars": 3462,
+          "end_line": 157,
+          "id": "kn_e73486a345a01977d42725cbc936faa3cb444e5a1140759dfe62fc46e8ecf3de",
+          "index": 2,
+          "sha256": "ae8fa445730a71fcc960d8fc8c1e9136f0a09e90b5a945d69bf25816408e7433",
+          "start_line": 106
+        },
+        {
+          "chars": 3901,
+          "end_line": 221,
+          "id": "kn_8b1d2e329ffaeab431162d9910775f64c7ac2fc1399255dd8382003e92777e11",
+          "index": 3,
+          "sha256": "11aef0e8f4489186ce63542b595c38d25e82580cec0c03259e805f8fea1abd00",
+          "start_line": 149
+        },
+        {
+          "chars": 2984,
+          "end_line": 262,
+          "id": "kn_23ec356b6bd7de8247c73d432044063a55c6fa56c02499e1d99d1ac0db768de3",
+          "index": 4,
+          "sha256": "13dfdae7d5fb748f2b7917f185254dca3ca3eca324da14d1649894c56fc3f0c5",
+          "start_line": 214
+        },
+        {
+          "chars": 3770,
+          "end_line": 301,
+          "id": "kn_5230bf16044a12a206f3c01645adadd2e0d47744cdda3c1d323f63681d975a4d",
+          "index": 5,
+          "sha256": "b8da67f61ac3dcd76dfbec2ec6127681f776be525a6e255c00604cf578267c5e",
+          "start_line": 254
+        },
+        {
+          "chars": 1226,
+          "end_line": 323,
+          "id": "kn_9ff8de3bf5e5e3c9580bf54851b2a145cda3ec71bb03c5ffa31f6ae1523cb499",
+          "index": 6,
+          "sha256": "0ed5903fe6cf89d2149a34049875f599ef97ab471f1edfdc122f0c666e1fbe8a",
+          "start_line": 295
+        }
+      ],
+      "component": "obsidian-knowledge-base",
+      "path": "wiki/content/overviews/production-readiness-audit-2026-07-16.md",
+      "sha256": "e89fd6de09c36b3b462a8e3c4d700bbe07c0e3394cffa18db2740f124f854a0c"
+    },
+    {
       "bytes": 6652,
       "categories": [
         "configuration"
@@ -16722,130 +16796,138 @@
       "sha256": "ada0394f98ccae5dda7471bb1e32a8e0f33a32326fc18090a94b6a0f21181407"
     },
     {
-      "bytes": 11611,
+      "bytes": 11807,
       "categories": [
         "configuration"
       ],
       "chunks": [
         {
-          "chars": 3966,
-          "end_line": 40,
-          "id": "kn_7164a68ab1b037f6975812767cb9e7e13921ed5e27c486ed2b982b4865d70255",
+          "chars": 3838,
+          "end_line": 39,
+          "id": "kn_0b750d18dd7809abf7f986e99eb65665f258702500fd255dec07cb36437aa034",
           "index": 0,
-          "sha256": "a916fb16040f1cc857170b817391227bf05ae0e75ac7570d54db629c322af657",
+          "sha256": "8c7f2cb5e58065a7dc2ac0ddf1802b688e551e91fd9f7fde4a4ef5298d9c6088",
           "start_line": 1
         },
         {
-          "chars": 3892,
-          "end_line": 78,
-          "id": "kn_a04a25ba925ac2383c8601d00fa4858adf9840505fc222868df77c9e47271cc3",
+          "chars": 3877,
+          "end_line": 77,
+          "id": "kn_8d864bf474f7c3626bfe024c26dfe7b9aff7bbab23929b156585884d67d460cc",
           "index": 1,
-          "sha256": "4e65f7c6c97adc581ee77eceda8b8121f1f6c0432d7fe200e33a2b7552c14f73",
-          "start_line": 38
+          "sha256": "0fbfd3d1104bf66b77a531adb5ecc36004d84bdc3b6feb3b8d1e473273c53922",
+          "start_line": 37
         },
         {
-          "chars": 3914,
-          "end_line": 120,
-          "id": "kn_f618ab245287efd7f05d7a11b1f2f92eb54ed2ebe2b51caee770d4ae2924e5db",
+          "chars": 3341,
+          "end_line": 109,
+          "id": "kn_70062da66e59258b17eafb3def1d89c59b3b0db084a6be2dbb558d24c0fd32ea",
           "index": 2,
-          "sha256": "69bb2add43d3bce28ba9c2f6f2961741a3ecf5b686f1e96b1003ba99b559e53e",
-          "start_line": 76
+          "sha256": "dc42e861fb1dbbc9059f792543e4ff52d624a91928d1cde2651fc18de62a4146",
+          "start_line": 74
         },
         {
-          "chars": 641,
-          "end_line": 123,
-          "id": "kn_5ed786781b01c022bd906b0f2d443de58f7167fc1d0462fb1e9374c9308a2af5",
+          "chars": 1549,
+          "end_line": 124,
+          "id": "kn_52e862d5623d8d43f21d5cec826db90d967aaf1d19d560190be3c0a7983cc500",
           "index": 3,
-          "sha256": "069ce571fcec278172d02ca1889ac48b90282683fdd221e10f983fb07e16c406",
-          "start_line": 113
+          "sha256": "c07f11c2036b2e02c42a95aba3f9e2a718c7092317d1d930d22852b9906daf86",
+          "start_line": 104
         }
       ],
       "component": "obsidian-knowledge-base",
       "path": "wiki/index.md",
-      "sha256": "82b394fefd9179b77424b7d7c4cb52c7ce27fc073fffa98fd472393bd82ede34"
+      "sha256": "1984219e13f6dfe0cefe0b93525d28396d867c7278fde87281c7bc1be16625c2"
     },
     {
-      "bytes": 32079,
+      "bytes": 32953,
       "categories": [
         "configuration"
       ],
       "chunks": [
         {
-          "chars": 3263,
+          "chars": 3287,
           "end_line": 23,
-          "id": "kn_43f585f2c25d4d6a1d1c8a96f43318a2a3b109d16d681ca72d6a8bec24f2b142",
+          "id": "kn_56386cdc806ed5e9c2c0db7531cce912e57b3dcb175eaa634f327b2903af1560",
           "index": 0,
-          "sha256": "c90d3c9af950c378ba2f1b732139503be521391b3145d8193a721b2675964b31",
+          "sha256": "6e97500d43cf2a9f6750e62baa7570d720274acd975e9456c05e928a25d0738e",
           "start_line": 1
         },
         {
-          "chars": 3637,
+          "chars": 3742,
           "end_line": 43,
-          "id": "kn_576d0cc63c78142e5e576a621c4aa3b22f58987046c728b2457c89ee0da29a09",
+          "id": "kn_055f866f77257b6f20209dae8e9bad90e6c7623e771dd517cc79b362f3ed99b0",
           "index": 1,
-          "sha256": "bda0475256145496453bd514eccae0eb41f0daac8dfe83c664bfbe1300c531df",
+          "sha256": "0e5ba820fb2adcb7b747e6d5833e018659b4b41a6a4e5b0f6a3b49e8831bd63a",
           "start_line": 20
         },
         {
-          "chars": 3984,
-          "end_line": 79,
-          "id": "kn_84005903422f4b1d12381ccdf53c38c84c7b0f99c3a8c7bdd42d19bf306753b9",
+          "chars": 3804,
+          "end_line": 71,
+          "id": "kn_8c1b0aa20f950b0b2c6534e0245bab09cf8686f006328b6d4e9ad4e7f101e477",
           "index": 2,
-          "sha256": "d3e0bcfd2850efdddb39155d81c7a8a7a3d130b7fd3c875025581add3933aae6",
+          "sha256": "12a26867546aeae0d54b0a94f49f9c6051e9fff9e4b494ca16054ff5fe7ab53b",
           "start_line": 40
         },
         {
-          "chars": 3992,
-          "end_line": 110,
-          "id": "kn_4321b4083b47179366fa54fb504c94cab595e645da9f686a06f6a3efa3258de6",
+          "chars": 3350,
+          "end_line": 102,
+          "id": "kn_fa3213b77366dfe38c7c04626d04095f35d7d5de39809b12dc2c997d5def5782",
           "index": 3,
-          "sha256": "8626f23878a4057c3b9977e889d598a41d46f463bf6e6d239ed28ce4a17f8eb6",
-          "start_line": 73
+          "sha256": "bf90890fd44ca72cb466f38c60ca290ffc807e66a1225d5268068dd3176da314",
+          "start_line": 64
         },
         {
-          "chars": 3277,
-          "end_line": 140,
-          "id": "kn_bb27723b1c954cf70464e27e559cf916c181169713feb91bf83f69a56c72eb63",
+          "chars": 3546,
+          "end_line": 126,
+          "id": "kn_26a1b9aa4f46125387f28516e57c9a363982e9a34565e49593225721371cd60d",
           "index": 4,
-          "sha256": "47bc411e1e28412d248c2f36497b798b67db61c2c0963fe751cb789071b41340",
-          "start_line": 105
+          "sha256": "1afc98cf06fa55af82b2210eb4d368ee9b1939f1d12264e7706c0d80b2c9722e",
+          "start_line": 95
         },
         {
-          "chars": 4000,
-          "end_line": 182,
-          "id": "kn_7580dc88192fe79fcfe978ea80bbbbfe34583368426c7c9256b5db4e04441dce",
+          "chars": 3365,
+          "end_line": 161,
+          "id": "kn_5db68fcbfec68968f343c262d93f06f8cf2edcd48ecf52e49ae8207f732d3939",
           "index": 5,
-          "sha256": "06b2814686b938c94ff9348cffbeab2764b289c20f1c6ba2e570f809606da753",
-          "start_line": 130
+          "sha256": "59f0e657177f07e76abacc1a50aaceb01b68b67a305c04ead814ef9c3258971f",
+          "start_line": 121
         },
         {
-          "chars": 3965,
-          "end_line": 219,
-          "id": "kn_d645aee6c0ed833a07b438dd10f10de3d56bd079a3c669e5ac1fe1ca786737a9",
+          "chars": 3299,
+          "end_line": 196,
+          "id": "kn_ff8695d8d6c029ac1b7b6171bcff10f8a593e5cdfb09bd25079eca1dff0450cc",
           "index": 6,
-          "sha256": "38e8c52fbb0d1a5a388bfc72477ddb97e7e11df7949967e833e7f071544151d1",
-          "start_line": 177
+          "sha256": "7eef3ae80dfb7779408acf7dd1268b4705b21a76b99743bc05aeaa23639ff48f",
+          "start_line": 156
         },
         {
-          "chars": 3694,
-          "end_line": 277,
-          "id": "kn_386612a308ec0f7b2a6da023749b01836949d1802075d28a00a14cb45b679c39",
+          "chars": 3940,
+          "end_line": 241,
+          "id": "kn_cd06a9ad09bd8aa78d893c4f33469a7c0b3095506e56158c4015ada6e4332ec3",
           "index": 7,
-          "sha256": "6b57b321f5013785bb7cee61a8fe7ec738e59961b96bfbb1ab37a599ff237a32",
-          "start_line": 214
+          "sha256": "0f1d053461a28aae3d9598105bde0f2ff4fe627def17d1c0aef14bcc7046f305",
+          "start_line": 191
         },
         {
-          "chars": 3854,
-          "end_line": 319,
-          "id": "kn_5243ff796c2b8f9c98f1e51a5bc4d37fe51d4f9d5ae314f8c42fec3566000dd2",
+          "chars": 3667,
+          "end_line": 293,
+          "id": "kn_a482f9824feff2d663a291386b632718c1a91de78882cc789d72ce47293ead76",
           "index": 8,
-          "sha256": "88cb90f7af719b2a0ee701577a4b1fb2f78ef91660e9371ba9e744cbc28a69dd",
-          "start_line": 270
+          "sha256": "2700353717fb43d8f44fca8564a11379e9589f2c1162a85d3ecbb9fce714272f",
+          "start_line": 232
+        },
+        {
+          "chars": 2824,
+          "end_line": 323,
+          "id": "kn_6d11ba76218569099bf40273cac836855354f6ded38ecbe0c2e96f663b808975",
+          "index": 9,
+          "sha256": "91b352c4d4234ae31763c7883931dd1a7490a4e57a27e3892ee4353a5d558952",
+          "start_line": 288
         }
       ],
       "component": "obsidian-knowledge-base",
       "path": "wiki/log.md",
-      "sha256": "900b3a615afb0e7915a054dab8f588c98a0a65859212610beb1a5d62a53ac0fb"
+      "sha256": "c790353f436988167decc5a4952a367edec08e54806e9051e7cb1f5153c8ba38"
     },
     {
       "bytes": 64,
@@ -17371,11 +17453,11 @@
     }
   ],
   "summary": {
-    "chunk_count": 1142,
+    "chunk_count": 1150,
     "component_count": 20,
-    "content_bytes": 3347931,
-    "governed_bytes": 5317599,
-    "governed_file_count": 507,
-    "source_count": 392
+    "content_bytes": 3370218,
+    "governed_bytes": 5339886,
+    "governed_file_count": 508,
+    "source_count": 393
   }
 }

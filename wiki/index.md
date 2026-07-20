@@ -2,7 +2,7 @@
 
 > Content catalog for the trading & quant second brain. Organized by category. ZCode updates this on every ingest. **Read this first** when answering a query — then drill into pages.
 >
-> **State:** 6 sources · 70 pages · last updated 2026-07-16
+> **State:** 6 sources · 71 pages · last updated 2026-07-16
 
 ---
 
@@ -12,6 +12,7 @@ _Synthesis pages — the big picture of a topic._
 - [[brain-ecosystem]] — single source of truth for all 12 brain weights, tiers, registration files, and aggregation flow. (stable, updated 2026-06-30)
 - [[infrastructure-overview]] — canonical nine-service local paper deployment, loopback boundaries, and explicit legacy-profile quarantine. (stable, updated 2026-07-16)
 - [[multi-agent-pipeline]] — quarantined LangGraph/VLM/RAG/swarm design and the contract required for any future candidate-producer integration. (draft, updated 2026-07-16)
+- [[production-readiness-audit-2026-07-16]] — adversarial code, deployment, fault, security, latency, persistence, and autonomy audit; current verdict NO at 15/100. (active, updated 2026-07-16)
 
 ## Concepts
 _Methods and ideas, synthesized across all sources._
