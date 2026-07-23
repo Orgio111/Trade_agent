@@ -37,7 +37,7 @@ class DefaultReadinessProbe:
     async def check(self) -> RuntimeReadiness:
         database, nats_status, ollama = await asyncio.gather(
             self._bounded(self._check_database),
-            self._bounded(self._check_nats),
+            self._bounded(self._check_nats, timeout_seconds=1.0),
             self._bounded(self._check_ollama),
         )
         execution_enabled = database[1]
@@ -57,9 +57,13 @@ class DefaultReadinessProbe:
     async def _bounded(
         self,
         operation: Callable[[], Awaitable[tuple[DependencyStatus, bool]]],
+        *,
+        timeout_seconds: float | None = None,
     ) -> tuple[DependencyStatus, bool]:
         try:
-            return await asyncio.wait_for(operation(), timeout=self._timeout_seconds)
+            return await asyncio.wait_for(
+                operation(), timeout=timeout_seconds or self._timeout_seconds
+            )
         except TimeoutError:
             return DependencyStatus(healthy=False, detail="probe timed out"), False
         except Exception as exc:
@@ -175,7 +179,8 @@ class DefaultReadinessProbe:
     async def _check_nats(self) -> tuple[DependencyStatus, bool]:
         client = await nats.connect(
             servers=[self._settings.nats_url],
-            connect_timeout=self._timeout_seconds,
+            allow_reconnect=False,
+            connect_timeout=min(self._timeout_seconds, 1.0),
             max_reconnect_attempts=0,
         )
         try:

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from fastapi.testclient import TestClient
 import pytest
 from pydantic import SecretStr
+from types import SimpleNamespace
 
 from packages.control_plane import DependencyStatus, RuntimeReadiness, create_app
 from packages.control_plane.probes import DefaultReadinessProbe
@@ -63,6 +65,19 @@ def test_control_plane_exposes_no_http_mutation_routes() -> None:
     assert paths
     for operations in paths.values():
         assert not ({"post", "put", "patch", "delete"} & set(operations))
+
+
+def test_metrics_exposes_readiness_without_secrets_or_high_cardinality_labels() -> None:
+    client = TestClient(create_app(FakeProbe(readiness(ready=True, execution_enabled=False))))
+
+    response = client.get("/metrics")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    assert "quantex_runtime_ready 1" in response.text
+    assert "quantex_execution_enabled 0" in response.text
+    assert 'quantex_dependency_healthy{dependency="postgres"} 1' in response.text
+    assert "postgresql://" not in response.text
 
 
 class FakeDatabaseConnection:
@@ -187,3 +202,44 @@ async def test_expired_worker_lease_makes_database_unready(monkeypatch) -> None:
     assert status.healthy is False
     assert execution_enabled is False
     assert "worker_leases_ready=False" in status.detail
+
+
+@pytest.mark.asyncio
+async def test_nats_probe_disables_reconnect_and_caps_connect_timeout(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    async def connect(**kwargs: object) -> SimpleNamespace:
+        captured.update(kwargs)
+
+        async def flush(*, timeout: int) -> None:
+            assert timeout == 5
+
+        async def close() -> None:
+            return None
+
+        return SimpleNamespace(flush=flush, close=close)
+
+    monkeypatch.setattr("packages.control_plane.probes.nats.connect", connect)
+
+    status, reachable = await DefaultReadinessProbe(
+        probe_settings(), timeout_seconds=5
+    )._check_nats()
+
+    assert status.healthy is True
+    assert reachable is True
+    assert captured["allow_reconnect"] is False
+    assert captured["connect_timeout"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_bounded_probe_accepts_a_stricter_dependency_timeout() -> None:
+    async def blocked() -> tuple[DependencyStatus, bool]:
+        await asyncio.sleep(1)
+        raise AssertionError("dependency timeout was not enforced")
+
+    status, enabled = await DefaultReadinessProbe(probe_settings())._bounded(
+        blocked, timeout_seconds=0.01
+    )
+
+    assert status == DependencyStatus(healthy=False, detail="probe timed out")
+    assert enabled is False

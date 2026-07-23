@@ -373,15 +373,30 @@ class PostgresInboxOutbox:
                 stream=self._stream_name,
             )
         except Exception as exc:
-            # Lease expiry is the retry signal. Do not erase evidence of an
-            # ambiguous publish; stable Nats-Msg-Id makes retry safe in-window.
-            if int(row["publish_attempts"]) + 1 >= self._max_publish_attempts:
+            # Stable Nats-Msg-Id makes ambiguous publish retries safe in-window.
+            attempt = int(row["publish_attempts"]) + 1
+            if attempt >= self._max_publish_attempts:
                 await self._dead_letter(
                     event_id=claimed_event_id,
                     subject=str(row["subject"]),
                     payload=encoded,
                     error=exc,
                 )
+            else:
+                retry_delay_seconds = min(2**attempt, 300)
+                async with self._pool.acquire() as connection:
+                    await connection.execute(
+                        """
+                        UPDATE event_outbox
+                        SET status = 'pending', last_error_code = $2,
+                            next_attempt_at = NOW() + ($3 * INTERVAL '1 second'),
+                            lease_owner = NULL, lease_expires_at = NULL
+                        WHERE event_id = $1 AND status = 'publishing'
+                        """,
+                        claimed_event_id,
+                        type(exc).__name__,
+                        retry_delay_seconds,
+                    )
             raise
         async with self._pool.acquire() as connection:
             await connection.execute(

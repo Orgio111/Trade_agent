@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 from .models import Liveness, RuntimeReadiness
 from .probes import ReadinessProbe
@@ -31,5 +31,21 @@ def create_app(probe: ReadinessProbe) -> FastAPI:
     @app.get("/api/v1/runtime", response_model=RuntimeReadiness)
     async def runtime() -> RuntimeReadiness:
         return await probe.check()
+
+    @app.get("/metrics", response_class=PlainTextResponse)
+    async def metrics() -> str:
+        result = await probe.check()
+        lines = [
+            "# TYPE quantex_runtime_ready gauge",
+            f"quantex_runtime_ready {int(result.ready)}",
+            "# TYPE quantex_execution_enabled gauge",
+            f"quantex_execution_enabled {int(result.execution_enabled)}",
+            "# TYPE quantex_dependency_healthy gauge",
+        ]
+        lines.extend(
+            f'quantex_dependency_healthy{{dependency="{name}"}} {int(status.healthy)}'
+            for name, status in sorted(result.dependencies.items())
+        )
+        return "\n".join(lines) + "\n"
 
     return app

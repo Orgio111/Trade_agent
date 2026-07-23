@@ -1,0 +1,84 @@
+{
+  "checks": {
+    "baseline_readiness": {
+      "dependencies": {
+        "nats": {
+          "detail": "JetStream transport reachable",
+          "healthy": true
+        },
+        "ollama": {
+          "detail": "all approved local models are installed",
+          "healthy": true
+        },
+        "postgres": {
+          "detail": "migrations=7; active_policies=1; portfolio_fresh=True; constraints_initialized=True; kill_switch_active=False; worker_leases_ready=True",
+          "healthy": true
+        }
+      },
+      "execution_enabled": true,
+      "mode": "paper_live",
+      "ready": true,
+      "service": "quantex-control-plane"
+    },
+    "database": {
+      "dead_letters": 0,
+      "duplicate_fills": 0,
+      "duplicate_inbox": 0,
+      "expired_leases": 0,
+      "failed_reconciliations": 0,
+      "fills": 0,
+      "order_intents": 0,
+      "pending_outbox": 0,
+      "risk_decisions": 0
+    },
+    "nats_outage": {
+      "duration_seconds": 31.031,
+      "runtime": {
+        "dependencies": {
+          "nats": {
+            "detail": "probe timed out",
+            "healthy": false
+          },
+          "ollama": {
+            "detail": "all approved local models are installed",
+            "healthy": true
+          },
+          "postgres": {
+            "detail": "migrations=7; active_policies=1; portfolio_fresh=True; constraints_initialized=True; kill_switch_active=False; worker_leases_ready=False",
+            "healthy": false
+          }
+        },
+        "execution_enabled": false,
+        "mode": "paper_live",
+        "ready": false,
+        "service": "quantex-control-plane"
+      }
+    },
+    "recovered_readiness": {
+      "dependencies": {
+        "nats": {
+          "detail": "JetStream transport reachable",
+          "healthy": true
+        },
+        "ollama": {
+          "detail": "all approved local models are installed",
+          "healthy": true
+        },
+        "postgres": {
+          "detail": "migrations=7; active_policies=1; portfolio_fresh=True; constraints_initialized=True; kill_switch_active=False; worker_leases_ready=True",
+          "healthy": true
+        }
+      },
+      "execution_enabled": true,
+      "mode": "paper_live",
+      "ready": true,
+      "service": "quantex-control-plane"
+    }
+  },
+  "finished_at": "2026-07-23T17:21:58.039778+00:00",
+  "live_trading_enabled": false,
+  "paper_trading_only": true,
+  "passed": true,
+  "project": "tradeagent_acceptance_dbroles2",
+  "started_at": "2026-07-23T17:19:17.996839+00:00"
+}

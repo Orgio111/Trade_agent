@@ -31,6 +31,45 @@ class FillRow:
             raise ValueError("fill occurred_at must be timezone-aware")
 
 
+@dataclass(frozen=True, slots=True)
+class PositionProjection:
+    quantity: Decimal
+    average_entry_price: Decimal | None
+    realized_pnl: Decimal
+    fees: Decimal
+
+
+def project_position(fills: Sequence[FillRow]) -> PositionProjection:
+    """Project one signed position; exact close quantity handles flips."""
+
+    quantity = Decimal("0")
+    average: Decimal | None = None
+    realized = Decimal("0")
+    fees = Decimal("0")
+    for fill in sorted(fills, key=lambda row: (row.occurred_at, row.fill_id)):
+        signed = fill.quantity if fill.side == "buy" else -fill.quantity
+        fees += fill.fee
+        if quantity == 0 or (quantity > 0) == (signed > 0):
+            old_notional = abs(quantity) * (average or Decimal("0"))
+            quantity += signed
+            average = (old_notional + fill.quantity * fill.price) / abs(quantity)
+            continue
+
+        closed = min(abs(quantity), abs(signed))
+        if quantity > 0:
+            realized += closed * (fill.price - (average or fill.price))
+        else:
+            realized += closed * ((average or fill.price) - fill.price)
+        remaining = quantity + signed
+        if remaining == 0:
+            quantity, average = Decimal("0"), None
+        elif (remaining > 0) == (quantity > 0):
+            quantity = remaining
+        else:
+            quantity, average = remaining, fill.price
+    return PositionProjection(quantity, average, realized, fees)
+
+
 class PaperPortfolioProjector:
     def __init__(self, initial_equity: Decimal) -> None:
         if not initial_equity.is_finite() or initial_equity <= 0:

@@ -12,7 +12,8 @@ WORKDIR /app
 # Resolve exactly the repository lock before copying source so dependency
 # layers remain reproducible and cacheable.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --only-group workers --no-install-project --no-cache
+RUN uv sync --frozen --only-group workers --no-install-project --no-cache \
+    && rm -f /bin/uv /bin/uvx
 
 COPY packages ./packages
 COPY workers ./workers

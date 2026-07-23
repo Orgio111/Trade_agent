@@ -94,8 +94,19 @@ def test_legacy_vllm_host_port_is_loopback_only() -> None:
         assert str(port).startswith("127.0.0.1:")
 
 
-def test_profile_free_compose_requires_only_the_postgres_secret() -> None:
+def test_profile_free_compose_requires_owner_and_runtime_database_secrets() -> None:
     compose = COMPOSE_PATH.read_text(encoding="utf-8")
     required_variables = set(re.findall(r"\$\{([A-Z0-9_]+):\?", compose))
 
-    assert required_variables == {"POSTGRES_PASSWORD"}
+    assert required_variables == {"POSTGRES_PASSWORD", "DB_RUNTIME_PASSWORD"}
+
+
+def test_canonical_runtime_never_connects_as_database_owner() -> None:
+    services = _services()
+    for name in EXPECTED_DEFAULT_SERVICES - {"postgres", "migrate", "redis", "chroma", "nats"}:
+        database_url = str(services[name]["environment"]["DATABASE_URL"])
+        assert "quantex_runtime" in database_url
+        assert "${POSTGRES_USER" not in database_url
+
+    assert services["migrate"]["environment"]["PGUSER"] == "${POSTGRES_USER:-quantex}"
+    assert services["migrate"]["environment"]["DB_RUNTIME_USER"] == "quantex_runtime"

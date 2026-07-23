@@ -49,6 +49,9 @@ class FakeConnection:
             self.dead_letters.append(args)
         elif "status = 'dead_letter'" in query:
             self.outbox[str(args[0])]["status"] = "dead_letter"
+        elif "next_attempt_at = NOW()" in query:
+            self.outbox[str(args[0])]["status"] = "pending"
+            self.outbox[str(args[0])]["retry_delay_seconds"] = args[2]
         elif "UPDATE event_inbox" not in query and "UPDATE event_outbox" not in query:
             raise AssertionError(query)
         return "UPDATE 1"
@@ -66,9 +69,10 @@ class FakeConnection:
             row = self.outbox.get(event_id)
             if row is None or row["status"] == "published":
                 return None
+            selected = dict(row)
             row["status"] = "publishing"
             row["publish_attempts"] = int(row["publish_attempts"]) + 1
-            return row
+            return selected
         raise AssertionError(query)
 
 
@@ -179,10 +183,10 @@ async def test_publish_failure_leaves_outbox_retryable() -> None:
     with pytest.raises(JetStreamTransportError):
         await router.route(**route_event())
 
-    assert pool.connection.outbox["output-1"]["status"] == "publishing"
+    assert pool.connection.outbox["output-1"]["status"] == "pending"
+    assert pool.connection.outbox["output-1"]["retry_delay_seconds"] == 2
 
     bus.fail = False
-    pool.connection.outbox["output-1"]["status"] = "pending"
     assert await router.dispatch_next() is True
     assert pool.connection.outbox["output-1"]["status"] == "published"
     assert bus.publications == 2

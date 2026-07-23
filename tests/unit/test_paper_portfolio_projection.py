@@ -5,7 +5,11 @@ from decimal import Decimal
 
 import pytest
 
-from workers.reconciliation.projection import FillRow, PaperPortfolioProjector
+from workers.reconciliation.projection import (
+    FillRow,
+    PaperPortfolioProjector,
+    project_position,
+)
 
 
 NOW = datetime(2026, 7, 22, 8, 0, tzinfo=UTC)
@@ -80,3 +84,31 @@ def test_sell_larger_than_position_fails_closed() -> None:
             marks={"BTCUSDT": Decimal("100")},
             reconciled_at=NOW,
         )
+
+
+def test_signed_position_flip_closes_exact_quantity_and_reopens_remainder() -> None:
+    position = project_position(
+        (
+            fill("buy-1", side="buy", quantity="2", price="100", fee="1"),
+            fill("sell-1", side="sell", quantity="3", price="120", fee="1.5"),
+        )
+    )
+
+    assert position.quantity == Decimal("-1")
+    assert position.average_entry_price == Decimal("120")
+    assert position.realized_pnl == Decimal("40")
+    assert position.fees == Decimal("2.5")
+
+
+def test_signed_position_weighted_average_and_close_are_decimal_exact() -> None:
+    position = project_position(
+        (
+            fill("buy-1", side="buy", quantity="1", price="100"),
+            fill("buy-2", side="buy", quantity="2", price="130"),
+            fill("sell-1", side="sell", quantity="3", price="120"),
+        )
+    )
+
+    assert position.quantity == 0
+    assert position.average_entry_price is None
+    assert position.realized_pnl == Decimal("0")

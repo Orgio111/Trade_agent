@@ -70,6 +70,8 @@ services:
       PGDATABASE: ${POSTGRES_DB:-quantex}
       PGUSER: ${POSTGRES_USER:-quantex}
       PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      DB_RUNTIME_USER: quantex_runtime
+      DB_RUNTIME_PASSWORD: ${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}
     depends_on:
       postgres:
         condition: service_healthy
@@ -128,7 +130,7 @@ services:
     ports:
       - "127.0.0.1:${CONTROL_PLANE_PORT:-8001}:8001"
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      DATABASE_URL: postgresql://quantex_runtime:${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
       NATS_URL: nats://nats:4222
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       RUNTIME_MODE: ${RUNTIME_MODE:-paper_live}
@@ -164,7 +166,7 @@ services:
     command: ["python", "-m", "workers.market_data"]
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      DATABASE_URL: postgresql://quantex_runtime:${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
       NATS_URL: nats://nats:4222
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       RUNTIME_MODE: paper_live
@@ -188,7 +190,7 @@ services:
     command: ["python", "-m", "workers.market_producer"]
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      DATABASE_URL: postgresql://quantex_runtime:${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
       NATS_URL: nats://nats:4222
       RUNTIME_MODE: paper_live
       ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
@@ -209,7 +211,7 @@ services:
     command: ["python", "-m", "workers.features"]
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      DATABASE_URL: postgresql://quantex_runtime:${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
       NATS_URL: nats://nats:4222
       RUNTIME_MODE: paper_live
       ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
@@ -230,7 +232,7 @@ services:
     command: ["python", "-m", "workers.candidate"]
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      DATABASE_URL: postgresql://quantex_runtime:${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
       NATS_URL: nats://nats:4222
       RUNTIME_MODE: paper_live
       ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
@@ -255,7 +257,7 @@ services:
     command: ["python", "-m", "workers.reconciliation"]
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      DATABASE_URL: postgresql://quantex_runtime:${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
       NATS_URL: nats://nats:4222
       RUNTIME_MODE: paper_live
       ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
@@ -276,7 +278,7 @@ services:
     command: ["python", "-m", "workers.decision"]
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      DATABASE_URL: postgresql://quantex_runtime:${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
       NATS_URL: nats://nats:4222
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       RUNTIME_MODE: paper_live
@@ -302,7 +304,7 @@ services:
     command: ["python", "-m", "workers.execution"]
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      DATABASE_URL: postgresql://quantex_runtime:${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
       NATS_URL: nats://nats:4222
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       RUNTIME_MODE: paper_live
@@ -346,7 +348,7 @@ services:
       - "8001"
     environment:
       INFERENCE_BUDGET_TIER: ${INFERENCE_BUDGET_TIER:-free}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      DATABASE_URL: postgresql://quantex_runtime:${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
       REDIS_HOST: redis
       INITIAL_BALANCE: ${INITIAL_BALANCE:-1000.0}
       FORWARDED_ALLOW_IPS: "*"
