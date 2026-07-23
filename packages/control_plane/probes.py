@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable
 import math
 from typing import Protocol
 
-import asyncpg
+import asyncpg  # type: ignore[import-untyped]
 import nats
 
 from packages.local_ai import LocalOllamaHealthClient
@@ -91,7 +91,8 @@ class DefaultReadinessProbe:
                         SELECT 1
                         FROM portfolio_snapshots
                         WHERE account_id = $1
-                    ) AS portfolio_initialized,
+                          AND reconciled_at >= NOW() - INTERVAL '30 seconds'
+                    ) AS portfolio_fresh,
                     EXISTS (
                         SELECT 1
                         FROM instrument_constraints
@@ -104,6 +105,24 @@ class DefaultReadinessProbe:
                 """,
                 self._settings.account_id,
             )
+            leases = await connection.fetch(
+                """
+                SELECT service_name,
+                       CASE WHEN lease_expires_at > NOW() THEN status ELSE 'expired' END AS status,
+                       consumer_lag
+                FROM worker_leases
+                WHERE service_name = ANY($1::text[])
+                """,
+                [
+                    "market-producer",
+                    "market-data-worker",
+                    "feature-worker",
+                    "candidate-worker",
+                    "reconciliation-worker",
+                    "decision-worker",
+                    "execution-worker",
+                ],
+            )
         finally:
             await connection.close()
         if authority is None:
@@ -115,22 +134,43 @@ class DefaultReadinessProbe:
                 False,
             )
         active_policy_count = int(authority["active_policy_count"])
-        portfolio_initialized = bool(authority["portfolio_initialized"])
+        portfolio_fresh = bool(authority["portfolio_fresh"])
         constraints_initialized = bool(authority["constraints_initialized"])
         kill_switch_active = authority["kill_switch_active"]
+        required_workers = {
+            "market-producer",
+            "market-data-worker",
+            "feature-worker",
+            "candidate-worker",
+            "reconciliation-worker",
+            "decision-worker",
+            "execution-worker",
+        }
+        ready_workers = {
+            str(lease["service_name"])
+            for lease in leases
+            if lease["status"] == "ready"
+            and int(lease["consumer_lag"] or 0) <= self._settings.max_consumer_lag
+        }
+        worker_leases_ready = ready_workers == required_workers
         execution_enabled = (
             active_policy_count == 1
-            and portfolio_initialized
+            and portfolio_fresh
             and constraints_initialized
             and kill_switch_active is False
+            and worker_leases_ready
         )
         detail = (
             f"migrations={migration_count}; active_policies={active_policy_count}; "
-            f"portfolio_initialized={portfolio_initialized}; "
+            f"portfolio_fresh={portfolio_fresh}; "
             f"constraints_initialized={constraints_initialized}; "
-            f"kill_switch_active={kill_switch_active}"
+            f"kill_switch_active={kill_switch_active}; "
+            f"worker_leases_ready={worker_leases_ready}"
         )
-        return DependencyStatus(healthy=True, detail=detail), execution_enabled
+        return (
+            DependencyStatus(healthy=worker_leases_ready, detail=detail),
+            execution_enabled,
+        )
 
     async def _check_nats(self) -> tuple[DependencyStatus, bool]:
         client = await nats.connect(

@@ -59,6 +59,17 @@ class WorkerSettings(BaseModel):
     durable_name: str = Field(min_length=2, max_length=128)
     max_deliver: int = Field(default=5, ge=1, le=100)
     ack_wait_seconds: float = Field(default=30.0, gt=0, le=300)
+    heartbeat_interval_seconds: float = Field(default=5.0, ge=1, le=60)
+    lease_ttl_seconds: float = Field(default=15.0, ge=2, le=180)
+    max_consumer_lag: int = Field(default=64, ge=1, le=1_000_000)
+
+    @field_validator("lease_ttl_seconds")
+    @classmethod
+    def require_lease_longer_than_heartbeat(cls, value: float, info) -> float:
+        heartbeat = info.data.get("heartbeat_interval_seconds", 5.0)
+        if value <= heartbeat:
+            raise ValueError("lease TTL must exceed heartbeat interval")
+        return value
 
     @field_validator("mode")
     @classmethod
@@ -120,6 +131,11 @@ class WorkerSettings(BaseModel):
             durable_name=durable_name,
             max_deliver=int(os.getenv("NATS_MAX_DELIVER", "5")),
             ack_wait_seconds=float(os.getenv("NATS_ACK_WAIT_SECONDS", "30")),
+            heartbeat_interval_seconds=float(
+                os.getenv("WORKER_HEARTBEAT_INTERVAL_SECONDS", "5")
+            ),
+            lease_ttl_seconds=float(os.getenv("WORKER_LEASE_TTL_SECONDS", "15")),
+            max_consumer_lag=int(os.getenv("NATS_MAX_CONSUMER_LAG", "64")),
         )
 
     def public_summary(self) -> dict[str, object]:

@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from enum import Enum
 import signal
-from typing import cast
+from typing import Any, Protocol, cast
 
 import nats
 from nats.aio.client import Client as NatsClient
@@ -38,6 +40,53 @@ class NatsRuntimeError(RuntimeError):
 
 class NatsStreamDriftError(NatsRuntimeError):
     """The existing core stream does not own the exact canonical subjects."""
+
+
+class NatsLifecycleState(str, Enum):
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    DISCONNECTED = "disconnected"
+    FATAL = "fatal"
+    STOPPING = "stopping"
+    STOPPED = "stopped"
+
+
+class WorkerLeaseStore(Protocol):
+    async def heartbeat(self, **record: object) -> None: ...
+
+    async def close(self) -> None: ...
+
+
+class PostgresWorkerLeaseStore:
+    """Small pool-backed lease projection; transport health owns its expiry."""
+
+    def __init__(self, pool: Any) -> None:
+        self._pool = pool
+
+    async def heartbeat(self, **record: object) -> None:
+        await self._pool.execute(
+            """
+            INSERT INTO worker_leases (
+                worker_id, service_name, instance_id, started_at, last_heartbeat,
+                lease_expires_at, status, last_error, build_version,
+                consumer_name, consumer_lag
+            ) VALUES ($1, $2, $3, $4, NOW(), NOW() + $5 * INTERVAL '1 second',
+                      $6, $7, $8, $9, $10)
+            ON CONFLICT (worker_id) DO UPDATE SET
+                last_heartbeat = NOW(),
+                lease_expires_at = NOW() + $5 * INTERVAL '1 second',
+                status = EXCLUDED.status,
+                last_error = EXCLUDED.last_error,
+                consumer_lag = EXCLUDED.consumer_lag
+            """,
+            record["worker_id"], record["service_name"], record["instance_id"],
+            record["started_at"], record["lease_seconds"], record["status"],
+            record.get("last_error"), record["build_version"],
+            record["consumer_name"], record.get("consumer_lag"),
+        )
+
+    async def close(self) -> None:
+        return None
 
 
 def _core_subjects() -> tuple[str, ...]:
@@ -124,12 +173,87 @@ class NatsRuntime:
 
     connection: NatsClient
     bus: JetStreamEventBus
+    settings: WorkerSettings
+    context: JetStreamContext
+    lease_store: WorkerLeaseStore | None = None
+    state: NatsLifecycleState = NatsLifecycleState.CONNECTED
+    consumer_lag: int | None = None
+    consumer_healthy: bool = True
+    monitor_consumer: bool = True
+    last_error: str | None = None
+    _fatal_event: asyncio.Event | None = None
+    _closing: bool = False
+    _started_at: datetime | None = None
+
+    @property
+    def ready(self) -> bool:
+        lag_ok = self.consumer_lag is None or self.consumer_lag <= self.settings.max_consumer_lag
+        return (
+            self.state is NatsLifecycleState.CONNECTED
+            and self.consumer_healthy
+            and lag_ok
+        )
+
+    async def wait(self) -> None:
+        """Wait for operator shutdown or fail when NATS closes terminally."""
+
+        fatal = self._fatal_event or asyncio.Event()
+        self._fatal_event = fatal
+        shutdown = asyncio.create_task(wait_for_shutdown())
+        failed = asyncio.create_task(fatal.wait())
+        heartbeat = asyncio.create_task(self._heartbeat_loop())
+        try:
+            done, _ = await asyncio.wait(
+                {shutdown, failed}, return_when=asyncio.FIRST_COMPLETED
+            )
+            if failed in done:
+                raise NatsRuntimeError("local NATS connection terminally closed")
+        finally:
+            shutdown.cancel()
+            failed.cancel()
+            heartbeat.cancel()
+
+    async def heartbeat_once(self) -> None:
+        if self.monitor_consumer:
+            try:
+                info = await self.context.consumer_info(
+                    self.settings.stream_name, self.settings.durable_name
+                )
+                self.consumer_lag = int(info.num_pending) + int(info.num_ack_pending)
+                self.consumer_healthy = True
+            except Exception as exc:
+                self.consumer_lag = None
+                self.consumer_healthy = False
+                if self.state is NatsLifecycleState.CONNECTED:
+                    self.last_error = f"consumer monitor failed: {type(exc).__name__}"
+        if self.lease_store is None:
+            return
+        status = "ready" if self.ready else self.state.value
+        await self.lease_store.heartbeat(
+            worker_id=f"{self.settings.service_name}:{self.settings.durable_name}",
+            service_name=self.settings.service_name,
+            instance_id=self.settings.durable_name,
+            started_at=self._started_at or datetime.now(UTC),
+            lease_seconds=self.settings.lease_ttl_seconds if self.ready else 0,
+            status=status,
+            last_error=self.last_error,
+            build_version="unknown",
+            consumer_name=self.settings.durable_name,
+            consumer_lag=self.consumer_lag,
+        )
+
+    async def _heartbeat_loop(self) -> None:
+        while True:
+            await self.heartbeat_once()
+            await asyncio.sleep(self.settings.heartbeat_interval_seconds)
 
     async def close(self) -> None:
         """Drain outstanding publications/subscriptions, then force-close on error."""
 
         if self.connection.is_closed:
             return
+        self._closing = True
+        self.state = NatsLifecycleState.STOPPING
         try:
             await asyncio.wait_for(
                 self.connection.drain(),
@@ -141,10 +265,42 @@ class NatsRuntime:
             except Exception:
                 pass
             raise NatsRuntimeError("local NATS shutdown failed") from exc
+        finally:
+            self.state = NatsLifecycleState.STOPPED
+            if self.lease_store is not None:
+                await self.lease_store.close()
 
 
-async def connect_nats_runtime(settings: WorkerSettings) -> NatsRuntime:
+async def connect_nats_runtime(
+    settings: WorkerSettings,
+    *,
+    lease_store: WorkerLeaseStore | None = None,
+    monitor_consumer: bool = True,
+) -> NatsRuntime:
     """Connect to the admitted local NATS endpoint and verify stream authority."""
+
+    holder: dict[str, NatsRuntime] = {}
+
+    async def disconnected() -> None:
+        runtime = holder.get("runtime")
+        if runtime is not None and not runtime._closing:
+            runtime.state = NatsLifecycleState.DISCONNECTED
+            runtime.last_error = "NATS disconnected"
+
+    async def reconnected() -> None:
+        runtime = holder.get("runtime")
+        if runtime is not None:
+            runtime.state = NatsLifecycleState.CONNECTED
+            runtime.last_error = None
+
+    async def closed() -> None:
+        runtime = holder.get("runtime")
+        if runtime is not None and not runtime._closing:
+            runtime.state = NatsLifecycleState.FATAL
+            runtime.last_error = "NATS terminally closed"
+            if runtime._fatal_event is None:
+                runtime._fatal_event = asyncio.Event()
+            runtime._fatal_event.set()
 
     try:
         connection = await nats.connect(
@@ -153,7 +309,10 @@ async def connect_nats_runtime(settings: WorkerSettings) -> NatsRuntime:
             allow_reconnect=True,
             connect_timeout=2,
             reconnect_time_wait=0.25,
-            max_reconnect_attempts=10,
+            max_reconnect_attempts=-1,
+            disconnected_cb=disconnected,
+            reconnected_cb=reconnected,
+            closed_cb=closed,
         )
     except Exception as exc:
         raise NatsRuntimeError("local NATS connection failed") from exc
@@ -168,7 +327,18 @@ async def connect_nats_runtime(settings: WorkerSettings) -> NatsRuntime:
             pass
         raise
     event_context = cast(EventBusJetStreamContext, context)
-    return NatsRuntime(connection=connection, bus=JetStreamEventBus(event_context))
+    runtime = NatsRuntime(
+        connection=connection,
+        bus=JetStreamEventBus(event_context),
+        settings=settings,
+        context=context,
+        lease_store=lease_store,
+        monitor_consumer=monitor_consumer,
+        _fatal_event=asyncio.Event(),
+        _started_at=datetime.now(UTC),
+    )
+    holder["runtime"] = runtime
+    return runtime
 
 
 async def wait_for_shutdown() -> None:

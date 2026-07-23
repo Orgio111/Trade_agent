@@ -81,6 +81,21 @@ class FakeDatabaseConnection:
         assert account_id == "paper-main"
         return self.authority
 
+    async def fetch(self, query: str, *_args: object) -> list[dict[str, object]]:
+        assert "worker_leases" in query
+        return [
+            {"service_name": name, "status": "ready", "consumer_lag": 0}
+            for name in (
+                "market-producer",
+                "market-data-worker",
+                "feature-worker",
+                "candidate-worker",
+                "reconciliation-worker",
+                "decision-worker",
+                "execution-worker",
+            )
+        ]
+
     async def close(self) -> None:
         self.closed = True
 
@@ -102,7 +117,7 @@ def probe_settings() -> WorkerSettings:
         (
             {
                 "active_policy_count": 1,
-                "portfolio_initialized": True,
+                "portfolio_fresh": True,
                 "constraints_initialized": True,
                 "kill_switch_active": False,
             },
@@ -111,7 +126,7 @@ def probe_settings() -> WorkerSettings:
         (
             {
                 "active_policy_count": 0,
-                "portfolio_initialized": False,
+                "portfolio_fresh": False,
                 "constraints_initialized": False,
                 "kill_switch_active": None,
             },
@@ -137,3 +152,38 @@ async def test_database_execution_readiness_requires_every_authority_input(
     assert status.healthy is True
     assert execution_enabled is expected
     assert connection.closed is True
+
+
+@pytest.mark.asyncio
+async def test_expired_worker_lease_makes_database_unready(monkeypatch) -> None:
+    connection = FakeDatabaseConnection(
+        {
+            "active_policy_count": 1,
+            "portfolio_fresh": True,
+            "constraints_initialized": True,
+            "kill_switch_active": False,
+        }
+    )
+
+    async def fetch(_query: str, *_args: object) -> list[dict[str, object]]:
+        return [
+            {
+                "service_name": "market-data-worker",
+                "status": "expired",
+                "consumer_lag": 0,
+            }
+        ]
+
+    connection.fetch = fetch
+
+    async def connect(_dsn: str) -> FakeDatabaseConnection:
+        return connection
+
+    monkeypatch.setattr("packages.control_plane.probes.asyncpg.connect", connect)
+    status, execution_enabled = await DefaultReadinessProbe(
+        probe_settings()
+    )._check_database()
+
+    assert status.healthy is False
+    assert execution_enabled is False
+    assert "worker_leases_ready=False" in status.detail

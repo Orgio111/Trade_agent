@@ -423,6 +423,15 @@ class FakeJetStreamBus:
         return object()
 
 
+class FakeDurableRouter:
+    def __init__(self) -> None:
+        self.routed: list[dict[str, object]] = []
+
+    async def route(self, **event: object) -> bool:
+        self.routed.append(event)
+        return True
+
+
 def _settings(*, mode: SourceMode = SourceMode.PAPER_LIVE) -> WorkerSettings:
     return WorkerSettings(
         service_name="decision-worker",
@@ -451,6 +460,30 @@ async def test_runtime_publishes_exact_binding_to_verdict_subject() -> None:
     assert published == result
     assert message_id == str(result.event_id)
     assert stream == "QUANTEX_CORE"
+
+
+@pytest.mark.asyncio
+async def test_runtime_routes_verdict_with_candidate_content_checksum() -> None:
+    service, _, _ = _service()
+    bus = FakeJetStreamBus()
+    router = FakeDurableRouter()
+    runtime = DecisionRuntime(
+        settings=_settings(),
+        service=service,
+        bus=bus,
+        durable_router=router,  # type: ignore[arg-type]
+    )
+    source = _candidate_event()
+
+    result = await runtime.handle(source.canonical_json().encode("utf-8"))
+
+    assert bus.published == []
+    assert len(router.routed) == 1
+    routed = router.routed[0]
+    assert routed["source_event_id"] == str(source.event_id)
+    assert routed["payload_checksum"] == source.content_sha256
+    assert routed["subject"] is CoreSubject.RISK_APPROVED
+    assert routed["output_event_id"] == f"risk-verdict:{result.event_id}"
 
 
 @pytest.mark.asyncio

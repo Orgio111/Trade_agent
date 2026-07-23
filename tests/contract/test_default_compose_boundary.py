@@ -17,7 +17,11 @@ EXPECTED_DEFAULT_SERVICES = {
     "chroma",
     "nats",
     "control-plane",
+    "market-producer",
     "market-data-worker",
+    "feature-worker",
+    "candidate-worker",
+    "reconciliation-worker",
     "decision-worker",
     "execution-worker",
 }
@@ -77,6 +81,17 @@ def test_automatic_development_override_can_only_modify_legacy_services() -> Non
 
     for name in _override_services():
         assert "legacy" in base[name].get("profiles", [])
+
+
+def test_legacy_override_never_mounts_host_secret_files() -> None:
+    for service in _override_services().values():
+        for volume in service.get("volumes", []):
+            assert ".env" not in str(volume)
+
+
+def test_legacy_vllm_host_port_is_loopback_only() -> None:
+    for port in _services()["vllm"]["ports"]:
+        assert str(port).startswith("127.0.0.1:")
 
 
 def test_profile_free_compose_requires_only_the_postgres_secret() -> None:

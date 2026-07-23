@@ -181,6 +181,94 @@ services:
       resources:
         limits: { cpus: "0.5", memory: 256M }
 
+  market-producer:
+    build:
+      context: .
+      dockerfile: infra/workers/Dockerfile
+    command: ["python", "-m", "workers.market_producer"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      NATS_URL: nats://nats:4222
+      RUNTIME_MODE: paper_live
+      ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
+      NATS_STREAM: QUANTEX_CORE
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 192M }
+
+  feature-worker:
+    build:
+      context: .
+      dockerfile: infra/workers/Dockerfile
+    command: ["python", "-m", "workers.features"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      NATS_URL: nats://nats:4222
+      RUNTIME_MODE: paper_live
+      ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
+      NATS_STREAM: QUANTEX_CORE
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+
+  candidate-worker:
+    build:
+      context: .
+      dockerfile: infra/workers/Dockerfile
+    command: ["python", "-m", "workers.candidate"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      NATS_URL: nats://nats:4222
+      RUNTIME_MODE: paper_live
+      ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
+      NATS_STREAM: QUANTEX_CORE
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+      feature-worker:
+        condition: service_started
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+
+  reconciliation-worker:
+    build:
+      context: .
+      dockerfile: infra/workers/Dockerfile
+    command: ["python", "-m", "workers.reconciliation"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      NATS_URL: nats://nats:4222
+      RUNTIME_MODE: paper_live
+      ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
+      NATS_STREAM: QUANTEX_CORE
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 192M }
+
   decision-worker:
     build:
       context: .
@@ -201,6 +289,8 @@ services:
         condition: service_completed_successfully
       nats:
         condition: service_healthy
+      reconciliation-worker:
+        condition: service_started
     deploy:
       resources:
         limits: { cpus: "0.75", memory: 384M }
@@ -407,7 +497,7 @@ services:
     image: vllm/vllm-openai:latest
     container_name: quantex-vllm
     restart: unless-stopped
-    ports: ["8000:8000"]
+    ports: ["127.0.0.1:8000:8000"]
     # RTX 4050 laptop (6GB VRAM) — AWQ 4-bit quantized 7B model
     # Alternatives: Qwen/Qwen2.5-3B-Instruct (fp16, ~6GB) for faster inference
     command: >

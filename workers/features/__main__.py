@@ -1,32 +1,26 @@
-"""Process entry point for the canonical local market-data worker."""
+"""Process entry point for durable feature worker."""
 
 from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
-import logging
 
 import asyncpg  # type: ignore[import-untyped]
 
 from workers.config import WorkerSettings
 from workers.durability import PostgresInboxOutbox
-from workers.market_data.runtime import MarketDataRuntime
 from workers.nats_runtime import PostgresWorkerLeaseStore, connect_nats_runtime
 
-
-_LOGGER = logging.getLogger(__name__)
+from .postgres import PostgresFeatureRepository
+from .service import FeatureRuntime
 
 
 async def run() -> None:
     settings = WorkerSettings.from_env(
-        service_name="market-data-worker",
-        durable_name="market-data-worker-v1",
+        service_name="feature-worker", durable_name="feature-worker-v1"
     )
     pool = await asyncpg.create_pool(
-        dsn=settings.database_url.get_secret_value(),
-        min_size=1,
-        max_size=2,
-        command_timeout=5,
+        dsn=settings.database_url.get_secret_value(), min_size=1, max_size=3, command_timeout=5
     )
     nats_runtime = await connect_nats_runtime(
         settings, lease_store=PostgresWorkerLeaseStore(pool)
@@ -34,20 +28,18 @@ async def run() -> None:
     dispatcher: asyncio.Task[None] | None = None
     runtime_wait: asyncio.Task[None] | None = None
     try:
-        durable_router = PostgresInboxOutbox(
+        repository = PostgresFeatureRepository(
+            pool, stream_name=settings.stream_name, durable_name=settings.durable_name
+        )
+        worker = FeatureRuntime(settings, nats_runtime.bus, repository)
+        await worker.start()
+        outbox = PostgresInboxOutbox(
             pool,
             nats_runtime.bus,
             stream_name=settings.stream_name,
             durable_name=settings.durable_name,
         )
-        worker = MarketDataRuntime(
-            settings,
-            nats_runtime.bus,
-            durable_router=durable_router,
-        )
-        await worker.start()
-        _LOGGER.info("canonical worker ready: %s", settings.public_summary())
-        dispatcher = asyncio.create_task(durable_router.run_dispatcher())
+        dispatcher = asyncio.create_task(outbox.run_dispatcher())
         runtime_wait = asyncio.create_task(nats_runtime.wait())
         done, _ = await asyncio.wait(
             {dispatcher, runtime_wait}, return_when=asyncio.FIRST_COMPLETED
@@ -55,11 +47,11 @@ async def run() -> None:
         for completed in done:
             completed.result()
     finally:
-        for owned_task in (dispatcher, runtime_wait):
-            if owned_task is not None:
-                owned_task.cancel()
+        for task in (dispatcher, runtime_wait):
+            if task is not None:
+                task.cancel()
                 with suppress(asyncio.CancelledError):
-                    await owned_task
+                    await task
         try:
             await nats_runtime.close()
         finally:
@@ -67,7 +59,6 @@ async def run() -> None:
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO)
     asyncio.run(run())
 
 

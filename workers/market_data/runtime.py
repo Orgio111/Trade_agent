@@ -8,9 +8,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import hashlib
+import json
 import logging
 import re
-from typing import Literal
+from typing import Any, Literal, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from pydantic import (
@@ -111,6 +112,23 @@ class MarketIngressOutcome:
     event_id: UUID
 
 
+class DurableMarketRouter(Protocol):
+    async def route(
+        self,
+        *,
+        source_event_id: str,
+        source_subject: CoreSubject,
+        source_payload: dict[str, Any],
+        payload_checksum: str,
+        output_event_id: str,
+        aggregate_type: str,
+        aggregate_id: str,
+        subject: CoreSubject,
+        payload: bytes,
+        message_id: str,
+    ) -> bool: ...
+
+
 class MarketDataRuntime:
     """Parse, mode-check, validate, and durably route raw market events."""
 
@@ -121,6 +139,7 @@ class MarketDataRuntime:
         *,
         clock: Callable[[], datetime] = _utc_now,
         max_retry_cache_entries: int = 1024,
+        durable_router: DurableMarketRouter | None = None,
     ) -> None:
         if max_retry_cache_entries < 64:
             raise ValueError("retry cache must cover all pending consumer messages")
@@ -131,6 +150,7 @@ class MarketDataRuntime:
         self._lock = asyncio.Lock()
         self._accepted_retry_cache: OrderedDict[str, tuple[UUID, bytes]] = OrderedDict()
         self._max_retry_cache_entries = max_retry_cache_entries
+        self._durable_router = durable_router
 
     async def start(self) -> object:
         """Attach the exact raw subject using explicit durable/manual ACK."""
@@ -154,7 +174,9 @@ class MarketDataRuntime:
             if cached is not None:
                 event_id, encoded = cached
                 self._accepted_retry_cache.move_to_end(payload_sha256)
-                await self._publish_validated(event_id, encoded)
+                await self._publish_validated(
+                    event_id, encoded, payload_sha256=payload_sha256
+                )
                 return MarketIngressOutcome(CoreSubject.MARKET_VALIDATED, event_id)
 
             try:
@@ -189,10 +211,28 @@ class MarketDataRuntime:
 
             encoded = event.canonical_json().encode("utf-8")
             self._remember_accepted(payload_sha256, event.event_id, encoded)
-            await self._publish_validated(event.event_id, encoded)
+            await self._publish_validated(
+                event.event_id, encoded, payload_sha256=payload_sha256
+            )
             return MarketIngressOutcome(CoreSubject.MARKET_VALIDATED, event.event_id)
 
-    async def _publish_validated(self, event_id: UUID, payload: bytes) -> None:
+    async def _publish_validated(
+        self, event_id: UUID, payload: bytes, *, payload_sha256: str
+    ) -> None:
+        if self._durable_router is not None:
+            await self._durable_router.route(
+                source_event_id=str(event_id),
+                source_subject=CoreSubject.MARKET_RAW,
+                source_payload=json.loads(payload),
+                payload_checksum=payload_sha256,
+                output_event_id=f"market-validated:{event_id}",
+                aggregate_type="market",
+                aggregate_id=str(event_id),
+                subject=CoreSubject.MARKET_VALIDATED,
+                payload=payload,
+                message_id=f"market-validated:{event_id}",
+            )
+            return
         await self._bus.publish(
             CoreSubject.MARKET_VALIDATED,
             payload,
