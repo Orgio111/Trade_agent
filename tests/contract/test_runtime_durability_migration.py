@@ -7,6 +7,15 @@ from pathlib import Path
 MIGRATION = (
     Path(__file__).parents[2] / "db" / "migrations" / "003_runtime_durability.sql"
 )
+LEASE_MIGRATION = (
+    Path(__file__).parents[2] / "db" / "migrations" / "004_worker_leases.sql"
+)
+OUTBOX_MIGRATION = (
+    Path(__file__).parents[2] / "db" / "migrations" / "005_outbox_dispatch.sql"
+)
+FEATURE_MIGRATION = (
+    Path(__file__).parents[2] / "db" / "migrations" / "006_feature_checkpoints.sql"
+)
 
 
 def test_runtime_migration_is_additive_and_contains_required_state() -> None:
@@ -57,3 +66,31 @@ def test_portfolio_and_constraint_keys_are_versioned() -> None:
     assert "unique (account_id, source_sequence)" in sql
     assert "primary key (venue, market_type, instrument_id, version)" in sql
     assert "expires_at is null or expires_at > effective_at" in sql
+
+
+def test_worker_lease_records_transport_and_consumer_health() -> None:
+    sql = LEASE_MIGRATION.read_text(encoding="utf-8").lower()
+
+    assert "create table if not exists worker_leases" in sql
+    assert "lease_expires_at" in sql
+    assert "consumer_lag" in sql
+    assert "last_error" in sql
+
+
+def test_outbox_dispatch_supports_leases_retry_and_dead_letter() -> None:
+    sql = OUTBOX_MIGRATION.read_text(encoding="utf-8").lower()
+
+    assert "publishing" in sql
+    assert "lease_expires_at" in sql
+    assert "next_attempt_at" in sql
+    assert "create table if not exists dead_letter_events" in sql
+    assert "original_subject" in sql
+    assert "stack_trace_fingerprint" in sql
+
+
+def test_feature_checkpoint_is_durable_and_integrity_bound() -> None:
+    sql = FEATURE_MIGRATION.read_text(encoding="utf-8").lower()
+    assert "create table if not exists feature_checkpoints" in sql
+    assert "checkpoint_checksum" in sql
+    assert "last_market_event_id" in sql
+    assert "unique (symbol, last_market_event_id)" in sql

@@ -77,6 +77,15 @@ class FakeExecutionService:
         )
 
 
+class FakeDurableRouter:
+    def __init__(self) -> None:
+        self.routed: list[dict[str, object]] = []
+
+    async def route_many(self, **event: object) -> bool:
+        self.routed.append(event)
+        return True
+
+
 def settings(
     *,
     mode: SourceMode = SourceMode.PAPER_LIVE,
@@ -117,6 +126,35 @@ async def test_runtime_publishes_deterministic_intent_before_order_update() -> N
     assert bus.published[0][2] == f"intent:{intent_event.event_id}"
     assert bus.published[1][2] == f"order:{updated_event.event_id}"
     assert all(item[3] == "QUANTEX_CORE" for item in bus.published)
+
+
+@pytest.mark.asyncio
+async def test_runtime_routes_intent_and_update_as_one_durable_output_set() -> None:
+    bus = FakeBus()
+    service = FakeExecutionService()
+    router = FakeDurableRouter()
+    runtime = ExecutionRuntime(
+        settings=settings(),
+        bus=cast(JetStreamEventBus, bus),
+        service=cast(Any, service),
+        durable_router=router,  # type: ignore[arg-type]
+        clock=lambda: NOW,
+    )
+    event = approved_event()
+
+    await runtime.handle(event.canonical_json().encode("utf-8"))
+
+    assert bus.published == []
+    assert len(router.routed) == 1
+    routed = router.routed[0]
+    assert routed["source_event_id"] == str(event.event_id)
+    assert routed["payload_checksum"] == event.content_sha256
+    outputs = routed["outputs"]
+    assert isinstance(outputs, tuple)
+    assert [output["subject"] for output in outputs] == [
+        CoreSubject.ORDER_INTENT,
+        CoreSubject.ORDER_UPDATED,
+    ]
 
 
 @pytest.mark.asyncio

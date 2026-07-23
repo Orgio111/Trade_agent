@@ -28,8 +28,6 @@ services:
     volumes:
       # Mount source code for hot-reload
       - ./orchestrator:/app/orchestrator
-      # Mount .env so API keys are loaded from the host file
-      - ./.env:/app/.env
     environment:
       # NATS_URL is inherited from docker-compose.yml (nats://nats:4222)
       # Docker service discovery works inside containers — no override needed

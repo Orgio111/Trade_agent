@@ -58,6 +58,24 @@ class FakeMessage:
         self.terminated += 1
 
 
+class FakeDurableRouter:
+    def __init__(self, bus: JetStreamEventBus) -> None:
+        self.bus = bus
+        self.events: dict[str, tuple[CoreSubject, bytes, str]] = {}
+
+    async def route(self, **event: object) -> bool:
+        source_event_id = str(event["source_event_id"])
+        created = source_event_id not in self.events
+        self.events.setdefault(
+            source_event_id,
+            (event["subject"], event["payload"], str(event["message_id"])),
+        )
+        if created:
+            subject, payload, message_id = self.events[source_event_id]
+            await self.bus.publish(subject, payload, message_id=message_id)
+        return created
+
+
 def settings(*, mode: SourceMode = SourceMode.PAPER_LIVE) -> WorkerSettings:
     return WorkerSettings(
         service_name="market-data-worker",
@@ -100,13 +118,15 @@ def market_event(
 
 
 def build_runtime(
-    *, mode: SourceMode = SourceMode.PAPER_LIVE
+    *, mode: SourceMode = SourceMode.PAPER_LIVE, durable: bool = False
 ) -> tuple[MarketDataRuntime, FakeContext]:
     context = FakeContext()
+    bus = JetStreamEventBus(context)
     runtime = MarketDataRuntime(
         settings(mode=mode),
-        JetStreamEventBus(context),
+        bus,
         clock=lambda: NOW,
+        durable_router=FakeDurableRouter(bus) if durable else None,
     )
     return runtime, context
 
@@ -223,3 +243,18 @@ async def test_durable_callback_naks_failed_output_then_acks_retry() -> None:
         publication[0] == CoreSubject.MARKET_VALIDATED.value
         for publication in context.publications
     )
+
+
+@pytest.mark.asyncio
+async def test_durable_router_suppresses_duplicate_after_runtime_restart() -> None:
+    context = FakeContext()
+    bus = JetStreamEventBus(context)
+    router = FakeDurableRouter(bus)
+    raw = market_event().canonical_json().encode()
+
+    first = MarketDataRuntime(settings(), bus, clock=lambda: NOW, durable_router=router)
+    second = MarketDataRuntime(settings(), bus, clock=lambda: NOW, durable_router=router)
+    await first.handle(raw)
+    await second.handle(raw)
+
+    assert len(context.publications) == 1

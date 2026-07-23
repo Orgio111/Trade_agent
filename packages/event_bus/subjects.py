@@ -7,6 +7,7 @@ class CoreSubject(StrEnum):
     MARKET_RAW = "market.raw.v1"
     MARKET_VALIDATED = "market.validated.v1"
     MARKET_REJECTED = "market.rejected.v1"
+    FEATURES_READY = "features.ready.v1"
     SIGNAL_CANDIDATE = "signals.candidate.v1"
     RISK_APPROVED = "risk.approved.v1"
     RISK_REJECTED = "risk.rejected.v1"

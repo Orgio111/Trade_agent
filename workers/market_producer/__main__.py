@@ -1,4 +1,4 @@
-"""Process entry point for the canonical local market-data worker."""
+"""Process entry point for Binance public market producer."""
 
 from __future__ import annotations
 
@@ -9,18 +9,14 @@ import logging
 import asyncpg  # type: ignore[import-untyped]
 
 from workers.config import WorkerSettings
-from workers.durability import PostgresInboxOutbox
-from workers.market_data.runtime import MarketDataRuntime
+from workers.market_producer.runtime import BinanceMarketProducer
 from workers.nats_runtime import PostgresWorkerLeaseStore, connect_nats_runtime
-
-
-_LOGGER = logging.getLogger(__name__)
 
 
 async def run() -> None:
     settings = WorkerSettings.from_env(
-        service_name="market-data-worker",
-        durable_name="market-data-worker-v1",
+        service_name="market-producer",
+        durable_name="market-producer-v1",
     )
     pool = await asyncpg.create_pool(
         dsn=settings.database_url.get_secret_value(),
@@ -29,33 +25,26 @@ async def run() -> None:
         command_timeout=5,
     )
     nats_runtime = await connect_nats_runtime(
-        settings, lease_store=PostgresWorkerLeaseStore(pool)
+        settings,
+        lease_store=PostgresWorkerLeaseStore(pool),
+        monitor_consumer=False,
     )
-    dispatcher: asyncio.Task[None] | None = None
+    producer_task: asyncio.Task[None] | None = None
     runtime_wait: asyncio.Task[None] | None = None
     try:
-        durable_router = PostgresInboxOutbox(
-            pool,
+        producer = BinanceMarketProducer(
             nats_runtime.bus,
             stream_name=settings.stream_name,
-            durable_name=settings.durable_name,
         )
-        worker = MarketDataRuntime(
-            settings,
-            nats_runtime.bus,
-            durable_router=durable_router,
-        )
-        await worker.start()
-        _LOGGER.info("canonical worker ready: %s", settings.public_summary())
-        dispatcher = asyncio.create_task(durable_router.run_dispatcher())
+        producer_task = asyncio.create_task(producer.run_forever())
         runtime_wait = asyncio.create_task(nats_runtime.wait())
         done, _ = await asyncio.wait(
-            {dispatcher, runtime_wait}, return_when=asyncio.FIRST_COMPLETED
+            {producer_task, runtime_wait}, return_when=asyncio.FIRST_COMPLETED
         )
         for completed in done:
             completed.result()
     finally:
-        for owned_task in (dispatcher, runtime_wait):
+        for owned_task in (producer_task, runtime_wait):
             if owned_task is not None:
                 owned_task.cancel()
                 with suppress(asyncio.CancelledError):

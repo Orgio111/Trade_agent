@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import suppress
 from typing import Any, Protocol
 
 import asyncpg  # type: ignore[import-untyped]
@@ -15,11 +17,12 @@ from packages.execution import PostgresDecisionStore
 from packages.risk import PostgresRiskInputRepository
 from workers.config import WorkerSettings
 from workers.contracts import CandidateForRiskEvent, RiskDecisionEvent
+from workers.durability import PostgresInboxOutbox
 from workers.nats_runtime import (
     NatsRuntime,
+    PostgresWorkerLeaseStore,
     connect_nats_runtime,
     consumer_settings,
-    wait_for_shutdown,
 )
 
 from .async_service import AsyncRiskDecisionService
@@ -60,10 +63,12 @@ class DecisionRuntime:
         settings: WorkerSettings,
         service: AsyncRiskDecisionService,
         bus: DecisionEventBus,
+        durable_router: PostgresInboxOutbox | None = None,
     ) -> None:
         self._settings = settings
         self._service = service
         self._bus = bus
+        self._durable_router = durable_router
 
     async def handle(self, payload: bytes) -> RiskDecisionEvent:
         """Validate, authorize, persist, and durably publish one candidate."""
@@ -79,12 +84,27 @@ class DecisionRuntime:
             if verdict.decision.approved
             else CoreSubject.RISK_REJECTED
         )
-        await self._bus.publish(
-            subject,
-            verdict.canonical_json().encode("utf-8"),
-            message_id=str(verdict.event_id),
-            stream=self._settings.stream_name,
-        )
+        encoded = verdict.canonical_json().encode("utf-8")
+        if self._durable_router is None:
+            await self._bus.publish(
+                subject,
+                encoded,
+                message_id=str(verdict.event_id),
+                stream=self._settings.stream_name,
+            )
+        else:
+            await self._durable_router.route(
+                source_event_id=str(candidate_event.event_id),
+                source_subject=CoreSubject.SIGNAL_CANDIDATE,
+                source_payload=candidate_event.model_dump(mode="json"),
+                payload_checksum=candidate_event.content_sha256,
+                output_event_id=f"risk-verdict:{verdict.event_id}",
+                aggregate_type="risk_decision",
+                aggregate_id=verdict.decision.decision_id,
+                subject=subject,
+                payload=encoded,
+                message_id=str(verdict.event_id),
+            )
         return verdict
 
     async def start(self) -> Any:
@@ -111,8 +131,12 @@ async def run_decision_worker(settings: WorkerSettings | None = None) -> None:
         command_timeout=5,
     )
     nats_runtime: NatsRuntime | None = None
+    dispatcher: asyncio.Task[None] | None = None
+    runtime_wait: asyncio.Task[None] | None = None
     try:
-        nats_runtime = await connect_nats_runtime(configured)
+        nats_runtime = await connect_nats_runtime(
+            configured, lease_store=PostgresWorkerLeaseStore(pool)
+        )
         service = AsyncRiskDecisionService(
             risk_inputs=PostgresRiskInputRepository(pool),
             decision_authority=PostgresDecisionStore(pool),
@@ -122,10 +146,29 @@ async def run_decision_worker(settings: WorkerSettings | None = None) -> None:
             settings=configured,
             service=service,
             bus=nats_runtime.bus,
+            durable_router=(
+                durable_router := PostgresInboxOutbox(
+                    pool,
+                    nats_runtime.bus,
+                    stream_name=configured.stream_name,
+                    durable_name=configured.durable_name,
+                )
+            ),
         )
         await worker.start()
-        await wait_for_shutdown()
+        dispatcher = asyncio.create_task(durable_router.run_dispatcher())
+        runtime_wait = asyncio.create_task(nats_runtime.wait())
+        done, _ = await asyncio.wait(
+            {dispatcher, runtime_wait}, return_when=asyncio.FIRST_COMPLETED
+        )
+        for completed in done:
+            completed.result()
     finally:
+        for task in (dispatcher, runtime_wait):
+            if task is not None:
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
         try:
             if nats_runtime is not None:
                 await nats_runtime.close()
