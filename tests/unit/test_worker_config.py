@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from pydantic import SecretStr, ValidationError
 
@@ -60,6 +62,12 @@ def test_public_summary_never_contains_database_credentials() -> None:
     assert "local-only" not in repr(summary)
     assert summary["mode"] == "paper_live"
     assert summary["ollama_base_url"] == "http://host.docker.internal:11434"
+    assert summary["candidate_provider"] == "ollama"
+
+
+def test_worker_settings_reject_unknown_candidate_provider() -> None:
+    with pytest.raises(ValidationError, match="candidate_provider"):
+        settings(candidate_provider="force_trade")
 
 
 def test_from_env_never_loads_or_mutates_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -76,3 +84,41 @@ def test_from_env_never_loads_or_mutates_dotenv(monkeypatch: pytest.MonkeyPatch)
 
     assert configured.service_name == "market-data-worker"
     assert configured.database_url.get_secret_value().endswith("/quantex")
+
+
+def test_from_env_builds_local_dsn_from_read_only_secret_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    secret = tmp_path / "db-runtime"
+    secret.write_text("reserved:/?#[]@! password", encoding="utf-8")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("DB_RUNTIME_PASSWORD_FILE", str(secret.resolve()))
+    monkeypatch.setenv("DB_HOST", "postgres")
+    monkeypatch.setenv("DB_USER", "quantex_runtime")
+
+    configured = WorkerSettings.from_env(
+        service_name="execution-worker",
+        durable_name="execution-v1",
+    )
+
+    assert configured.database_url.get_secret_value() == (
+        "postgresql://quantex_runtime:reserved%3A%2F%3F%23%5B%5D%40%21%20password"
+        "@postgres:5432/quantex"
+    )
+
+
+def test_from_env_rejects_ambiguous_direct_and_file_secret_sources(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    secret = tmp_path / "db-runtime"
+    secret.write_text("runtime-password-at-least-16", encoding="utf-8")
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql://quantex:secret@postgres:5432/quantex"
+    )
+    monkeypatch.setenv("DB_RUNTIME_PASSWORD_FILE", str(secret.resolve()))
+
+    with pytest.raises(RuntimeError, match="mutually exclusive"):
+        WorkerSettings.from_env(
+            service_name="execution-worker",
+            durable_name="execution-v1",
+        )

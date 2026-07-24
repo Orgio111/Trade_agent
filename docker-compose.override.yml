@@ -24,7 +24,7 @@ services:
   # Overrides: ports, volumes, command, NATS for dev
   orchestrator:
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
     volumes:
       # Mount source code for hot-reload
       - ./orchestrator:/app/orchestrator
@@ -38,10 +38,10 @@ services:
   # so we can run `npm run dev` with hot-reload.
   frontend:
     build: ~
-    image: node:22-alpine
+    image: node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2
     working_dir: /app
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     volumes:
       # Mount source code for hot-reload
       - ./frontend:/app

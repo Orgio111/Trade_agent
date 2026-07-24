@@ -12,6 +12,11 @@ status: stable
 
 # NATS JetStream Event System
 
+> **2026-07-24 runtime update:** [[production-remediation-2026-07-24]] verifies
+> active `QUANTEX_CORE` consumers, transactional inbox/outbox delivery, live
+> public closed-candle traffic, NATS outage recovery, and paper-fill lineage.
+> Earlier gap statements remain historical context.
+
 ## Definition
 
 The canonical runtime uses one local, file-backed JetStream named `QUANTEX_CORE`. It transports exact v1 byte envelopes between independently owned workers. NATS owns delivery and bounded redelivery; domain parsing, risk authorization, PostgreSQL transactions, and paper execution remain outside the bus.

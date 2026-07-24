@@ -17,6 +17,25 @@
     },
     {
       "architecture": [
+        "wiki/content/decisions/canonical-local-paper-runtime-v1.md"
+      ],
+      "documentation": [
+        "wiki/content/concepts/local-trading-ai-architecture.md"
+      ],
+      "id": "candidate-runtime",
+      "owner": "software-engineering/candidate",
+      "primary_responsibility": "Produce schema-bound model or explicit fallback candidates without execution authority.",
+      "tests": [
+        "tests/unit/test_candidate_market.py",
+        "tests/unit/test_candidate_ollama.py",
+        "tests/unit/test_candidate_worker_runtime.py",
+        "tests/unit/test_candidate_fallback.py",
+        "tests/unit/test_typed_candidate_producer.py"
+      ],
+      "upstream_references": []
+    },
+    {
+      "architecture": [
         "wiki/content/decisions/local-knowledge-pipeline-v1.md"
       ],
       "documentation": [
@@ -27,7 +46,8 @@
       "primary_responsibility": "Enforce reproducible dependency and continuous-integration policy.",
       "tests": [
         "tests/test_imports.py",
-        "tests/unit/test_legacy_safety_boundaries.py"
+        "tests/unit/test_legacy_safety_boundaries.py",
+        "tests/unit/test_config_preflight.py"
       ],
       "upstream_references": []
     },
@@ -59,7 +79,9 @@
       "tests": [
         "tests/contract/test_execution_migration.py",
         "tests/contract/test_migration_runner.py",
-        "tests/contract/test_runtime_durability_migration.py"
+        "tests/contract/test_runtime_durability_migration.py",
+        "tests/contract/test_database_role_contract.py",
+        "tests/unit/test_database_roles.py"
       ],
       "upstream_references": []
     },
@@ -75,7 +97,10 @@
       "owner": "software-engineering/deployment",
       "primary_responsibility": "Package and deploy the local service topology reproducibly.",
       "tests": [
-        "tests/contract/test_default_compose_boundary.py"
+        "tests/contract/test_default_compose_boundary.py",
+        "tests/unit/test_acceptance_harness.py",
+        "tests/unit/test_init_local_runtime.py",
+        "tests/unit/test_volume_backup.py"
       ],
       "upstream_references": []
     },
@@ -112,6 +137,22 @@
       "owner": "software-engineering/execution",
       "primary_responsibility": "Execute authorized orders through the Rust runtime.",
       "tests": [],
+      "upstream_references": []
+    },
+    {
+      "architecture": [
+        "wiki/content/decisions/canonical-local-paper-runtime-v1.md"
+      ],
+      "documentation": [
+        "wiki/content/concepts/incremental-candle-state.md"
+      ],
+      "id": "feature-runtime",
+      "owner": "software-engineering/features",
+      "primary_responsibility": "Build deterministic incremental features from validated market events.",
+      "tests": [
+        "tests/unit/test_feature_worker_runtime.py",
+        "tests/unit/test_incremental_features.py"
+      ],
       "upstream_references": []
     },
     {
@@ -243,6 +284,21 @@
     },
     {
       "architecture": [
+        "wiki/content/decisions/canonical-local-paper-runtime-v1.md"
+      ],
+      "documentation": [
+        "wiki/content/concepts/nats-event-system.md"
+      ],
+      "id": "market-producer-runtime",
+      "owner": "software-engineering/market-data",
+      "primary_responsibility": "Publish authenticated, ordered public closed-candle events into the canonical paper boundary.",
+      "tests": [
+        "tests/unit/test_binance_market_producer.py"
+      ],
+      "upstream_references": []
+    },
+    {
+      "architecture": [
         "wiki/content/overviews/infrastructure-overview.md"
       ],
       "documentation": [
@@ -285,6 +341,8 @@
         "tests/replay/**/*.py",
         "tests/unit/test_nats_runtime.py",
         "tests/unit/test_worker_config.py",
+        "tests/unit/test_dlq_replay.py",
+        "tests/unit/test_inbox_outbox.py",
         "tests/integration/test_decision_vertical_slice.py",
         "tests/integration/test_replay_cli.py"
       ],
@@ -337,6 +395,23 @@
     },
     {
       "architecture": [
+        "wiki/content/decisions/canonical-local-paper-runtime-v1.md"
+      ],
+      "documentation": [
+        "wiki/content/concepts/broker-abstraction-layer.md"
+      ],
+      "id": "reconciliation-runtime",
+      "owner": "software-engineering/reconciliation",
+      "primary_responsibility": "Project paper portfolio truth, bootstrap authority, reconcile fills, and control the kill switch.",
+      "tests": [
+        "tests/unit/test_paper_portfolio_projection.py",
+        "tests/unit/test_reconciliation_service.py",
+        "tests/unit/test_risk_authority_bootstrap.py"
+      ],
+      "upstream_references": []
+    },
+    {
+      "architecture": [
         "wiki/content/decisions/canonical-local-paper-runtime-v1.md",
         "wiki/content/decisions/deterministic-paper-core-v1.md"
       ],
@@ -361,11 +436,11 @@
       "sha256": "310f4e54106bded559d967e018035503dc72b0b35e93776fdd5bbe41a227df79"
     },
     {
-      "bytes": 5285,
+      "bytes": 7354,
       "component": "ci-governance",
       "owner": "software-engineering/ci",
       "path": ".github/workflows/ci.yml",
-      "sha256": "bf1b0f5aefbe9dcfb7a10cf235b613e7983bc56d48f37bdcf6ccf30d0547149b"
+      "sha256": "eb2324335f855f8357c868b49389820069d2ef40ce83ab017d37e454a8278af9"
     },
     {
       "bytes": 1229,
@@ -373,6 +448,13 @@
       "owner": "software-engineering/governance",
       "path": ".gitignore",
       "sha256": "0c4403fceeea05065049e743817990bd0151884ad43178edb0eae270df21b75e"
+    },
+    {
+      "bytes": 61,
+      "component": "deployment-infrastructure",
+      "owner": "software-engineering/deployment",
+      "path": ".local/frontend-validation-b48f270c5ed44f76a222f07bec1d571f/source/.dockerignore",
+      "sha256": "b857ba6fc3d2b7fbe51457388671209799e39e8526eb6d4eb5a155f7171ed2b3"
     },
     {
       "bytes": 46233,
@@ -401,6 +483,69 @@
       "owner": "software-engineering/orchestration-legacy",
       "path": "Trade_agent/risk.py",
       "sha256": "f27918da93a19b57c1ebdbbec8f2f897577f42016c271d33c6d865952d1b9d87"
+    },
+    {
+      "bytes": 2509,
+      "component": "deployment-infrastructure",
+      "owner": "software-engineering/deployment",
+      "path": "artifacts/acceptance-latest.json",
+      "sha256": "c579d0a7b39bb3f4c13fce0bc7c3a0d41f3595cb97cb00e0a1f7a4d83fc0da9e"
+    },
+    {
+      "bytes": 364,
+      "component": "ci-governance",
+      "owner": "software-engineering/ci",
+      "path": "artifacts/frontend-npm-audit-fixed.json",
+      "sha256": "6be1bf50a98513a12cacddc6c223690fd35253d9fcc594b4b950351e598c943e"
+    },
+    {
+      "bytes": 7283,
+      "component": "ci-governance",
+      "owner": "software-engineering/ci",
+      "path": "artifacts/frontend-npm-audit.json",
+      "sha256": "b61276c93a2a7904c41f3a45fe6948d4945f16fac432f1187648e72ac8fa47fc"
+    },
+    {
+      "bytes": 11983,
+      "component": "ci-governance",
+      "owner": "software-engineering/ci",
+      "path": "artifacts/pip-audit.json",
+      "sha256": "08bbc96c401f556c59caffd0ddf39f645334cb7370641926c3e53ba65400827e"
+    },
+    {
+      "bytes": 8966,
+      "component": "ci-governance",
+      "owner": "software-engineering/ci",
+      "path": "artifacts/requirements-audit.txt",
+      "sha256": "0a5da3be520021e84d6f94a81d98b2528db90118b525e73391f268db5568033a"
+    },
+    {
+      "bytes": 1215,
+      "component": "deployment-infrastructure",
+      "owner": "software-engineering/deployment",
+      "path": "artifacts/restore-drill-latest.json",
+      "sha256": "18ed662d4c5f6a622a19f0cd1911b96fd5088ced48796cede743662f50fe5d05"
+    },
+    {
+      "bytes": 1479,
+      "component": "deployment-infrastructure",
+      "owner": "software-engineering/deployment",
+      "path": "artifacts/supervised-paper-flow-latest.json",
+      "sha256": "d0afc97b49aa933b0f41ad5ca1bff088041b70b742a2d6966847ccee39c390b1"
+    },
+    {
+      "bytes": 800209,
+      "component": "deployment-infrastructure",
+      "owner": "software-engineering/deployment",
+      "path": "artifacts/workers-fixed.spdx.json",
+      "sha256": "8fe5e0ce677004d0e08ae9440e21791bec648856e836f674f49f9dda2a523bc3"
+    },
+    {
+      "bytes": 1386536,
+      "component": "deployment-infrastructure",
+      "owner": "software-engineering/deployment",
+      "path": "artifacts/workers.spdx.json",
+      "sha256": "51de37c2c9c9221c78e90e6396f14d4c8eb157dc66ed3fffbaae106921a8d16d"
     },
     {
       "bytes": 2076,
@@ -508,6 +653,41 @@
       "sha256": "3c1337ce0c38420f156ab94f6d93e449f5251c7c291c2b18703c69b3aac22c57"
     },
     {
+      "bytes": 624,
+      "component": "database-migrations",
+      "owner": "software-engineering/database",
+      "path": "db/migrations/004_worker_leases.sql",
+      "sha256": "0d5d53354716b3bd0971dd72f5226d8c8f5e3e756256cf9927fe049d24249fe8"
+    },
+    {
+      "bytes": 2055,
+      "component": "database-migrations",
+      "owner": "software-engineering/database",
+      "path": "db/migrations/005_outbox_dispatch.sql",
+      "sha256": "5de22e493e3b93f64bca5adf60e7e00714cd6f9caf3d4616c45693a4cbe234bd"
+    },
+    {
+      "bytes": 812,
+      "component": "database-migrations",
+      "owner": "software-engineering/database",
+      "path": "db/migrations/006_feature_checkpoints.sql",
+      "sha256": "bdf29b9c434720f207b9acb629ac7af591c264dab88cee007fe05c371ccee38b"
+    },
+    {
+      "bytes": 1062,
+      "component": "database-migrations",
+      "owner": "software-engineering/database",
+      "path": "db/migrations/007_replay_audit.sql",
+      "sha256": "9b1eb51b54244f2024dc39a14f488277e12441bcd942fc1282d2ef9f6289fd21"
+    },
+    {
+      "bytes": 1701,
+      "component": "deployment-infrastructure",
+      "owner": "software-engineering/deployment",
+      "path": "deployment/SECRET_SCOPE.md",
+      "sha256": "ee97bd26254a399ec6ca3198920af85eba9833594fccee0d24856c955acb5225"
+    },
+    {
       "bytes": 10174,
       "component": "deployment-infrastructure",
       "owner": "software-engineering/deployment",
@@ -536,11 +716,11 @@
       "sha256": "c1956800207fdfdcbb7c86abdfad191d3d2a0111939bc392f05953c5709892c4"
     },
     {
-      "bytes": 712,
+      "bytes": 784,
       "component": "deployment-infrastructure",
       "owner": "software-engineering/deployment",
       "path": "deployment/nginx/Dockerfile",
-      "sha256": "165ef3659094f5ae85d5c01ffe10b67c45f74b94ffa7f45fbf9d27d9d67ff3f2"
+      "sha256": "a2f4b1a959cd69dc3a821ed536ad9d585e3e479839f2371fb6226c37b7df2ef5"
     },
     {
       "bytes": 2430,
@@ -578,18 +758,18 @@
       "sha256": "2415df8e5423cfcd48b857e30629e676cd9e52345690947a63ffc20cfb38b4c3"
     },
     {
-      "bytes": 3127,
+      "bytes": 3133,
       "component": "deployment-infrastructure",
       "owner": "software-engineering/deployment",
       "path": "docker-compose.override.yml",
-      "sha256": "30a113d3fcdfd968c10e3a6f279eb7c8c7a0c82868f05d33e93c9f3b40a4d8de"
+      "sha256": "427512c929d4675cb2188ec62ef6a717ca6879250f94c9618fa8197369cb9912"
     },
     {
-      "bytes": 21179,
+      "bytes": 26639,
       "component": "deployment-infrastructure",
       "owner": "software-engineering/deployment",
       "path": "docker-compose.yml",
-      "sha256": "fa6efc83f4ffb44697e8cc815c80f7cb99fda6875a400c7c2c06aa194939d41c"
+      "sha256": "23dd8c52e13c1dfbb520d4b2c5a0daa3f744a509a8197205ec300ca3a7e07a5d"
     },
     {
       "bytes": 21244,
@@ -676,11 +856,11 @@
       "sha256": "b857ba6fc3d2b7fbe51457388671209799e39e8526eb6d4eb5a155f7171ed2b3"
     },
     {
-      "bytes": 1791,
+      "bytes": 2007,
       "component": "deployment-infrastructure",
       "owner": "software-engineering/deployment",
       "path": "frontend/Dockerfile",
-      "sha256": "85b3aff818571495e1a904dc51dafe215a7c4d66ff9c2219391d7ca9149112b2"
+      "sha256": "d3cc173f9e514772263654d7057dd1d2a35b7c80db9154c7705f9b483bca9568"
     },
     {
       "bytes": 640,
@@ -704,18 +884,18 @@
       "sha256": "5eea87c64a7b955417d25706d95e803dee70286ecdc53fbcbcbcb1fbb12852d3"
     },
     {
-      "bytes": 217586,
+      "bytes": 218986,
       "component": "frontend-ui",
       "owner": "software-engineering/frontend",
       "path": "frontend/package-lock.json",
-      "sha256": "3ec520f813c3b0db595519d585e7ad7759db74ba568f49306c42d033f56148ff"
+      "sha256": "2074841c2fadef76a333fa99e2f225fba811335ea39efa02b05826382fee36a8"
     },
     {
-      "bytes": 705,
+      "bytes": 822,
       "component": "frontend-ui",
       "owner": "software-engineering/frontend",
       "path": "frontend/package.json",
-      "sha256": "eb007930fb722018f22c8335cbd131a7419fc27b288db25011ff945c46ab5742"
+      "sha256": "68fc67a3a15fbef9fdeffd8c6b972f4d86281d949e69a8c6f8bf6a0355b1a804"
     },
     {
       "bytes": 631,
@@ -921,18 +1101,18 @@
       "sha256": "4fe693c0cf5ec35cbcd7acfa94dcd2cfcf0ddbcc16e25481dd914d2600a1a2ce"
     },
     {
-      "bytes": 295,
+      "bytes": 498,
       "component": "deployment-infrastructure",
       "owner": "software-engineering/deployment",
       "path": "infra/migrations/Dockerfile",
-      "sha256": "630846a21635a7ed1897d994b4f5a8937201764ae7a40f8bee7795a9118f6193"
+      "sha256": "9a162ce167d95fb3a5f94784a87a2efbdecdf562f50a1793c81610466556698c"
     },
     {
-      "bytes": 654,
+      "bytes": 830,
       "component": "deployment-infrastructure",
       "owner": "software-engineering/deployment",
       "path": "infra/workers/Dockerfile",
-      "sha256": "013860e18adf4807c94343da27f81ac3cd9371f9bac3a5d41dc5989115ae1c4a"
+      "sha256": "264e46c561cc4129015d747a6c01d6e7f8c4a93849839d3e1621295ad2e5c1c7"
     },
     {
       "bytes": 162385,
@@ -1040,11 +1220,11 @@
       "sha256": "a6078a167373b35dcfc82af230d8e7a4766ba17a0bbe04789b70b87edf45ef9c"
     },
     {
-      "bytes": 2930,
+      "bytes": 3146,
       "component": "deployment-infrastructure",
       "owner": "software-engineering/deployment",
       "path": "orchestrator/Dockerfile",
-      "sha256": "81727fe2faddef880bccde65fd89dbe60ba3f5d8e42c23529231e0ec10527e89"
+      "sha256": "37b12a08ca5e4cfbfa0abc96c1e0538d9804b138c074eb7f6cb494da980c2cca"
     },
     {
       "bytes": 1597,
@@ -1873,11 +2053,11 @@
       "sha256": "fbcc299ec3248bbf3e1b5f47f990b1ebc22d109510aa4fd137407d20e4a7d15d"
     },
     {
-      "bytes": 1024,
+      "bytes": 1717,
       "component": "control-plane",
       "owner": "software-engineering/control-plane",
       "path": "packages/control_plane/app.py",
-      "sha256": "fe65b6e5cd4ea18835ad96404166c32b40ebb7eaea87337ad5d40c25c80bdb55"
+      "sha256": "5a3a513b6041a59ef73449dde17122387b11e223da5d1326b2918a098a1948b1"
     },
     {
       "bytes": 687,
@@ -1887,11 +2067,11 @@
       "sha256": "43fa9c4da2dfc9101c727925615eb535f10321df52a67a7a38bdae5730a14e60"
     },
     {
-      "bytes": 5644,
+      "bytes": 7834,
       "component": "control-plane",
       "owner": "software-engineering/control-plane",
       "path": "packages/control_plane/probes.py",
-      "sha256": "50e03492c990bd93569656afea954c43757941b564410252429121ed9e45377d"
+      "sha256": "d89468912824da9d3ebb33cb2cf5afa9325a5803286ea5dad15ff27ba56a42bb"
     },
     {
       "bytes": 577,
@@ -1971,11 +2151,11 @@
       "sha256": "a9c8c8fcdeaebd0b16e9ac04fc6a9da73ce6449164d3c78f892507d5ae176458"
     },
     {
-      "bytes": 436,
+      "bytes": 477,
       "component": "deterministic-paper-core",
       "owner": "software-engineering/core",
       "path": "packages/event_bus/subjects.py",
-      "sha256": "8d45923bc644a572a0ebf9cd426ed4e57faea4e498b98e844b154a5fac7af01b"
+      "sha256": "40e3fd90c976ae49e58e2547f6a6fb85676a2f40c4737d1357a16f0f65aa5399"
     },
     {
       "bytes": 895,
@@ -2020,11 +2200,11 @@
       "sha256": "9d4e640fca5e1ce9adc2b8954627233d2ca95049aef1244b3c72ef003356ce4a"
     },
     {
-      "bytes": 1064,
+      "bytes": 1130,
       "component": "deterministic-paper-core",
       "owner": "software-engineering/core",
       "path": "packages/execution/_postgres.py",
-      "sha256": "5acb0c1c3126198a2d5066eba06d945ebe9b3815e2863f3a934c9e78bc82129a"
+      "sha256": "ac1ac8006e71bc340fbe743803aa01c1c27be0aa12f67d0c6ef3337baccd5773"
     },
     {
       "bytes": 1914,
@@ -2377,18 +2557,18 @@
       "sha256": "3a335278720b8a25d13d1fa764ec4f0c08250a2fa4fa80a31ff1fb20cc2feb58"
     },
     {
-      "bytes": 30463,
+      "bytes": 37319,
       "component": "knowledge-pipeline",
       "owner": "software-engineering/knowledge",
       "path": "project.manifest.toml",
-      "sha256": "1d1167a48753ca57e54ba52911f603ff0532d64a28d987d7c1beb405a8bfa7f3"
+      "sha256": "8dca972897c33cd3619295c86208adf1b1e768cbcc529e4fbf7f4c8dbd47ce5e"
     },
     {
-      "bytes": 1706,
+      "bytes": 1734,
       "component": "ci-governance",
       "owner": "software-engineering/ci",
       "path": "pyproject.toml",
-      "sha256": "3acbc09a1b1ec33179ba7d724b3b3d9a5d01ff95efe96710983c86916ab7172f"
+      "sha256": "9c8a26c6baa8a58a4e1a097ab04c731524eedc996b04ebb493453f30361e90b4"
     },
     {
       "bytes": 39,
@@ -2398,11 +2578,11 @@
       "sha256": "6ca5f1bc464d0b80445ea66e3625672811a3ac6bedab8b1f02bb59811d8a133d"
     },
     {
-      "bytes": 1323,
+      "bytes": 1467,
       "component": "deployment-infrastructure",
       "owner": "software-engineering/deployment",
       "path": "realtime/Dockerfile",
-      "sha256": "8c77ec033ec8277425eee3c1f03604d842bdea8996c00ccdbe66f05bffd74cc6"
+      "sha256": "024a733363b212cbc504db362811af3f3227dc8da2e0d7dcef391dd1d2257e1e"
     },
     {
       "bytes": 3513,
@@ -2440,6 +2620,34 @@
       "sha256": "cac515b5c9de7a4f4ac261b115ab0c9d72e8fce9731dabdc6d9e474dd128e0dd"
     },
     {
+      "bytes": 2567,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "remediation/BLOCKED_EXTERNAL.md",
+      "sha256": "e1f81d753e4d0fb88868c058eeb734da77fffc845088831ba936a265dfb58409"
+    },
+    {
+      "bytes": 3740,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "remediation/LEGACY_RUNTIME_ROLLBACK.md",
+      "sha256": "4dfda712408e263765ce1c1550378458d1d2743cea755669429a381ff5405858"
+    },
+    {
+      "bytes": 11381,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "remediation/REMEDIATION_STATE.md",
+      "sha256": "b2bb5d1517fbd9882ea699dd756c965a7c6748faf9dbfe6d29cba4551cacc98f"
+    },
+    {
+      "bytes": 7915,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "remediation/VALIDATION_EVIDENCE.md",
+      "sha256": "b59312e31c4a47a0bec1ecc472bbdcb8d9807b5459005362832dcca5a13a5460"
+    },
+    {
       "bytes": 813,
       "component": "ci-governance",
       "owner": "software-engineering/ci",
@@ -2468,11 +2676,25 @@
       "sha256": "2f552ed3e2582c9afc02f4416c8e982961fff8c2c101731e2f5e0243d77204ec"
     },
     {
-      "bytes": 4728,
+      "bytes": 299,
+      "component": "deployment-infrastructure",
+      "owner": "software-engineering/deployment",
+      "path": "scripts/acceptance.ps1",
+      "sha256": "6032929c74527c618bf4e8db6a238a4167cd0d727cf654f197ecf83d781895a8"
+    },
+    {
+      "bytes": 12199,
+      "component": "deployment-infrastructure",
+      "owner": "software-engineering/deployment",
+      "path": "scripts/acceptance.py",
+      "sha256": "23469d6943bbb3834771d4e2d7c7a32509cee0f4bc1276e22fdff2a39b9e0871"
+    },
+    {
+      "bytes": 10097,
       "component": "database-migrations",
       "owner": "software-engineering/database",
       "path": "scripts/apply_migrations.py",
-      "sha256": "e1ee48aab6622a9c91bcfb02f4724b95b83b8af25c38acae582419b785791b52"
+      "sha256": "edcc56b09cbca76a787a35d90c3ee2df6e3fa1c78adfa11de72883154e254f34"
     },
     {
       "bytes": 3408,
@@ -2489,11 +2711,32 @@
       "sha256": "5ad93a7c1a07b288e293fff9e2e381baffd42d66ec1324039450eb9bc0d4c8af"
     },
     {
+      "bytes": 12203,
+      "component": "ci-governance",
+      "owner": "software-engineering/ci",
+      "path": "scripts/config_preflight.py",
+      "sha256": "36faf6db6715945744b011e5c5238bbdfee98d5ff39cd7adfbecadae6de43030"
+    },
+    {
+      "bytes": 5209,
+      "component": "deployment-infrastructure",
+      "owner": "software-engineering/deployment",
+      "path": "scripts/init_local_runtime.py",
+      "sha256": "dfaaaa903d0a21f27745c4e9be6f2e541a1c7168910c5853fd4d229a0fc13aca"
+    },
+    {
       "bytes": 303,
       "component": "knowledge-pipeline",
       "owner": "software-engineering/knowledge",
       "path": "scripts/knowledge.py",
       "sha256": "bccfae2a86523a2b3fdfbc442a68c7eff257e78ad0f48fe0bc8d29391350a111"
+    },
+    {
+      "bytes": 5758,
+      "component": "orchestration-runtime",
+      "owner": "software-engineering/orchestration",
+      "path": "scripts/replay_dlq.py",
+      "sha256": "c76f778672aa28cbc24ed6d9707a86e40262e5bd36e4ba5d504a135c778556ab"
     },
     {
       "bytes": 2990,
@@ -2503,11 +2746,18 @@
       "sha256": "75aee870b912de5bf426e15bb56ef8bcc308ebe6dcc582f930b589c23d2d616e"
     },
     {
-      "bytes": 451,
+      "bytes": 12404,
+      "component": "deployment-infrastructure",
+      "owner": "software-engineering/deployment",
+      "path": "scripts/volume_backup.py",
+      "sha256": "bbefc3143e671a8883e8c6c930787e437cadbd44b60f244d6a7db4cef1917281"
+    },
+    {
+      "bytes": 524,
       "component": "deployment-infrastructure",
       "owner": "software-engineering/deployment",
       "path": "services/dashboard/Dockerfile",
-      "sha256": "ed5dc85c67539cd352cc0b9d4894edaa84944b1b2806c54569e7f63e9ffc7036"
+      "sha256": "9532ef65b0d7d319dc2ec4c3a1b31831811763f1144c8f8e3e47c6674536eea2"
     },
     {
       "bytes": 32176,
@@ -2531,11 +2781,11 @@
       "sha256": "d05dbe2b18d4d679d17c48a08c623b5a64d15393f8470846cd83ca4d4afcd2ee"
     },
     {
-      "bytes": 451,
+      "bytes": 524,
       "component": "deployment-infrastructure",
       "owner": "software-engineering/deployment",
       "path": "services/execution/Dockerfile",
-      "sha256": "5b2014b905bcd39f8df1a60ab56e3be409afac0a27993ef5aaf25458c9be9812"
+      "sha256": "031dbe9fd0d7cf096435c41cd1e1e7da68bb8aafcb686baca4cf6b631d90cfd6"
     },
     {
       "bytes": 45950,
@@ -2559,11 +2809,11 @@
       "sha256": "72db3f84cf591629fcce51a53101f6cb8fac6c083827c7429009fd56700e82f5"
     },
     {
-      "bytes": 525,
+      "bytes": 598,
       "component": "deployment-infrastructure",
       "owner": "software-engineering/deployment",
       "path": "services/feature_engine/Dockerfile",
-      "sha256": "09083a69266cce7e636cbd24bebe905926d30451431e3f11678366d21da5249c"
+      "sha256": "72d0779027c90b487480594fc86ce01f0db0f6f13052099d867abc27c8e5c899"
     },
     {
       "bytes": 24355,
@@ -2587,11 +2837,11 @@
       "sha256": "6da83f36ca2a02c8960c18bf861524e9f04db7ecf16b6049b30795536ddec619"
     },
     {
-      "bytes": 451,
+      "bytes": 524,
       "component": "deployment-infrastructure",
       "owner": "software-engineering/deployment",
       "path": "services/inference/Dockerfile",
-      "sha256": "92eef52713dd8795c50b2c0b7cb6e62bd7b940f6778ab50adf4429a0f0756c6f"
+      "sha256": "689897e01b2093427d98962c33e8988d065fa84ba6f4514c3687957ace6a68e4"
     },
     {
       "bytes": 18644,
@@ -2615,11 +2865,11 @@
       "sha256": "b0ddbea4df2b53c64c81c9a4bfd56714ab4840393c6c1a0f63a088284d84dc4d"
     },
     {
-      "bytes": 547,
+      "bytes": 620,
       "component": "deployment-infrastructure",
       "owner": "software-engineering/deployment",
       "path": "services/market_data/Dockerfile",
-      "sha256": "d6b099f7c952a0d2724443d83b21179b7a7da4e426920401da2b1eb6c8e16f77"
+      "sha256": "b72ec66512f628a7f9e0cd94aa67f45dd9560185c87422d12178af5072749bea"
     },
     {
       "bytes": 19611,
@@ -2643,11 +2893,11 @@
       "sha256": "fcd63fc3f549772f6b7ec333cce68f482697f94683ee95b59125af717c339285"
     },
     {
-      "bytes": 619,
+      "bytes": 692,
       "component": "deployment-infrastructure",
       "owner": "software-engineering/deployment",
       "path": "services/moe_router/Dockerfile",
-      "sha256": "75230138b4a3d32df6e17e4225ac066245d00eff5439c3fd90251f947b577ee0"
+      "sha256": "418fdc965bc540525b969ee076c156f45db460ee84ca0e30778c69a3552bfc34"
     },
     {
       "bytes": 30451,
@@ -2671,11 +2921,11 @@
       "sha256": "b1ada006089c27aae0e79aa24f9e1d6db869a1bcf58febd9a0bdf07abb753f38"
     },
     {
-      "bytes": 619,
+      "bytes": 692,
       "component": "deployment-infrastructure",
       "owner": "software-engineering/deployment",
       "path": "services/orderbook/Dockerfile",
-      "sha256": "418d0135419cbef4da44486d658d9e784be721bc0efa4adc85305e71c1f1f037"
+      "sha256": "3bb01496cf267dbda45f6d9f2378d6020233b234a994fda5eb295cb4ceff934e"
     },
     {
       "bytes": 18899,
@@ -2699,11 +2949,11 @@
       "sha256": "72db3f84cf591629fcce51a53101f6cb8fac6c083827c7429009fd56700e82f5"
     },
     {
-      "bytes": 481,
+      "bytes": 554,
       "component": "deployment-infrastructure",
       "owner": "software-engineering/deployment",
       "path": "services/risk/Dockerfile",
-      "sha256": "347a10faf7b66df1a862fa2172fd4a272813b1cfac5a9dee8e1d5e77d6fe54ad"
+      "sha256": "1f1443e5a31f0f1e7419658f90cff95406da549f760e8f241132b778d1dfa389"
     },
     {
       "bytes": 20886,
@@ -2727,11 +2977,11 @@
       "sha256": "366338a2d4362602fe7f37f19566d7bdebf7b9577df7be92518a25d60ba877d7"
     },
     {
-      "bytes": 610,
+      "bytes": 683,
       "component": "deployment-infrastructure",
       "owner": "software-engineering/deployment",
       "path": "services/rl_learning/Dockerfile",
-      "sha256": "75bb761c66f555c80ef4d520fadd49a877115c119a11644d993c801099a9c5a7"
+      "sha256": "052b58e45bbe5037ac8b164cbbbb1ab1389a890fe9372eac94911b94719ab0c2"
     },
     {
       "bytes": 29519,
@@ -2825,11 +3075,18 @@
       "sha256": "b762de0656d7e323e65e676314c3de37c91755283d04af0f724a36ccb3b3c00b"
     },
     {
-      "bytes": 2738,
+      "bytes": 2540,
+      "component": "database-migrations",
+      "owner": "software-engineering/database",
+      "path": "tests/contract/test_database_role_contract.py",
+      "sha256": "b93a15b0dc74778315df5ec384439046dedc419cdb97d43bd9d45ade8c29d9d1"
+    },
+    {
+      "bytes": 7479,
       "component": "deployment-infrastructure",
       "owner": "software-engineering/deployment",
       "path": "tests/contract/test_default_compose_boundary.py",
-      "sha256": "7f62fe44838e6a52eab0207f18aa915b96ec760d41a5b4321989d4365dab68de"
+      "sha256": "a587a41f6340643438bb793a112281999d5a1e28e397897764f02a095938eedd"
     },
     {
       "bytes": 6922,
@@ -2846,18 +3103,18 @@
       "sha256": "afce920b00ebbaf391f757dda058c8ba5dd5e882a2c4b6492045df379a334414"
     },
     {
-      "bytes": 755,
+      "bytes": 1256,
       "component": "database-migrations",
       "owner": "software-engineering/database",
       "path": "tests/contract/test_migration_runner.py",
-      "sha256": "8903821d704eb0f3e8b9e71fe4a1590ecef1499a65170d02164bc2b75daac97a"
+      "sha256": "59d9c02990800c334318a74f644e1b684b0fa627c5b225a7ae42cd33e06e1d33"
     },
     {
-      "bytes": 2039,
+      "bytes": 3381,
       "component": "database-migrations",
       "owner": "software-engineering/database",
       "path": "tests/contract/test_runtime_durability_migration.py",
-      "sha256": "faddef04d0ad0b5cfa7ce4d1d1afef0ba53acbe172b25549a8e266be3928edec"
+      "sha256": "f8e521c4b03c4b446c61ce20685ad5b83d316a78c8b57bf6362e67ced8eba5b2"
     },
     {
       "bytes": 3468,
@@ -2867,11 +3124,11 @@
       "sha256": "0a4d2cdf828d166bceb0bb59cf5d20e31353edd8dfaf63c1eb2e9431875854fa"
     },
     {
-      "bytes": 6202,
+      "bytes": 7752,
       "component": "orchestration-runtime",
       "owner": "software-engineering/orchestration",
       "path": "tests/contract/test_worker_contracts.py",
-      "sha256": "292e41fd6de5ac33476f499f00e9f7bbc13521289c7cc8bb18f40ceff705b26d"
+      "sha256": "240e93c2d72f691c1263c5cf6db394c2f85accd4b1d003e1fb6bc8b49f6c984c"
     },
     {
       "bytes": 61,
@@ -2986,11 +3243,18 @@
       "sha256": "925485349f2c4b93d4f019b40fb6f690216faf50d72bb779e314db872af87c72"
     },
     {
-      "bytes": 15572,
+      "bytes": 3461,
+      "component": "deployment-infrastructure",
+      "owner": "software-engineering/deployment",
+      "path": "tests/unit/test_acceptance_harness.py",
+      "sha256": "df7ff79ade3c30f797a8ca643b36f83ff1cbc59268a6ab774a21060a96ad5afe"
+    },
+    {
+      "bytes": 16612,
       "component": "risk-decision-runtime",
       "owner": "software-engineering/risk",
       "path": "tests/unit/test_async_decision_service.py",
-      "sha256": "3be46452f7346471f0faa57a2eb325f52f2b564109263ef230a7c2d0c0e18233"
+      "sha256": "72262f7fef36e34a648ab3ae6ab8ef3b075368bfe3c963c6741cb6e1bcc37af3"
     },
     {
       "bytes": 3300,
@@ -3000,11 +3264,53 @@
       "sha256": "a79629e26573a9262bfdb57600a123910b260a7b70a9646a231b41b784304d47"
     },
     {
-      "bytes": 4182,
+      "bytes": 3063,
+      "component": "market-producer-runtime",
+      "owner": "software-engineering/market-data",
+      "path": "tests/unit/test_binance_market_producer.py",
+      "sha256": "2a9fd2c835768fc0c6808a314ac554dc669ae6c43392d0bdc78c7f14998221f2"
+    },
+    {
+      "bytes": 3197,
+      "component": "candidate-runtime",
+      "owner": "software-engineering/candidate",
+      "path": "tests/unit/test_candidate_fallback.py",
+      "sha256": "de6ea68212157ad5a122192eaef64a172ac3594afa71cf84045fabf311a9e173"
+    },
+    {
+      "bytes": 2115,
+      "component": "candidate-runtime",
+      "owner": "software-engineering/candidate",
+      "path": "tests/unit/test_candidate_market.py",
+      "sha256": "c4675f2c65b684b46bdea27a8a22280f33cfa479122c7cb6b8668f0fc5b29f45"
+    },
+    {
+      "bytes": 2928,
+      "component": "candidate-runtime",
+      "owner": "software-engineering/candidate",
+      "path": "tests/unit/test_candidate_ollama.py",
+      "sha256": "351a467b4de140e178592a420bc1c9e185d8d820dd53e0252722dfae85fa788f"
+    },
+    {
+      "bytes": 4225,
+      "component": "candidate-runtime",
+      "owner": "software-engineering/candidate",
+      "path": "tests/unit/test_candidate_worker_runtime.py",
+      "sha256": "bd8c46294b67b212e6c3e14d1dd75c0027cd40432f6b21f5214c473bbb774a9e"
+    },
+    {
+      "bytes": 2950,
+      "component": "ci-governance",
+      "owner": "software-engineering/ci",
+      "path": "tests/unit/test_config_preflight.py",
+      "sha256": "c8a08410c527ecd4f582138fafb8109675691856b74a7ed9f6bf281dceee6432"
+    },
+    {
+      "bytes": 8549,
       "component": "control-plane",
       "owner": "software-engineering/control-plane",
       "path": "tests/unit/test_control_plane.py",
-      "sha256": "0265c6468debebc8b4abc63b7af91d2e5b8ba0cd640a27276a4f08ef841c2298"
+      "sha256": "2380356b83caf9240068ec88bccee9b455d3c3144a9c3bb740aa3b8b3c0582ba"
     },
     {
       "bytes": 7318,
@@ -3021,6 +3327,20 @@
       "sha256": "b441bf4abd2e6f4d3774da0749493aefe889618943f12ed1fafc9fa4a988215b"
     },
     {
+      "bytes": 388,
+      "component": "database-migrations",
+      "owner": "software-engineering/database",
+      "path": "tests/unit/test_database_roles.py",
+      "sha256": "9a1d00e7f22cad77d7ed8f2d86187ad457560c8e1972b7cc1f77e9f90d2cc55c"
+    },
+    {
+      "bytes": 1192,
+      "component": "orchestration-runtime",
+      "owner": "software-engineering/orchestration",
+      "path": "tests/unit/test_dlq_replay.py",
+      "sha256": "2eb103d7ca735018ee93bf7e5015bdf15c5ca7f0bc632a13d4acbb1365ee150c"
+    },
+    {
       "bytes": 22910,
       "component": "deterministic-paper-core",
       "owner": "software-engineering/core",
@@ -3028,11 +3348,18 @@
       "sha256": "193a583a03cbe06971d32dec1d2c876e17aea8414a4ec47239567575b90b98f2"
     },
     {
-      "bytes": 4904,
+      "bytes": 6069,
       "component": "paper-execution-runtime",
       "owner": "software-engineering/execution",
       "path": "tests/unit/test_execution_runtime.py",
-      "sha256": "fae9b1a67fa09dd3cc3acc9a4ecb26c41b1d51f81359764ddbb9befe4bdaecb5"
+      "sha256": "47d3ebf24233614b6a9966663f425bbb678ebcc580054db58344c6289e128d26"
+    },
+    {
+      "bytes": 3103,
+      "component": "feature-runtime",
+      "owner": "software-engineering/features",
+      "path": "tests/unit/test_feature_worker_runtime.py",
+      "sha256": "b5bce19b167e971e6a4c5fb4c5b4ebc7ba67bb3b955b9ba9e399818821af0f00"
     },
     {
       "bytes": 1431,
@@ -3075,6 +3402,27 @@
       "owner": "software-engineering/hermes",
       "path": "tests/unit/test_hermes_workflow.py",
       "sha256": "2972b34d6d90b9b826dd9f3f94ad15ee13b4f96fe206ff2c8e46538e4a6649ce"
+    },
+    {
+      "bytes": 7042,
+      "component": "orchestration-runtime",
+      "owner": "software-engineering/orchestration",
+      "path": "tests/unit/test_inbox_outbox.py",
+      "sha256": "d6f5c2f4c20b65caf4550c09efc1f61bedafe3eb096dc19176096568d3886f06"
+    },
+    {
+      "bytes": 6201,
+      "component": "feature-runtime",
+      "owner": "software-engineering/features",
+      "path": "tests/unit/test_incremental_features.py",
+      "sha256": "03d72aac316def1271ba6210536c5a18d896f48f73c722f5200ed28496605498"
+    },
+    {
+      "bytes": 2606,
+      "component": "deployment-infrastructure",
+      "owner": "software-engineering/deployment",
+      "path": "tests/unit/test_init_local_runtime.py",
+      "sha256": "90740c5157dd59289a1cb8ad004c7a89f9a6d6a6393ae3b6d7762b6b62c37aa7"
     },
     {
       "bytes": 5081,
@@ -3147,18 +3495,25 @@
       "sha256": "78641faf41a64824c6bc7e6520ee99af715e16930d3f11c1fcf05574dc9ae757"
     },
     {
-      "bytes": 7513,
+      "bytes": 8831,
       "component": "market-ingestion-runtime",
       "owner": "software-engineering/market-data",
       "path": "tests/unit/test_market_data_runtime.py",
-      "sha256": "0df632968005029fce4ba49db462824e27e8c3d08ece52f50de349f075a2b87b"
+      "sha256": "e393222a40efe2a65fb4a6afb62f6e4bc38e620cda8ef890a4c81c61942feef7"
     },
     {
-      "bytes": 4589,
+      "bytes": 12234,
       "component": "orchestration-runtime",
       "owner": "software-engineering/orchestration",
       "path": "tests/unit/test_nats_runtime.py",
-      "sha256": "0391cc828c7b74de94fb2c53dd123f5d0e23aa4b993e827c9ff76b5655da894d"
+      "sha256": "c9d718800c998aeeca67ad8eb7dcb2bcc2c80e808e353e72aaf901965c63a5dd"
+    },
+    {
+      "bytes": 3480,
+      "component": "reconciliation-runtime",
+      "owner": "software-engineering/reconciliation",
+      "path": "tests/unit/test_paper_portfolio_projection.py",
+      "sha256": "3f0f545880dc78011f5883bf9e8cfd988112a5e223605c444a7c3032f6a01d9d"
     },
     {
       "bytes": 8515,
@@ -3182,6 +3537,20 @@
       "sha256": "28a7c2bdb8c69260fa5c6957ba304bfc0caa17f18beda1ab14bcea3939129adc"
     },
     {
+      "bytes": 5109,
+      "component": "reconciliation-runtime",
+      "owner": "software-engineering/reconciliation",
+      "path": "tests/unit/test_reconciliation_service.py",
+      "sha256": "a719983777e8e7fab5bb381a1c2040b5e82639171219a932fb744536cd844ae3"
+    },
+    {
+      "bytes": 1742,
+      "component": "reconciliation-runtime",
+      "owner": "software-engineering/reconciliation",
+      "path": "tests/unit/test_risk_authority_bootstrap.py",
+      "sha256": "81b5e171a6717358c6da4c4b65327233d8d89c3332180d9346e63a04a482744a"
+    },
+    {
       "bytes": 15847,
       "component": "deterministic-paper-core",
       "owner": "software-engineering/core",
@@ -3189,11 +3558,25 @@
       "sha256": "b5e236b1dd7b4cb10ff1cad70cc585aeb6aa2fb90664fb45397172fca9af3fe0"
     },
     {
-      "bytes": 2630,
+      "bytes": 3801,
+      "component": "candidate-runtime",
+      "owner": "software-engineering/candidate",
+      "path": "tests/unit/test_typed_candidate_producer.py",
+      "sha256": "6868f38c281e3e4e41e44ad12e02e56aa68afcaef64ccf48a73eef8e06a64d3e"
+    },
+    {
+      "bytes": 2449,
+      "component": "deployment-infrastructure",
+      "owner": "software-engineering/deployment",
+      "path": "tests/unit/test_volume_backup.py",
+      "sha256": "119383f0d98b1b037a9b5b76a4b723531a2b00993a4dd71551c927f1e3426a6f"
+    },
+    {
+      "bytes": 4289,
       "component": "orchestration-runtime",
       "owner": "software-engineering/orchestration",
       "path": "tests/unit/test_worker_config.py",
-      "sha256": "7741a0a2788eb5ad90dc2746c93a5e8fe63cb094ec3ec8762cacbc61b71213df"
+      "sha256": "0c4a9d3a144788a39b5e50947d34880461a7b0d003bd439c84120063dc4730ac"
     },
     {
       "bytes": 12335,
@@ -3217,11 +3600,11 @@
       "sha256": "2c1b566b58552e0234fdb819af865d26fe47916c2a86af24d1360c03bd778f84"
     },
     {
-      "bytes": 873904,
+      "bytes": 873990,
       "component": "ci-governance",
       "owner": "software-engineering/ci",
       "path": "uv.lock",
-      "sha256": "215275f118c3681f964d6c1da736e750dd7943f9143414fb8b7cf11785757492"
+      "sha256": "51df691a41b8bf8d9eee30b53cc06deb04eeebd149971ecc76596589e2aec802"
     },
     {
       "bytes": 9167,
@@ -3350,11 +3733,11 @@
       "sha256": "d8ebecd19195f3fa03f97eeee3ce32dfd68bd47160af9b58bdd5ea29c4934a2f"
     },
     {
-      "bytes": 5146,
+      "bytes": 5420,
       "component": "obsidian-knowledge-base",
       "owner": "software-engineering/knowledge-curation",
       "path": "wiki/content/concepts/local-trading-ai-architecture.md",
-      "sha256": "f85a2aed674def16787798e67a679fa847c794cc3cd2dbd59c2c85eb15d494e9"
+      "sha256": "4dafd73ec975dc04996b50519571eb6f2310920c1c91af07a9b4ae4356c9b863"
     },
     {
       "bytes": 1766,
@@ -3378,11 +3761,11 @@
       "sha256": "e28863a228a8682d254be223007de7a6277861e157396c436d1ec92bcac6d013"
     },
     {
-      "bytes": 5195,
+      "bytes": 5483,
       "component": "obsidian-knowledge-base",
       "owner": "software-engineering/knowledge-curation",
       "path": "wiki/content/concepts/nats-event-system.md",
-      "sha256": "ad13ed2fcc4cbdf902f805647662dc860ab9abb9fb24ba1409bfa8564fdb1e33"
+      "sha256": "5caa6e2483a98e05f6f6255f582c026f8148c31102d4cd30caa5830005fce9db"
     },
     {
       "bytes": 4269,
@@ -3413,11 +3796,11 @@
       "sha256": "bfb72af9a881dff4467a50b6545161b1e45cb7e2915acabc2fe3c39a879e30ba"
     },
     {
-      "bytes": 8992,
+      "bytes": 9357,
       "component": "obsidian-knowledge-base",
       "owner": "software-engineering/knowledge-curation",
       "path": "wiki/content/decisions/canonical-local-paper-runtime-v1.md",
-      "sha256": "1a626bbbe5cdfad3e66307e698c3c911e21321240e29fe4667785278f5088bdb"
+      "sha256": "5be906e892de848cfd9c0263767a8b244b12406ab51968c4df3140a06fc37c89"
     },
     {
       "bytes": 5925,
@@ -3651,11 +4034,11 @@
       "sha256": "8355f192ac93cb8e78ca0bd02e748e41f9e67ad7a36211a6294e4106707ae15b"
     },
     {
-      "bytes": 6267,
+      "bytes": 6556,
       "component": "obsidian-knowledge-base",
       "owner": "software-engineering/knowledge-curation",
       "path": "wiki/content/overviews/infrastructure-overview.md",
-      "sha256": "751a5012995b7ce8cc83b13669985bd5337f88c99a8ebc1c40b43a7cd705a778"
+      "sha256": "a92facc758b1b3d8fdc3fa9970139e93491e71863fc19b74683d46d9e9dbfe9c"
     },
     {
       "bytes": 21217,
@@ -3663,6 +4046,13 @@
       "owner": "software-engineering/knowledge-curation",
       "path": "wiki/content/overviews/production-readiness-audit-2026-07-16.md",
       "sha256": "e89fd6de09c36b3b462a8e3c4d700bbe07c0e3394cffa18db2740f124f854a0c"
+    },
+    {
+      "bytes": 5471,
+      "component": "obsidian-knowledge-base",
+      "owner": "software-engineering/knowledge-curation",
+      "path": "wiki/content/overviews/production-remediation-2026-07-24.md",
+      "sha256": "73f8026564b718898baa639480318ce84a4cd4a3362e1f4593a9e71c8e00e951"
     },
     {
       "bytes": 6652,
@@ -3742,18 +4132,18 @@
       "sha256": "ada0394f98ccae5dda7471bb1e32a8e0f33a32326fc18090a94b6a0f21181407"
     },
     {
-      "bytes": 11807,
+      "bytes": 12008,
       "component": "obsidian-knowledge-base",
       "owner": "software-engineering/knowledge-curation",
       "path": "wiki/index.md",
-      "sha256": "1984219e13f6dfe0cefe0b93525d28396d867c7278fde87281c7bc1be16625c2"
+      "sha256": "b5a09cb56e7bbcfe8fbccc9483901a0c9b1565a7c3c4b6582309d639cee5f169"
     },
     {
-      "bytes": 32953,
+      "bytes": 34662,
       "component": "obsidian-knowledge-base",
       "owner": "software-engineering/knowledge-curation",
       "path": "wiki/log.md",
-      "sha256": "c790353f436988167decc5a4952a367edec08e54806e9051e7cb1f5153c8ba38"
+      "sha256": "457c6fde393f204f95969508e2ec2ad90d7101fcc1e27afc46faa78c3288e752"
     },
     {
       "bytes": 64,
@@ -3763,18 +4153,67 @@
       "sha256": "29bb16a677cf305992fc34626620e63fcf14e4d817211e23416b98203d900fca"
     },
     {
-      "bytes": 4768,
+      "bytes": 122,
+      "component": "candidate-runtime",
+      "owner": "software-engineering/candidate",
+      "path": "workers/candidate/__init__.py",
+      "sha256": "7658563456d18b766cd221dcfa24f8721b5b8692639f60cbef9739d875501bab"
+    },
+    {
+      "bytes": 2875,
+      "component": "candidate-runtime",
+      "owner": "software-engineering/candidate",
+      "path": "workers/candidate/__main__.py",
+      "sha256": "f4764e9e1705e972ff46ca825b8dfde3820abed5db4d6e5c177d46194e35dcd8"
+    },
+    {
+      "bytes": 5166,
+      "component": "candidate-runtime",
+      "owner": "software-engineering/candidate",
+      "path": "workers/candidate/fallback.py",
+      "sha256": "e26c7a6707e532ea8517b79d79b373f9de66f867f53a4df2693931fcc09554f3"
+    },
+    {
+      "bytes": 1699,
+      "component": "candidate-runtime",
+      "owner": "software-engineering/candidate",
+      "path": "workers/candidate/market.py",
+      "sha256": "c333c3815c7c60884a210294cbf12a2e608af03aefcb6c8b37b507a9f592883b"
+    },
+    {
+      "bytes": 3352,
+      "component": "candidate-runtime",
+      "owner": "software-engineering/candidate",
+      "path": "workers/candidate/ollama.py",
+      "sha256": "6cc845cfd38dad7f3b97f9e5d5980483382a8ed0e1b6c2b52c6a57974a75e085"
+    },
+    {
+      "bytes": 5671,
+      "component": "candidate-runtime",
+      "owner": "software-engineering/candidate",
+      "path": "workers/candidate/runtime.py",
+      "sha256": "5c7fc832fa8cc4c5e8c561093458fa699adeaf1bb873f9724a965996b513ea3f"
+    },
+    {
+      "bytes": 2777,
+      "component": "candidate-runtime",
+      "owner": "software-engineering/candidate",
+      "path": "workers/candidate/service.py",
+      "sha256": "ea9f66391a5a901404c5ffd331cf24eab1ccd475d956a299929c2ba501b3da1e"
+    },
+    {
+      "bytes": 7329,
       "component": "orchestration-runtime",
       "owner": "software-engineering/orchestration",
       "path": "workers/config.py",
-      "sha256": "739ff0166a9792e02c83b3307d201daee89d961ec44c7fbebdfc067ba0f8a57a"
+      "sha256": "6d2f7a0540a33c16869af5fa219394373319749c2421be6274a90f88551ff3bd"
     },
     {
-      "bytes": 13942,
+      "bytes": 15069,
       "component": "orchestration-runtime",
       "owner": "software-engineering/orchestration",
       "path": "workers/contracts.py",
-      "sha256": "eee8ae59e2556d78a489254f75feed8e560d39061cd99e4800aec77d9e17a75b"
+      "sha256": "bb03ce6d7b91faece0aa09c1620a84a26fa3baf70b1620caeb5b9660a10b24e1"
     },
     {
       "bytes": 133,
@@ -3805,11 +4244,18 @@
       "sha256": "ee0c26fda4bfcda7302e9bab4544e1852441fd3943fa10e91230a30e6722c1a9"
     },
     {
-      "bytes": 4090,
+      "bytes": 5965,
       "component": "risk-decision-runtime",
       "owner": "software-engineering/risk",
       "path": "workers/decision/runtime.py",
-      "sha256": "5d21a2126ae7c82642a072d4a4c74e264b560bbe9420409089aa4a197352df2c"
+      "sha256": "9bd008e16971a9883280e5f90fa111c42987dbf940b06fab3e5174496b89661a"
+    },
+    {
+      "bytes": 18199,
+      "component": "orchestration-runtime",
+      "owner": "software-engineering/orchestration",
+      "path": "workers/durability.py",
+      "sha256": "3f2ae3a5df0d6c54ca962f58ba232fec0db459691577f4855d92b11c1bef5d3e"
     },
     {
       "bytes": 214,
@@ -3840,11 +4286,46 @@
       "sha256": "488f9b31b3fa478994e1a01d6e42efec39903a96f192c7a235bcf989c8aec069"
     },
     {
-      "bytes": 4945,
+      "bytes": 7426,
       "component": "paper-execution-runtime",
       "owner": "software-engineering/execution",
       "path": "workers/execution/runtime.py",
-      "sha256": "75152b0107cba194f9c2dd89350c1e6f61a43545208b9661ef4241cc6892f98d"
+      "sha256": "5f001081b7bf83372f86c2204ff645353dac3de7ca1168484e49c748259a9cc8"
+    },
+    {
+      "bytes": 177,
+      "component": "feature-runtime",
+      "owner": "software-engineering/features",
+      "path": "workers/features/__init__.py",
+      "sha256": "a99c5c65671c72f80194fe6a0707ed2e26226c5580f2db7c5dd661dbf5cb18e7"
+    },
+    {
+      "bytes": 2100,
+      "component": "feature-runtime",
+      "owner": "software-engineering/features",
+      "path": "workers/features/__main__.py",
+      "sha256": "a2b74951e190f48e2785b3c7ee394d92114e286c6d570c89eb4551a2250e8a1c"
+    },
+    {
+      "bytes": 5520,
+      "component": "feature-runtime",
+      "owner": "software-engineering/features",
+      "path": "workers/features/postgres.py",
+      "sha256": "1a298c24a161790f177c2413100b1ec6196a67c0df75d069bf64df90fb4ddd34"
+    },
+    {
+      "bytes": 9113,
+      "component": "feature-runtime",
+      "owner": "software-engineering/features",
+      "path": "workers/features/runtime.py",
+      "sha256": "d374abee0fc6855d364d6c09f53f8ff87989469e87d72b0fad37853599723f51"
+    },
+    {
+      "bytes": 1449,
+      "component": "feature-runtime",
+      "owner": "software-engineering/features",
+      "path": "workers/features/service.py",
+      "sha256": "3050a4810d385e0bda217c063bacc54b55f4b96548f5464bd87214c8d072c115"
     },
     {
       "bytes": 142,
@@ -3854,11 +4335,11 @@
       "sha256": "3b46e479162abb6883f608fd3f2b7ae72c4fe8f77ae2ef8f7f0b1d7d042191a5"
     },
     {
-      "bytes": 959,
+      "bytes": 2272,
       "component": "market-ingestion-runtime",
       "owner": "software-engineering/market-data",
       "path": "workers/market_data/__main__.py",
-      "sha256": "4f698efe1fcd6d0f9000431227d4742b1e06448836d44762bec84efe3e506bbc"
+      "sha256": "467b885c8bdaa993e17e4b67e57cbc085da64f670bb3fe0930231d34b2549410"
     },
     {
       "bytes": 342,
@@ -3896,18 +4377,81 @@
       "sha256": "54dce5aee0619dd7af498401897c981baca6c296a19efbd852fbe67a317fe990"
     },
     {
-      "bytes": 9071,
+      "bytes": 10400,
       "component": "market-ingestion-runtime",
       "owner": "software-engineering/market-data",
       "path": "workers/market_data/runtime.py",
-      "sha256": "54d79d74d2cd9d725838fcc098990db188034b6f2e7c844e511fa105fa5b9f24"
+      "sha256": "ffbdc332f9533485f578254f1bdc9ea46402cef07b8c14ecb3bb792b5252fed4"
     },
     {
-      "bytes": 6697,
+      "bytes": 125,
+      "component": "market-producer-runtime",
+      "owner": "software-engineering/market-data",
+      "path": "workers/market_producer/__init__.py",
+      "sha256": "aff0417d64888d0a41785b9e78b962e34e5ff90340376fa22551bf3220d980ad"
+    },
+    {
+      "bytes": 1901,
+      "component": "market-producer-runtime",
+      "owner": "software-engineering/market-data",
+      "path": "workers/market_producer/__main__.py",
+      "sha256": "f97304c9f3d8dcc28d054132c28f2c7d8f12ea069226a0ee3986b33b793e2d1e"
+    },
+    {
+      "bytes": 3968,
+      "component": "market-producer-runtime",
+      "owner": "software-engineering/market-data",
+      "path": "workers/market_producer/runtime.py",
+      "sha256": "bb8f93a54cf252ac21f929d61a0b3a3f205887dd1453eeff16dae5d9e9005305"
+    },
+    {
+      "bytes": 14078,
       "component": "orchestration-runtime",
       "owner": "software-engineering/orchestration",
       "path": "workers/nats_runtime.py",
-      "sha256": "80905a99376787900c38daa297cd84e1e16d7819bf458f5e30a4a11b5e49e96a"
+      "sha256": "8399dd78d7c79cf90fa04f8d07154a2e3b2d3afc1039f6746ed2dce56ebcf818"
+    },
+    {
+      "bytes": 190,
+      "component": "reconciliation-runtime",
+      "owner": "software-engineering/reconciliation",
+      "path": "workers/reconciliation/__init__.py",
+      "sha256": "0dbac5b4d6f860396bd4fa3017dc568cb8de0ae3d688101775b41a0a85980ed8"
+    },
+    {
+      "bytes": 2937,
+      "component": "reconciliation-runtime",
+      "owner": "software-engineering/reconciliation",
+      "path": "workers/reconciliation/__main__.py",
+      "sha256": "e74c6a21e1fadede6110cc84a02480dd6d708381d2f0a8f43152a63c5f648eb0"
+    },
+    {
+      "bytes": 6240,
+      "component": "reconciliation-runtime",
+      "owner": "software-engineering/reconciliation",
+      "path": "workers/reconciliation/authority.py",
+      "sha256": "9a9b0b2eb5abf37844cb9dcb8585e1d92be3b1db39e4f528a6221c32601c0984"
+    },
+    {
+      "bytes": 7303,
+      "component": "reconciliation-runtime",
+      "owner": "software-engineering/reconciliation",
+      "path": "workers/reconciliation/postgres.py",
+      "sha256": "131f9d77e8d632c40b4cba40c8ebe443be5c0927fd001f0e2e657049d8bd1574"
+    },
+    {
+      "bytes": 5375,
+      "component": "reconciliation-runtime",
+      "owner": "software-engineering/reconciliation",
+      "path": "workers/reconciliation/projection.py",
+      "sha256": "83de349d6385be4a140b315a5a1f161744044a67d395a78ee7e7280459752bda"
+    },
+    {
+      "bytes": 3866,
+      "component": "reconciliation-runtime",
+      "owner": "software-engineering/reconciliation",
+      "path": "workers/reconciliation/service.py",
+      "sha256": "4bd86769b849ab8b9fc5dcba89a1d0e130d09eb98ca8182c03a3d7143cf47d07"
     }
   ],
   "knowledge": {
@@ -3924,36 +4468,36 @@
     "source_of_truth": "wiki",
     "vector_store": "chromadb"
   },
-  "manifest_sha256": "1d1167a48753ca57e54ba52911f603ff0532d64a28d987d7c1beb405a8bfa7f3",
+  "manifest_sha256": "8dca972897c33cd3619295c86208adf1b1e768cbcc529e4fbf7f4c8dbd47ce5e",
   "project": "Trade_agent",
   "schema_version": 1,
   "sources": [
     {
-      "bytes": 5285,
+      "bytes": 7354,
       "categories": [
         "configuration"
       ],
       "chunks": [
         {
-          "chars": 3962,
-          "end_line": 129,
-          "id": "kn_55dfc916b8f8b1ba5ce45b050d00c41979154109eb557432eebdac169a6a7393",
+          "chars": 3950,
+          "end_line": 114,
+          "id": "kn_bfe716c86f0227d4a05850f9c806b492a7b577121a70c14bf29b926295fb5714",
           "index": 0,
-          "sha256": "9b2662e78577944bac7aa32f7af31df801b45b263d6710b3fb28e948c776c72f",
+          "sha256": "992fefb1fd105b567dfd24390050f97f26874a552e275628bf152927487050e0",
           "start_line": 1
         },
         {
-          "chars": 1343,
-          "end_line": 156,
-          "id": "kn_d78c1d56c1783f6b7ac80350ac9752924b5322dee29bc287975b312749facd16",
+          "chars": 3794,
+          "end_line": 218,
+          "id": "kn_05718440ac04b5cec231928257925ef8a82a799ed11b223ca727e37643256adb",
           "index": 1,
-          "sha256": "8cec9ed45176365efbc24b3e7e71b2b5643d78ca6d27f24a0f69aadeae73c3df",
-          "start_line": 114
+          "sha256": "fd41c555b40eb888950300fa1fba0d5e12de0be0bbebadb33625a56ca53d1f30",
+          "start_line": 102
         }
       ],
       "component": "ci-governance",
       "path": ".github/workflows/ci.yml",
-      "sha256": "bf1b0f5aefbe9dcfb7a10cf235b613e7983bc56d48f37bdcf6ccf30d0547149b"
+      "sha256": "eb2324335f855f8357c868b49389820069d2ef40ce83ab017d37e454a8278af9"
     },
     {
       "bytes": 46233,
@@ -4573,6 +5117,101 @@
       "sha256": "3c1337ce0c38420f156ab94f6d93e449f5251c7c291c2b18703c69b3aac22c57"
     },
     {
+      "bytes": 624,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 624,
+          "end_line": 16,
+          "id": "kn_16bb9287231996d1c3e40314102bdbbd30a7e0316f0bb2d73d98acedf5792c00",
+          "index": 0,
+          "sha256": "0d5d53354716b3bd0971dd72f5226d8c8f5e3e756256cf9927fe049d24249fe8",
+          "start_line": 1
+        }
+      ],
+      "component": "database-migrations",
+      "path": "db/migrations/004_worker_leases.sql",
+      "sha256": "0d5d53354716b3bd0971dd72f5226d8c8f5e3e756256cf9927fe049d24249fe8"
+    },
+    {
+      "bytes": 2055,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 2055,
+          "end_line": 46,
+          "id": "kn_2436d1d555e14963ccab40f7e11b5fb969ea9571d2c9babfdedf5c3447667e40",
+          "index": 0,
+          "sha256": "5de22e493e3b93f64bca5adf60e7e00714cd6f9caf3d4616c45693a4cbe234bd",
+          "start_line": 1
+        }
+      ],
+      "component": "database-migrations",
+      "path": "db/migrations/005_outbox_dispatch.sql",
+      "sha256": "5de22e493e3b93f64bca5adf60e7e00714cd6f9caf3d4616c45693a4cbe234bd"
+    },
+    {
+      "bytes": 812,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 812,
+          "end_line": 19,
+          "id": "kn_405e1c53d8200c7ef712a51bfd3b54545b7be0556de8ddec643e219601bb3f4d",
+          "index": 0,
+          "sha256": "bdf29b9c434720f207b9acb629ac7af591c264dab88cee007fe05c371ccee38b",
+          "start_line": 1
+        }
+      ],
+      "component": "database-migrations",
+      "path": "db/migrations/006_feature_checkpoints.sql",
+      "sha256": "bdf29b9c434720f207b9acb629ac7af591c264dab88cee007fe05c371ccee38b"
+    },
+    {
+      "bytes": 1062,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 1062,
+          "end_line": 30,
+          "id": "kn_6c552a4fe8a105a0491e48f894a30304000812018e06bad545083e5b69e99e87",
+          "index": 0,
+          "sha256": "9b1eb51b54244f2024dc39a14f488277e12441bcd942fc1282d2ef9f6289fd21",
+          "start_line": 1
+        }
+      ],
+      "component": "database-migrations",
+      "path": "db/migrations/007_replay_audit.sql",
+      "sha256": "9b1eb51b54244f2024dc39a14f488277e12441bcd942fc1282d2ef9f6289fd21"
+    },
+    {
+      "bytes": 1701,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 1701,
+          "end_line": 36,
+          "id": "kn_ce0e2606ed7f5db87362d1cf8a8bd280a8fe4c79cbfbb79da390d07db6422e45",
+          "index": 0,
+          "sha256": "ee97bd26254a399ec6ca3198920af85eba9833594fccee0d24856c955acb5225",
+          "start_line": 1
+        }
+      ],
+      "component": "deployment-infrastructure",
+      "path": "deployment/SECRET_SCOPE.md",
+      "sha256": "ee97bd26254a399ec6ca3198920af85eba9833594fccee0d24856c955acb5225"
+    },
+    {
       "bytes": 10174,
       "categories": [
         "configuration"
@@ -4800,82 +5439,98 @@
       "sha256": "2415df8e5423cfcd48b857e30629e676cd9e52345690947a63ffc20cfb38b4c3"
     },
     {
-      "bytes": 3127,
+      "bytes": 3133,
       "categories": [
         "configuration"
       ],
       "chunks": [
         {
-          "chars": 2715,
-          "end_line": 82,
-          "id": "kn_06c73ef8745a5239429c7c7b25022b77940db5d7e713762c3646e59b03faea94",
+          "chars": 2721,
+          "end_line": 80,
+          "id": "kn_d413addec914f7a1fd6b09c8f0fccc05c48ca6de26996da10a6a04d741af7a4f",
           "index": 0,
-          "sha256": "30a113d3fcdfd968c10e3a6f279eb7c8c7a0c82868f05d33e93c9f3b40a4d8de",
+          "sha256": "427512c929d4675cb2188ec62ef6a717ca6879250f94c9618fa8197369cb9912",
           "start_line": 1
         }
       ],
       "component": "deployment-infrastructure",
       "path": "docker-compose.override.yml",
-      "sha256": "30a113d3fcdfd968c10e3a6f279eb7c8c7a0c82868f05d33e93c9f3b40a4d8de"
+      "sha256": "427512c929d4675cb2188ec62ef6a717ca6879250f94c9618fa8197369cb9912"
     },
     {
-      "bytes": 21179,
+      "bytes": 26639,
       "categories": [
         "configuration"
       ],
       "chunks": [
         {
-          "chars": 3543,
-          "end_line": 122,
-          "id": "kn_4aa5d58936fd4c98ffa973601accccaf40fac243235f402578276fd90d15bc27",
+          "chars": 3956,
+          "end_line": 133,
+          "id": "kn_2642e679457c6a156779dc6a8a87330c447c950d0ab85f58f40cea7bad51d876",
           "index": 0,
-          "sha256": "4f7876cefe75f3debb734be1a5ac21c1068f5093672c20644d7630190a03e2fc",
+          "sha256": "d92e3fe562d860568faa6165fb8fcfd0d12672e382c7e4a178f6a1787430efe6",
           "start_line": 1
         },
         {
-          "chars": 3982,
-          "end_line": 232,
-          "id": "kn_77393ecc7bdb3d12f3a57a003dfd60b9b4f088176d1135bb6ae69db7434f494c",
+          "chars": 3740,
+          "end_line": 244,
+          "id": "kn_33e85cde3bb29ab156f903de8a7476244128d561849bbddebe823104671ffa1c",
           "index": 1,
-          "sha256": "b3abb36d17f139a378b9555b344c3d65e2d4abdf2b54eba3b470f876ff6cf385",
-          "start_line": 106
+          "sha256": "ffb97edaa963dbd79f52c8a4ac72abdff00f880c201ae7ea99ca99fc102f17f7",
+          "start_line": 117
         },
         {
-          "chars": 3693,
-          "end_line": 356,
-          "id": "kn_1a2876b8545335ff268fd8d04feafd9d94b562a79063f7607f1cc85a4535d070",
+          "chars": 3860,
+          "end_line": 365,
+          "id": "kn_154761e510c4ec76c580dcd122a969b18e901df6c545bda9275a592e69aef0f8",
           "index": 2,
-          "sha256": "f7b0b3db9df2f227103e10618992de76aa97491ff59aad1cdb189d2836b08267",
-          "start_line": 218
+          "sha256": "43653096696a007c89df41bcd35c09fcbb2959143f8f2dcbfc1138517dc8f40c",
+          "start_line": 229
         },
         {
-          "chars": 3868,
-          "end_line": 500,
-          "id": "kn_7cc54d22d0abd9937214e07a2b26cadac9c098ef9fa9440bdc63e2aab7723c7c",
+          "chars": 3679,
+          "end_line": 479,
+          "id": "kn_beaae2bca62dff1f8f9dc61b50c3801292671d33db69375e1d4d2dc0dc9050c7",
           "index": 3,
-          "sha256": "fb6353ac5f73cdf56d56a1b4e69ce01ddd03462b98ad42921efd0236fde18050",
-          "start_line": 339
+          "sha256": "6e57333755d5e802bd56fb663192e65e2e15c051303be73180aeb4a2c17a9d37",
+          "start_line": 350
         },
         {
-          "chars": 3910,
-          "end_line": 625,
-          "id": "kn_8e82d8e98501fab8f91ee2880371251f71d0082384c6ef4f35fcadb71c5ce9d0",
+          "chars": 3782,
+          "end_line": 618,
+          "id": "kn_aace41d45c3ef136c546538010c4cffd71af4d693f7d2b7776b5cbf1ac374750",
           "index": 4,
-          "sha256": "1cfdc4be338710cd975060f6a094e077ae2ae4f08d5afcbbc70b18d3be8398bf",
-          "start_line": 483
+          "sha256": "2cef3e7ddb61f317d7d78522c7f3099c59d798f61ad0b4a23eb0cbc884f03554",
+          "start_line": 463
         },
         {
-          "chars": 3415,
-          "end_line": 731,
-          "id": "kn_46c04068ca884a099441addb943eb5af0f71d913a8f21ebec9ac5e23b733e372",
+          "chars": 3901,
+          "end_line": 761,
+          "id": "kn_2893e9bca95441c0441dfe7c088dfe778a5a7fc346d43a18f93883f9c0a16b35",
           "index": 5,
-          "sha256": "26938758df84254b3aceb0fcb95faef17bbcc2a8a636c7c19865cf7b9a08664f",
-          "start_line": 612
+          "sha256": "e05285bc79cac626ae3d64299c603b3582c4f4640c31ddb89083f7a740bbf15c",
+          "start_line": 602
+        },
+        {
+          "chars": 3840,
+          "end_line": 863,
+          "id": "kn_18e239ba9f3d9445ba195271b80b1a315f3be690253fa23b9948cff3409423ac",
+          "index": 6,
+          "sha256": "b413433e163990a3b87c4098fe72f574ca0e802a5abc1fd0acec19c8e674209c",
+          "start_line": 744
+        },
+        {
+          "chars": 1798,
+          "end_line": 917,
+          "id": "kn_890d5c6daf9cf610c78423222198a05ea43b10e9adfa1526c4b8bd0c4d7c30f2",
+          "index": 7,
+          "sha256": "b399a1a57dd7868f2d4b891e12451d65084ea36ae0ef838791d6e9c0844cc44f",
+          "start_line": 849
         }
       ],
       "component": "deployment-infrastructure",
       "path": "docker-compose.yml",
-      "sha256": "fa6efc83f4ffb44697e8cc815c80f7cb99fda6875a400c7c2c06aa194939d41c"
+      "sha256": "23dd8c52e13c1dfbb520d4b2c5a0daa3f744a509a8197205ec300ca3a7e07a5d"
     },
     {
       "bytes": 21244,
@@ -11021,23 +11676,23 @@
       "sha256": "fbcc299ec3248bbf3e1b5f47f990b1ebc22d109510aa4fd137407d20e4a7d15d"
     },
     {
-      "bytes": 1024,
+      "bytes": 1717,
       "categories": [
         "code"
       ],
       "chunks": [
         {
-          "chars": 1024,
-          "end_line": 36,
-          "id": "kn_d99f59372798b953cdf6ce6e62b930947466c24de875013741ce10c2a20b15db",
+          "chars": 1717,
+          "end_line": 52,
+          "id": "kn_6c6941b63bda25a3b0ae4ad2ea14a8f7502b1fbe10681cd9855f075967b36a8a",
           "index": 0,
-          "sha256": "fe65b6e5cd4ea18835ad96404166c32b40ebb7eaea87337ad5d40c25c80bdb55",
+          "sha256": "5a3a513b6041a59ef73449dde17122387b11e223da5d1326b2918a098a1948b1",
           "start_line": 1
         }
       ],
       "component": "control-plane",
       "path": "packages/control_plane/app.py",
-      "sha256": "fe65b6e5cd4ea18835ad96404166c32b40ebb7eaea87337ad5d40c25c80bdb55"
+      "sha256": "5a3a513b6041a59ef73449dde17122387b11e223da5d1326b2918a098a1948b1"
     },
     {
       "bytes": 687,
@@ -11059,31 +11714,39 @@
       "sha256": "43fa9c4da2dfc9101c727925615eb535f10321df52a67a7a38bdae5730a14e60"
     },
     {
-      "bytes": 5644,
+      "bytes": 7834,
       "categories": [
         "code"
       ],
       "chunks": [
         {
-          "chars": 2226,
-          "end_line": 74,
-          "id": "kn_632e8ff53937c94f3430ea19117a568e3213f386043265bb85de976d5af49811",
+          "chars": 2385,
+          "end_line": 78,
+          "id": "kn_d890e40234730692cebeedd31716eab1f19c85a739d665070e448efd7267bd83",
           "index": 0,
-          "sha256": "a463a088800e823ee2a448d5cb1b47bbe40f99fd927f78361816516c3c5ef502",
+          "sha256": "f10f0727f02fab214a6d4baed312dfc876bfb0c2b2b2d897963413ec885390ca",
           "start_line": 1
         },
         {
-          "chars": 3777,
-          "end_line": 159,
-          "id": "kn_80cedf85b34cd57b73ef7626186253119dfaa7ba02c839399afaf5f6ba4e33d2",
+          "chars": 3984,
+          "end_line": 169,
+          "id": "kn_d6342a31e940a70c5a0a590331a622468f9ffe0e4171d899484a52be4c1a69bd",
           "index": 1,
-          "sha256": "9a8a405c0b89479aaf1ad9e7db255c483c4944ccaa05554420ac75d2f9b73fc9",
-          "start_line": 63
+          "sha256": "1ea63facea6fa752015c03c66557360a847106b13cec59084db717c1c422531a",
+          "start_line": 66
+        },
+        {
+          "chars": 2211,
+          "end_line": 216,
+          "id": "kn_6bb27780bcae134cc9c0d86863c844fa90a0f0eef446bbd38bf9398be286eb0e",
+          "index": 2,
+          "sha256": "68f5fcc8706a7ca035f53749bf703afd1ee9003b72aaffc33c6ac9b72376a0aa",
+          "start_line": 159
         }
       ],
       "component": "control-plane",
       "path": "packages/control_plane/probes.py",
-      "sha256": "50e03492c990bd93569656afea954c43757941b564410252429121ed9e45377d"
+      "sha256": "d89468912824da9d3ebb33cb2cf5afa9325a5803286ea5dad15ff27ba56a42bb"
     },
     {
       "bytes": 577,
@@ -11359,23 +12022,23 @@
       "sha256": "a9c8c8fcdeaebd0b16e9ac04fc6a9da73ce6449164d3c78f892507d5ae176458"
     },
     {
-      "bytes": 436,
+      "bytes": 477,
       "categories": [
         "code"
       ],
       "chunks": [
         {
-          "chars": 436,
-          "end_line": 15,
-          "id": "kn_e5c9ff70384121afa3f0d9a27a4eb7770a79b2b5f25ded625f0084079abff1bc",
+          "chars": 477,
+          "end_line": 16,
+          "id": "kn_e50fd396323db40689b3b0d237bf08871732c033ab4d6756ea0ee86ee688db33",
           "index": 0,
-          "sha256": "8d45923bc644a572a0ebf9cd426ed4e57faea4e498b98e844b154a5fac7af01b",
+          "sha256": "40e3fd90c976ae49e58e2547f6a6fb85676a2f40c4737d1357a16f0f65aa5399",
           "start_line": 1
         }
       ],
       "component": "deterministic-paper-core",
       "path": "packages/event_bus/subjects.py",
-      "sha256": "8d45923bc644a572a0ebf9cd426ed4e57faea4e498b98e844b154a5fac7af01b"
+      "sha256": "40e3fd90c976ae49e58e2547f6a6fb85676a2f40c4737d1357a16f0f65aa5399"
     },
     {
       "bytes": 895,
@@ -11492,23 +12155,23 @@
       "sha256": "9d4e640fca5e1ce9adc2b8954627233d2ca95049aef1244b3c72ef003356ce4a"
     },
     {
-      "bytes": 1064,
+      "bytes": 1130,
       "categories": [
         "code"
       ],
       "chunks": [
         {
-          "chars": 1064,
-          "end_line": 31,
-          "id": "kn_999314b12ec14b98345ffdb7b86af3fff450effd22f38b184fa2b27f8c835719",
+          "chars": 1130,
+          "end_line": 33,
+          "id": "kn_9a79a2536777935d078ce473d6020e6b4a0694769e26867a6cc0a37009c53545",
           "index": 0,
-          "sha256": "5acb0c1c3126198a2d5066eba06d945ebe9b3815e2863f3a934c9e78bc82129a",
+          "sha256": "ac1ac8006e71bc340fbe743803aa01c1c27be0aa12f67d0c6ef3337baccd5773",
           "start_line": 1
         }
       ],
       "component": "deterministic-paper-core",
       "path": "packages/execution/_postgres.py",
-      "sha256": "5acb0c1c3126198a2d5066eba06d945ebe9b3815e2863f3a934c9e78bc82129a"
+      "sha256": "ac1ac8006e71bc340fbe743803aa01c1c27be0aa12f67d0c6ef3337baccd5773"
     },
     {
       "bytes": 1914,
@@ -13117,114 +13780,130 @@
       "sha256": "3a335278720b8a25d13d1fa764ec4f0c08250a2fa4fa80a31ff1fb20cc2feb58"
     },
     {
-      "bytes": 30463,
+      "bytes": 37319,
       "categories": [
         "configuration"
       ],
       "chunks": [
         {
           "chars": 4000,
-          "end_line": 186,
-          "id": "kn_82017d33b859126712144310281a044f96ecdc750de901a37cc5509a29ded5a5",
+          "end_line": 183,
+          "id": "kn_9216f14300b8cb690e246d4c76882f079df4bcaebed13e0f891ddfb753cd915e",
           "index": 0,
-          "sha256": "29b3261ef5a7b152a0454099f2901f958d85fca656b0d294d980ef873ff8697c",
+          "sha256": "5af7c531b7d4176d89fcc9a5ca4e451e5b95e2bb17c92c30079bfa0cfe9a17c9",
           "start_line": 1
         },
         {
-          "chars": 3106,
-          "end_line": 299,
-          "id": "kn_2cee2fa0d8571fd26483f214fcebb7868d415b9eb3e9dcda58cd86505e0657ec",
+          "chars": 3285,
+          "end_line": 304,
+          "id": "kn_c5fafc209c46bb583fd13ef0372bca5bbd8c575223e6dbe16db0fe4492ea2639",
           "index": 1,
-          "sha256": "b5f7d59148ab68252320c145e2257726cf56965b90e1eca3a46ecb20f2399a09",
-          "start_line": 173
+          "sha256": "c2848503fc800317d4bf72f4dfa44dc39ba8587920a242979a7c42a9ab586005",
+          "start_line": 168
         },
         {
           "chars": 3947,
-          "end_line": 423,
+          "end_line": 428,
           "id": "kn_68e1e7e0f67686c3f5c00c34733959b40928cdf4965228d4717ae76795f1743c",
           "index": 2,
           "sha256": "d0ad7d2d9fa05506986357df021a65b8c8d2ce36b8d9179a8c3584f8410ab867",
-          "start_line": 277
+          "start_line": 282
         },
         {
-          "chars": 3987,
-          "end_line": 549,
-          "id": "kn_35abc7884021d3534c58d1b3399b00a36f4211a9a21903746eb6b537770daf57",
+          "chars": 2909,
+          "end_line": 514,
+          "id": "kn_a90a4e3f7b96638ac0c2c1ae6854251fffbcb6c49116406a444fd23ea5648072",
           "index": 3,
-          "sha256": "6fe1fd47ccddf38c2b13c23a2403994d416ba4d8831eadfad5e456e726b861ba",
-          "start_line": 406
+          "sha256": "41b418f5cd43b70724d0341ac004a98f1589c543ef61bdfb1937d2a6afa83a37",
+          "start_line": 411
         },
         {
-          "chars": 3184,
-          "end_line": 648,
-          "id": "kn_a26ec13435f4f5faa36da7c73dde9bb6f2378246eebde908059ded565e00e441",
+          "chars": 3941,
+          "end_line": 646,
+          "id": "kn_a26b27de9a80d590eae6115c69815079087d6d04fefa19363d9cb42eecb61905",
           "index": 4,
-          "sha256": "4a35e98d80bcc3464a249614dcb400cca1e028dcfca89c6adc5edaf546fb9fca",
-          "start_line": 529
+          "sha256": "de1eca557dfb00f7bb282a814ddc7e7fcf88bde205df26a2dfc94d910da02c79",
+          "start_line": 495
         },
         {
-          "chars": 3805,
-          "end_line": 766,
-          "id": "kn_857b35e393db41239723916f812dbe7b47e8ea3a268db5abfcbb22e21a445eca",
+          "chars": 3302,
+          "end_line": 750,
+          "id": "kn_359e6f1eab3eaf53fa0ec79ce335e742005ee7956a12a6ba7b2191f30eeba8a1",
           "index": 5,
-          "sha256": "5de7a0f85ef1791b6bb0db0f856677a863b79c3c6578e09e747b03009d14f5f5",
-          "start_line": 628
+          "sha256": "1c5f6a487e141e0b7d0d07a112ca0a311f337bfe198a7aa7b00167ba7f48bbd9",
+          "start_line": 626
+        },
+        {
+          "chars": 3237,
+          "end_line": 845,
+          "id": "kn_5ade8eec3e884726343aac1e5b7ca54860408fcb0d1afd38cb5458306c7551db",
+          "index": 6,
+          "sha256": "7b38d383d5f567e111399abe02e529efc6425398e78e5027ae9bdd229c0216ba",
+          "start_line": 730
+        },
+        {
+          "chars": 3800,
+          "end_line": 963,
+          "id": "kn_a3f17b2e72d01a0a2693fe8bf6a14a81c2fb72d02d725f8c3551137511611fdf",
+          "index": 7,
+          "sha256": "7b676389ab8c48b12fe4acd72d9212dc585ab8acb8ff94fa8437ca35923aa249",
+          "start_line": 825
         },
         {
           "chars": 3660,
-          "end_line": 876,
-          "id": "kn_567f544aa7751a07ba8f51de49f710c9dba3e217eb3a6d88e2eb6c83a818f804",
-          "index": 6,
-          "sha256": "12f4fad657400ae801a7352656a7d76dabeb58298eb503c14b14c956e28b66a2",
-          "start_line": 754
-        },
-        {
-          "chars": 2655,
-          "end_line": 952,
-          "id": "kn_b0dbc8d718e16f238cad06b633d1333bf2ba41785068f33266f2aef9260161d0",
-          "index": 7,
-          "sha256": "421636cc021b0e944c800aed90e66d3178b2890284c48558c89d037af4a4615e",
-          "start_line": 856
-        },
-        {
-          "chars": 3142,
-          "end_line": 1058,
-          "id": "kn_03de03eeec3485fda5627cca26f0d73e43b89c93d6e145cf0e18b13f4e07a28d",
+          "end_line": 1073,
+          "id": "kn_e1fadb4837ee12d138157e63c5e04ddf8120a1be533e55761d23fdd15175d4ca",
           "index": 8,
-          "sha256": "7a035c7e2c9a4e5c78d9445e33822bf64012e8fcbc6d39afe18be3c14a6c8464",
-          "start_line": 937
+          "sha256": "12f4fad657400ae801a7352656a7d76dabeb58298eb503c14b14c956e28b66a2",
+          "start_line": 951
         },
         {
-          "chars": 2455,
-          "end_line": 1126,
-          "id": "kn_442c02fa6b9c4315be954e7f4c8c65ad1f0ebd3ec1abfd14e343db34ca3b3c5e",
+          "chars": 3135,
+          "end_line": 1161,
+          "id": "kn_d6908fe84b1c355463686738ecb36c47fe1cb2f49421e423f86788a8e95bda22",
           "index": 9,
-          "sha256": "6e2dbce15d68e0f1c8ee8fc4df5e59688ac08d6496e9ad965cfb79f3739b029a",
-          "start_line": 1036
+          "sha256": "3c6808e64455e2575680a9ce8589b53aaf77ea5d959f0b4c6139f3d3199e9642",
+          "start_line": 1053
+        },
+        {
+          "chars": 3860,
+          "end_line": 1288,
+          "id": "kn_7808587e9c44a603253dcfa33984d49c7beb512179630ea509bc22a4ad819d10",
+          "index": 10,
+          "sha256": "b7ecb9406fa8cb7379d2a8f633f2445be2e87d814f02805a07791c3e44a42856",
+          "start_line": 1146
+        },
+        {
+          "chars": 2473,
+          "end_line": 1356,
+          "id": "kn_7fe78f4491dcb0ea2148aa305a149cafee337263d3bf865f396747b324d9b844",
+          "index": 11,
+          "sha256": "4c0566594021252b1184b74015079fd9649502d1fb7fe52acc19cf688d283ca9",
+          "start_line": 1266
         }
       ],
       "component": "knowledge-pipeline",
       "path": "project.manifest.toml",
-      "sha256": "1d1167a48753ca57e54ba52911f603ff0532d64a28d987d7c1beb405a8bfa7f3"
+      "sha256": "8dca972897c33cd3619295c86208adf1b1e768cbcc529e4fbf7f4c8dbd47ce5e"
     },
     {
-      "bytes": 1706,
+      "bytes": 1734,
       "categories": [
         "configuration"
       ],
       "chunks": [
         {
-          "chars": 1706,
-          "end_line": 77,
-          "id": "kn_2ebc91a740f541e9cf8c7234bf2f7cdcad495f2c04e712a2a5018f0c2a5200c6",
+          "chars": 1734,
+          "end_line": 78,
+          "id": "kn_6d001a2750a0f868aec96848ccba0201432c9d13f5c6a6b89039a0845daafa1b",
           "index": 0,
-          "sha256": "3acbc09a1b1ec33179ba7d724b3b3d9a5d01ff95efe96710983c86916ab7172f",
+          "sha256": "9c8a26c6baa8a58a4e1a097ab04c731524eedc996b04ebb493453f30361e90b4",
           "start_line": 1
         }
       ],
       "component": "ci-governance",
       "path": "pyproject.toml",
-      "sha256": "3acbc09a1b1ec33179ba7d724b3b3d9a5d01ff95efe96710983c86916ab7172f"
+      "sha256": "9c8a26c6baa8a58a4e1a097ab04c731524eedc996b04ebb493453f30361e90b4"
     },
     {
       "bytes": 3513,
@@ -13314,6 +13993,122 @@
       "component": "realtime-transport",
       "path": "realtime/nats_orchestrator.go",
       "sha256": "cac515b5c9de7a4f4ac261b115ab0c9d72e8fce9731dabdc6d9e474dd128e0dd"
+    },
+    {
+      "bytes": 2567,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 2563,
+          "end_line": 61,
+          "id": "kn_f17344f6c4e3e54146ef7e8c70b9e91685830e1fdeec312cc23b7cd7882e4154",
+          "index": 0,
+          "sha256": "e1f81d753e4d0fb88868c058eeb734da77fffc845088831ba936a265dfb58409",
+          "start_line": 1
+        }
+      ],
+      "component": "project-governance",
+      "path": "remediation/BLOCKED_EXTERNAL.md",
+      "sha256": "e1f81d753e4d0fb88868c058eeb734da77fffc845088831ba936a265dfb58409"
+    },
+    {
+      "bytes": 3740,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3740,
+          "end_line": 59,
+          "id": "kn_2f33f9f9f1f70a25aac578afe179f0e18cebbd4ee4e17712a754f3f698e2f1e7",
+          "index": 0,
+          "sha256": "4dfda712408e263765ce1c1550378458d1d2743cea755669429a381ff5405858",
+          "start_line": 1
+        }
+      ],
+      "component": "project-governance",
+      "path": "remediation/LEGACY_RUNTIME_ROLLBACK.md",
+      "sha256": "4dfda712408e263765ce1c1550378458d1d2743cea755669429a381ff5405858"
+    },
+    {
+      "bytes": 11381,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3736,
+          "end_line": 21,
+          "id": "kn_11daa21503ecc2478c612d55bdbfae166690029a00e6be3902526070823a10e1",
+          "index": 0,
+          "sha256": "bfc56c78d30e87dd0444816814b1983b89bf1fb0f836284890eba87cc0658e30",
+          "start_line": 1
+        },
+        {
+          "chars": 3861,
+          "end_line": 30,
+          "id": "kn_efa7bc2e51186b0a92b478e7a8c029400c76cb57f008206447ecc5e983cfe9cf",
+          "index": 1,
+          "sha256": "26e328161732d00247cbf17f189a9ea1081b1964e046fa7ecca7cf9798c31881",
+          "start_line": 21
+        },
+        {
+          "chars": 3731,
+          "end_line": 43,
+          "id": "kn_7cc2c40300ebb0b3e32ae65bb721523a015fe68de0bf82b703ea64d83720906b",
+          "index": 2,
+          "sha256": "60ff6126e889bf58bb67e79c60a29ccd8122e0b412e069b25b5ea5c33bd63554",
+          "start_line": 29
+        },
+        {
+          "chars": 599,
+          "end_line": 47,
+          "id": "kn_cb3928883de54a2d19ac74a9242bdd1ebf3a4ed915bccd2b7ed25f33dc5eb809",
+          "index": 3,
+          "sha256": "07eb3ac4d148bf1fb2857486fd729f37f4e2eccb9022b2851fab29af344eabc6",
+          "start_line": 39
+        }
+      ],
+      "component": "project-governance",
+      "path": "remediation/REMEDIATION_STATE.md",
+      "sha256": "b2bb5d1517fbd9882ea699dd756c965a7c6748faf9dbfe6d29cba4551cacc98f"
+    },
+    {
+      "bytes": 7915,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3147,
+          "end_line": 62,
+          "id": "kn_47310ddb42f1ef0e09cc1ebf32421ff760b48544c6060ce9f3f1af90dd76007c",
+          "index": 0,
+          "sha256": "cd643efe44d6d8d5dc0ba0097941f9563335fd137a5685c7b6d3472c90beff81",
+          "start_line": 1
+        },
+        {
+          "chars": 3339,
+          "end_line": 129,
+          "id": "kn_897dd14d99f3eb4a57bbf0b661817dbbe3ebd61497c13b0ecc812dde8f9b9541",
+          "index": 1,
+          "sha256": "09b2a50385bfcf6f2c63983a7fae22eb88cceb2eeda76cb15a4677a03dca1610",
+          "start_line": 53
+        },
+        {
+          "chars": 2190,
+          "end_line": 168,
+          "id": "kn_410c998f1e06ca6fdeead4311f8a10362826cd617df6c055f95ab07ae70dee01",
+          "index": 2,
+          "sha256": "b222b67bdd14df3885b605114f4ceed158b79ce127ccf8a38c331419b205354e",
+          "start_line": 120
+        }
+      ],
+      "component": "project-governance",
+      "path": "remediation/VALIDATION_EVIDENCE.md",
+      "sha256": "b59312e31c4a47a0bec1ecc472bbdcb8d9807b5459005362832dcca5a13a5460"
     },
     {
       "bytes": 5203,
@@ -13413,31 +14208,101 @@
       "sha256": "2f552ed3e2582c9afc02f4416c8e982961fff8c2c101731e2f5e0243d77204ec"
     },
     {
-      "bytes": 4728,
+      "bytes": 299,
       "categories": [
         "code"
       ],
       "chunks": [
         {
-          "chars": 3688,
-          "end_line": 118,
-          "id": "kn_e20e87f9a05a35eb33bc5a6cb11f48d6013217bceaf4803833dfa792dd1af5c0",
+          "chars": 299,
+          "end_line": 10,
+          "id": "kn_07532cbc49f28543532624950d084aa6346ed14cc6c8cab5cc6685085d26efda",
           "index": 0,
-          "sha256": "1a77d64a9f2ebf74d96b451d29ae1ca1c12be41a6233d79b698c3d456f5e5bb8",
+          "sha256": "6032929c74527c618bf4e8db6a238a4167cd0d727cf654f197ecf83d781895a8",
+          "start_line": 1
+        }
+      ],
+      "component": "deployment-infrastructure",
+      "path": "scripts/acceptance.ps1",
+      "sha256": "6032929c74527c618bf4e8db6a238a4167cd0d727cf654f197ecf83d781895a8"
+    },
+    {
+      "bytes": 12199,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 4000,
+          "end_line": 115,
+          "id": "kn_ab98d7cfccf47967cb7d5742c3fcc349d32d7a2447a029afd9890ce2f5ebc4e6",
+          "index": 0,
+          "sha256": "169e152dfd0f5b96e89b9ba30b53d08e6f62108f53f3b5d4410f21cadc8c8a7b",
           "start_line": 1
         },
         {
-          "chars": 1402,
-          "end_line": 149,
-          "id": "kn_9ff0eb730250249dad12200f3b2379e384b1ffe2817bd8869159551e3dc37b18",
+          "chars": 3262,
+          "end_line": 203,
+          "id": "kn_227a77f2dff258c83d96e3ef1ddf3a5014f643f9244aadf864173c17f995ff88",
           "index": 1,
-          "sha256": "29efb03babdcd4c39f3f41de7fff081d0745a3efcc776a8c52c35826a7241afc",
-          "start_line": 105
+          "sha256": "1d1a418ce7144a7c27c4de2534403845705a2f9eb7081f9718e3585055ab31bd",
+          "start_line": 104
+        },
+        {
+          "chars": 3378,
+          "end_line": 288,
+          "id": "kn_bed5f6e34da712741e0dc305c17f70be205d680b5d017791c0387b6c3b1200cc",
+          "index": 2,
+          "sha256": "08aa60881b8f9bca339210cddb06b0450e50b1f8f741bbd11dad14d7710418d1",
+          "start_line": 183
+        },
+        {
+          "chars": 2641,
+          "end_line": 349,
+          "id": "kn_28c32f1ce4ebcf663398aae2b4a28ad149744e3eba65d698267be7218d624a05",
+          "index": 3,
+          "sha256": "ccb3adc362445a13f94ae4edc1a2d5c1d8cee8aa3d88c87024121f9c8dd2be8c",
+          "start_line": 281
+        }
+      ],
+      "component": "deployment-infrastructure",
+      "path": "scripts/acceptance.py",
+      "sha256": "23469d6943bbb3834771d4e2d7c7a32509cee0f4bc1276e22fdff2a39b9e0871"
+    },
+    {
+      "bytes": 10097,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 3880,
+          "end_line": 81,
+          "id": "kn_ade3c2126d004a12f323bf36e8f7dff705b88b06834449a098127613cd9704eb",
+          "index": 0,
+          "sha256": "4d626c8f2980e42816f06ad050738c4f1e394b9aa5e6bcc4c0c39e40bf3c8297",
+          "start_line": 1
+        },
+        {
+          "chars": 3520,
+          "end_line": 169,
+          "id": "kn_cc006fe9ef2d98a01e4ac186f08d4377c11c86233750f1fc23d4d31da80f602e",
+          "index": 1,
+          "sha256": "440d874c89b0b13365ddea9695b3f74c4bf6589f7532fe7f4f2283f0238f6711",
+          "start_line": 70
+        },
+        {
+          "chars": 3345,
+          "end_line": 251,
+          "id": "kn_09efa1bcea6304b8de33ec22725235424b012db45e742928cbe2d111121233f8",
+          "index": 2,
+          "sha256": "b863143710da07411a4711e08e3f517ff759f43c433a160a6473690581a6690a",
+          "start_line": 158
         }
       ],
       "component": "database-migrations",
       "path": "scripts/apply_migrations.py",
-      "sha256": "e1ee48aab6622a9c91bcfb02f4724b95b83b8af25c38acae582419b785791b52"
+      "sha256": "edcc56b09cbca76a787a35d90c3ee2df6e3fa1c78adfa11de72883154e254f34"
     },
     {
       "bytes": 3408,
@@ -13502,6 +14367,49 @@
       "sha256": "5ad93a7c1a07b288e293fff9e2e381baffd42d66ec1324039450eb9bc0d4c8af"
     },
     {
+      "bytes": 12203,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 3729,
+          "end_line": 132,
+          "id": "kn_85599cddbf41858a74c0b78bf9f881a40ab07d6fe9471dbb75ecea5da31c37a8",
+          "index": 0,
+          "sha256": "3c6390b9bb17e0ba77eb5cdc8cad99e6d875affdbf0156d4ea7136941d6d29eb",
+          "start_line": 1
+        },
+        {
+          "chars": 3763,
+          "end_line": 225,
+          "id": "kn_d01d06c28953af76767b9f677b826995e61137b964a468ab079f08241c075f30",
+          "index": 1,
+          "sha256": "0f6326746d7a7c4267f2502fb7130f3c6e724bbb780991c697656de39efde8ad",
+          "start_line": 121
+        },
+        {
+          "chars": 3736,
+          "end_line": 313,
+          "id": "kn_926acc68055a7931b5f557fb237d5548130d25ca093862bd4c2bd3c1f833aa74",
+          "index": 2,
+          "sha256": "42691d1e789b9373e9f933a7c7ff2f053b64787ff330d45767497b3e2d775af7",
+          "start_line": 213
+        },
+        {
+          "chars": 2133,
+          "end_line": 364,
+          "id": "kn_dd4c14e4658deba04c2368e21e474431ee161f634cc0894ad482146cfdebf47d",
+          "index": 3,
+          "sha256": "0b756c7cd49c7acfcdad74bad3ec4d0d110973ae26a66a44786099c62262f527",
+          "start_line": 300
+        }
+      ],
+      "component": "ci-governance",
+      "path": "scripts/config_preflight.py",
+      "sha256": "36faf6db6715945744b011e5c5238bbdfee98d5ff39cd7adfbecadae6de43030"
+    },
+    {
       "bytes": 303,
       "categories": [
         "code"
@@ -13519,6 +14427,33 @@
       "component": "knowledge-pipeline",
       "path": "scripts/knowledge.py",
       "sha256": "bccfae2a86523a2b3fdfbc442a68c7eff257e78ad0f48fe0bc8d29391350a111"
+    },
+    {
+      "bytes": 5758,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 2868,
+          "end_line": 69,
+          "id": "kn_2d018a520496c51736c6bf8cf3bd8b44655e4a2e6faaee336777f4be0758ab10",
+          "index": 0,
+          "sha256": "e18dd5eb5cacc5432fe4c887153b8fb123e16fba69251df29cda074d52349eb8",
+          "start_line": 1
+        },
+        {
+          "chars": 3265,
+          "end_line": 144,
+          "id": "kn_699dad837b733164537d92e9f0bcd6c2c07913238c1e21d8b82d74ffb12b9b82",
+          "index": 1,
+          "sha256": "f765a3b12d661b9d6f628d40868601e80f07f8d9dbe4bd2354b862b0735c0cce",
+          "start_line": 61
+        }
+      ],
+      "component": "orchestration-runtime",
+      "path": "scripts/replay_dlq.py",
+      "sha256": "c76f778672aa28cbc24ed6d9707a86e40262e5bd36e4ba5d504a135c778556ab"
     },
     {
       "bytes": 2990,
@@ -15436,31 +16371,31 @@
       "sha256": "d8ebecd19195f3fa03f97eeee3ce32dfd68bd47160af9b58bdd5ea29c4934a2f"
     },
     {
-      "bytes": 5146,
+      "bytes": 5420,
       "categories": [
         "configuration"
       ],
       "chunks": [
         {
-          "chars": 3809,
-          "end_line": 80,
-          "id": "kn_0c7ee7dd5e1b54600e1b2c9c028135232bd539c762bcb50324047cf5b46974b4",
+          "chars": 3910,
+          "end_line": 77,
+          "id": "kn_efb19e7deb707345662d3fd35dc937ef1809408555fb6b523ebe0648a4f013cb",
           "index": 0,
-          "sha256": "a7e9a2c0ca24e606169aa02726ddb04c3d48f79d126d24c9e216af2f2d7dd63b",
+          "sha256": "98e8cc916e56601eb940c9c9e8cef9513aa01a5df5605770dba10bb3b286b247",
           "start_line": 1
         },
         {
-          "chars": 1716,
-          "end_line": 103,
-          "id": "kn_290c3223e4e79d6b96f738ac4981af6f0696e386fa3ea7c402715279504b263a",
+          "chars": 1901,
+          "end_line": 108,
+          "id": "kn_bad131047eea7ad970edc38b14c91179e78d754409c8821c62ce543a5586d46b",
           "index": 1,
-          "sha256": "f8be1f1a962d302484dd69436e66c9c6ec30d88630604e661d11b44a18500218",
-          "start_line": 67
+          "sha256": "fe5ceb7b18639a970a4d831094ed2ba0665f27c82cd4fd47fa075c7dbe87db9f",
+          "start_line": 68
         }
       ],
       "component": "obsidian-knowledge-base",
       "path": "wiki/content/concepts/local-trading-ai-architecture.md",
-      "sha256": "f85a2aed674def16787798e67a679fa847c794cc3cd2dbd59c2c85eb15d494e9"
+      "sha256": "4dafd73ec975dc04996b50519571eb6f2310920c1c91af07a9b4ae4356c9b863"
     },
     {
       "bytes": 1766,
@@ -15520,31 +16455,31 @@
       "sha256": "e28863a228a8682d254be223007de7a6277861e157396c436d1ec92bcac6d013"
     },
     {
-      "bytes": 5195,
+      "bytes": 5483,
       "categories": [
         "configuration"
       ],
       "chunks": [
         {
-          "chars": 3620,
-          "end_line": 77,
-          "id": "kn_d7bdad5c39338048becf87be59bf831c45c1ffa3f11d994ef0b75497a3d71295",
+          "chars": 3908,
+          "end_line": 82,
+          "id": "kn_312bd8f6dc8dd2b823c35ba368a8caf5358d034f71cd5985fc21c9fe99c0cb35",
           "index": 0,
-          "sha256": "33bc654aa21324fef2fb4890e08360eade37def04478cbff219380744d38b7b1",
+          "sha256": "91131368f42c64bd3668ee8f83ecbc83e9b41a855cb209dc4901f10fbcae4c69",
           "start_line": 1
         },
         {
           "chars": 1755,
-          "end_line": 105,
+          "end_line": 110,
           "id": "kn_d8fe676ec45400692f22f6e033b5971b3155406441dc54e52bfecc642f879592",
           "index": 1,
           "sha256": "4a521166112a98287390194b87160607c9994d0a7ef765821a03e7be1dcd4771",
-          "start_line": 72
+          "start_line": 77
         }
       ],
       "component": "obsidian-knowledge-base",
       "path": "wiki/content/concepts/nats-event-system.md",
-      "sha256": "ad13ed2fcc4cbdf902f805647662dc860ab9abb9fb24ba1409bfa8564fdb1e33"
+      "sha256": "5caa6e2483a98e05f6f6255f582c026f8148c31102d4cd30caa5830005fce9db"
     },
     {
       "bytes": 4269,
@@ -15647,39 +16582,39 @@
       "sha256": "bfb72af9a881dff4467a50b6545161b1e45cb7e2915acabc2fe3c39a879e30ba"
     },
     {
-      "bytes": 8992,
+      "bytes": 9357,
       "categories": [
         "configuration"
       ],
       "chunks": [
         {
-          "chars": 3881,
-          "end_line": 86,
-          "id": "kn_ab3ab09969526a8cc91eb2e036391c2c57ddf07c8c9de2b1d05820cd309eb0fe",
+          "chars": 3962,
+          "end_line": 81,
+          "id": "kn_ea8db365ef06ea7ea5c8ac34546ec79ce8c4a789983cd3300b9c48ac90db237a",
           "index": 0,
-          "sha256": "ab0f3b29c20f1ec77370cf119504b051195c8ee89f3e3b62ad79280381ec759c",
+          "sha256": "3c8fa253bf3920bf5eeecb055c68e8d33d0655aee93d2650abe8c5ddc9449841",
           "start_line": 1
         },
         {
-          "chars": 3159,
-          "end_line": 124,
-          "id": "kn_5e0c60c1e630404f561165e095cb34193f90b79533dce90f97e04e988b9be18b",
+          "chars": 3527,
+          "end_line": 130,
+          "id": "kn_af1a97964f832c9b05afcce0f83975422a4dd9eec77d9ab07a56f80a5640b5aa",
           "index": 1,
-          "sha256": "4d7236423f937f4fe7eac4862de155e057a3a7bd5801d7507836c82ee948584a",
-          "start_line": 72
+          "sha256": "9c13c1823163c8d9d2dade14f29151b06cb359081bb88b12a2b5498baa68b4d6",
+          "start_line": 71
         },
         {
           "chars": 2595,
-          "end_line": 155,
+          "end_line": 161,
           "id": "kn_553657ee9acc3945795e5b1f7171251b8dd14e6681933f54f2e2bfade59c6ad6",
           "index": 2,
           "sha256": "494b9488fe69dee0a711413a855d33aecd4d02a45dadbda17d0c826a2823525f",
-          "start_line": 117
+          "start_line": 123
         }
       ],
       "component": "obsidian-knowledge-base",
       "path": "wiki/content/decisions/canonical-local-paper-runtime-v1.md",
-      "sha256": "1a626bbbe5cdfad3e66307e698c3c911e21321240e29fe4667785278f5088bdb"
+      "sha256": "5be906e892de848cfd9c0263767a8b244b12406ab51968c4df3140a06fc37c89"
     },
     {
       "bytes": 5925,
@@ -16413,31 +17348,31 @@
       "sha256": "8355f192ac93cb8e78ca0bd02e748e41f9e67ad7a36211a6294e4106707ae15b"
     },
     {
-      "bytes": 6267,
+      "bytes": 6556,
       "categories": [
         "configuration"
       ],
       "chunks": [
         {
-          "chars": 3838,
-          "end_line": 85,
-          "id": "kn_3ff1baca187279f73ba6d1bfd9c53d3de6688599189e4d0bed3f1cf90002b1d2",
+          "chars": 3906,
+          "end_line": 86,
+          "id": "kn_9edd5cbc0cfb2a9a2324c568d3b34f72dd89e723beeb14315a5ac6d650a7011c",
           "index": 0,
-          "sha256": "ab39d3ca6cc48ebfee5c45f650db9c5be3d87fcbefe97fd7c4880126238a3fa1",
+          "sha256": "9770b8f8eedcce62353135d1f41904ddcb95494eadc94acba835fd4ea18cce7f",
           "start_line": 1
         },
         {
-          "chars": 2812,
-          "end_line": 122,
-          "id": "kn_582f05b0b9462591d293e3b1a04eb8b6e2fe293c7deeba7b5f7c4bb0a11dd3df",
+          "chars": 2979,
+          "end_line": 127,
+          "id": "kn_b7fcf6991e7b3e065d78f1327a6ac6b88671428d5d9e11800158d1c67333bea2",
           "index": 1,
-          "sha256": "95a1512aefefc4707fb2779abb89b05808b24a4b27397986f504318322a0301b",
-          "start_line": 74
+          "sha256": "d6c0585c004012a9024d6bdbbd92c9af11983e88ebc471dad14d93855d8caa69",
+          "start_line": 72
         }
       ],
       "component": "obsidian-knowledge-base",
       "path": "wiki/content/overviews/infrastructure-overview.md",
-      "sha256": "751a5012995b7ce8cc83b13669985bd5337f88c99a8ebc1c40b43a7cd705a778"
+      "sha256": "a92facc758b1b3d8fdc3fa9970139e93491e71863fc19b74683d46d9e9dbfe9c"
     },
     {
       "bytes": 21217,
@@ -16505,6 +17440,33 @@
       "component": "obsidian-knowledge-base",
       "path": "wiki/content/overviews/production-readiness-audit-2026-07-16.md",
       "sha256": "e89fd6de09c36b3b462a8e3c4d700bbe07c0e3394cffa18db2740f124f854a0c"
+    },
+    {
+      "bytes": 5471,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3408,
+          "end_line": 85,
+          "id": "kn_93d9d278bd018210208d4f8d765ca78c0f9d82fac63fe5fba68648d03306a1f8",
+          "index": 0,
+          "sha256": "9be4689ae4c3d712af2ffa26e5d527c9640499bd80e3afa952d0b40a455086b0",
+          "start_line": 1
+        },
+        {
+          "chars": 2421,
+          "end_line": 122,
+          "id": "kn_50c102a5c6401b5430f72c3c7de362acfd47b2caad076b00cf3773374cfbf6ae",
+          "index": 1,
+          "sha256": "1d03428b7791f1da58514a6ff5af30976ed4c1468c41a3f9e80c84b62c44ba47",
+          "start_line": 78
+        }
+      ],
+      "component": "obsidian-knowledge-base",
+      "path": "wiki/content/overviews/production-remediation-2026-07-24.md",
+      "sha256": "73f8026564b718898baa639480318ce84a4cd4a3362e1f4593a9e71c8e00e951"
     },
     {
       "bytes": 6652,
@@ -16796,138 +17758,138 @@
       "sha256": "ada0394f98ccae5dda7471bb1e32a8e0f33a32326fc18090a94b6a0f21181407"
     },
     {
-      "bytes": 11807,
+      "bytes": 12008,
       "categories": [
         "configuration"
       ],
       "chunks": [
         {
-          "chars": 3838,
+          "chars": 3852,
           "end_line": 39,
-          "id": "kn_0b750d18dd7809abf7f986e99eb65665f258702500fd255dec07cb36437aa034",
+          "id": "kn_a8d99fb89076350d88cfe95169b3f1c4790ff543a82ab4871d262ecdfd0c3e9a",
           "index": 0,
-          "sha256": "8c7f2cb5e58065a7dc2ac0ddf1802b688e551e91fd9f7fde4a4ef5298d9c6088",
+          "sha256": "6a3e43f215078741f0fb699445daa49b058dd8178b12d774f2eaff08786db110",
           "start_line": 1
         },
         {
-          "chars": 3877,
+          "chars": 3852,
           "end_line": 77,
-          "id": "kn_8d864bf474f7c3626bfe024c26dfe7b9aff7bbab23929b156585884d67d460cc",
+          "id": "kn_a3623ae3180e9faa4d729c4a71fba1413ee281e0f4b7b1b226aa9138b8f3ec8f",
           "index": 1,
-          "sha256": "0fbfd3d1104bf66b77a531adb5ecc36004d84bdc3b6feb3b8d1e473273c53922",
+          "sha256": "a225e7897b87450ae4dd5cdb36d5db0e0c2eea4c11f83fb0cbb6e6cb2fcd44c8",
           "start_line": 37
         },
         {
-          "chars": 3341,
-          "end_line": 109,
-          "id": "kn_70062da66e59258b17eafb3def1d89c59b3b0db084a6be2dbb558d24c0fd32ea",
+          "chars": 3490,
+          "end_line": 110,
+          "id": "kn_b48b6831e08d19a67da941fab2e57f80cb905b6ba9bcdec2e6e03d3a4d7fece8",
           "index": 2,
-          "sha256": "dc42e861fb1dbbc9059f792543e4ff52d624a91928d1cde2651fc18de62a4146",
+          "sha256": "fb1e1e60e17b4e58929a59aa6a4be664e8ad93766423e6941a18ce61f2b7c182",
           "start_line": 74
         },
         {
           "chars": 1549,
-          "end_line": 124,
+          "end_line": 125,
           "id": "kn_52e862d5623d8d43f21d5cec826db90d967aaf1d19d560190be3c0a7983cc500",
           "index": 3,
           "sha256": "c07f11c2036b2e02c42a95aba3f9e2a718c7092317d1d930d22852b9906daf86",
-          "start_line": 104
+          "start_line": 105
         }
       ],
       "component": "obsidian-knowledge-base",
       "path": "wiki/index.md",
-      "sha256": "1984219e13f6dfe0cefe0b93525d28396d867c7278fde87281c7bc1be16625c2"
+      "sha256": "b5a09cb56e7bbcfe8fbccc9483901a0c9b1565a7c3c4b6582309d639cee5f169"
     },
     {
-      "bytes": 32953,
+      "bytes": 34662,
       "categories": [
         "configuration"
       ],
       "chunks": [
         {
-          "chars": 3287,
+          "chars": 3787,
           "end_line": 23,
-          "id": "kn_56386cdc806ed5e9c2c0db7531cce912e57b3dcb175eaa634f327b2903af1560",
+          "id": "kn_bd0997fe6e8331237cef623fc0ddd4ebb29dfcd1c3dec7634db4849e04f72776",
           "index": 0,
-          "sha256": "6e97500d43cf2a9f6750e62baa7570d720274acd975e9456c05e928a25d0738e",
+          "sha256": "6c2d3e785203851d64d023a4e0084101206fa4b317568bfe37e34e054a16a347",
           "start_line": 1
         },
         {
-          "chars": 3742,
-          "end_line": 43,
-          "id": "kn_055f866f77257b6f20209dae8e9bad90e6c7623e771dd517cc79b362f3ed99b0",
+          "chars": 3092,
+          "end_line": 39,
+          "id": "kn_c422228e7f9182012775fcaf7d7b7739c1db315456912b1d28c1688310e9284e",
           "index": 1,
-          "sha256": "0e5ba820fb2adcb7b747e6d5833e018659b4b41a6a4e5b0f6a3b49e8831bd63a",
+          "sha256": "448ac75f71fac65bda6e00faa5805a0caf2f6137fe8d789ad6ce8469851b1496",
           "start_line": 20
         },
         {
-          "chars": 3804,
-          "end_line": 71,
-          "id": "kn_8c1b0aa20f950b0b2c6534e0245bab09cf8686f006328b6d4e9ad4e7f101e477",
+          "chars": 3921,
+          "end_line": 63,
+          "id": "kn_bf4c48bba4f1bf0a91cc209133970055da067c59dd239250117404489b84bc9b",
           "index": 2,
-          "sha256": "12a26867546aeae0d54b0a94f49f9c6051e9fff9e4b494ca16054ff5fe7ab53b",
-          "start_line": 40
+          "sha256": "cb75b1e23787bee3a877a439e755de9cf2915ffc3edb8292ead43b1a07f9768d",
+          "start_line": 36
         },
         {
-          "chars": 3350,
-          "end_line": 102,
-          "id": "kn_fa3213b77366dfe38c7c04626d04095f35d7d5de39809b12dc2c997d5def5782",
+          "chars": 2971,
+          "end_line": 97,
+          "id": "kn_6be39b6d91adfa27549e8cc803592e2c71e9d19544eacb2628f0a21d9d9c7de0",
           "index": 3,
-          "sha256": "bf90890fd44ca72cb466f38c60ca290ffc807e66a1225d5268068dd3176da314",
-          "start_line": 64
+          "sha256": "125759e05a272866ffa1077876350add17bbd5d15b6d57999a439b168a6417a0",
+          "start_line": 60
         },
         {
-          "chars": 3546,
-          "end_line": 126,
-          "id": "kn_26a1b9aa4f46125387f28516e57c9a363982e9a34565e49593225721371cd60d",
+          "chars": 3747,
+          "end_line": 122,
+          "id": "kn_fbe2cd04aa52a097df4566ccdd2cf16a9a107f692337d56664e403c667f5e322",
           "index": 4,
-          "sha256": "1afc98cf06fa55af82b2210eb4d368ee9b1939f1d12264e7706c0d80b2c9722e",
-          "start_line": 95
+          "sha256": "6fe9dd109344bb634f3f588029c553c2d1c90cd05139cc1ed3acfff7f38b2530",
+          "start_line": 89
         },
         {
-          "chars": 3365,
-          "end_line": 161,
-          "id": "kn_5db68fcbfec68968f343c262d93f06f8cf2edcd48ecf52e49ae8207f732d3939",
+          "chars": 3277,
+          "end_line": 152,
+          "id": "kn_acfafab39738e2a52778252152f4e1b93f7e8a88b392b9b73b2875e40e26e626",
           "index": 5,
-          "sha256": "59f0e657177f07e76abacc1a50aaceb01b68b67a305c04ead814ef9c3258971f",
-          "start_line": 121
+          "sha256": "47bc411e1e28412d248c2f36497b798b67db61c2c0963fe751cb789071b41340",
+          "start_line": 117
         },
         {
-          "chars": 3299,
-          "end_line": 196,
-          "id": "kn_ff8695d8d6c029ac1b7b6171bcff10f8a593e5cdfb09bd25079eca1dff0450cc",
+          "chars": 4000,
+          "end_line": 194,
+          "id": "kn_1a0ecb186883983ded8239ec45897b9a977da81ce900613ed26ed6d00586e651",
           "index": 6,
-          "sha256": "7eef3ae80dfb7779408acf7dd1268b4705b21a76b99743bc05aeaa23639ff48f",
-          "start_line": 156
+          "sha256": "06b2814686b938c94ff9348cffbeab2764b289c20f1c6ba2e570f809606da753",
+          "start_line": 142
         },
         {
-          "chars": 3940,
-          "end_line": 241,
-          "id": "kn_cd06a9ad09bd8aa78d893c4f33469a7c0b3095506e56158c4015ada6e4332ec3",
+          "chars": 3965,
+          "end_line": 231,
+          "id": "kn_bcd896516cc784d39ad762a24ba7650d397cb663f2761a78c2e5949504379743",
           "index": 7,
-          "sha256": "0f1d053461a28aae3d9598105bde0f2ff4fe627def17d1c0aef14bcc7046f305",
-          "start_line": 191
+          "sha256": "38e8c52fbb0d1a5a388bfc72477ddb97e7e11df7949967e833e7f071544151d1",
+          "start_line": 189
         },
         {
-          "chars": 3667,
-          "end_line": 293,
-          "id": "kn_a482f9824feff2d663a291386b632718c1a91de78882cc789d72ce47293ead76",
+          "chars": 3694,
+          "end_line": 289,
+          "id": "kn_b775067a551d4ce91b9363b28f83b8943048580272bc079b291224db4d94ed81",
           "index": 8,
-          "sha256": "2700353717fb43d8f44fca8564a11379e9589f2c1162a85d3ecbb9fce714272f",
-          "start_line": 232
+          "sha256": "6b57b321f5013785bb7cee61a8fe7ec738e59961b96bfbb1ab37a599ff237a32",
+          "start_line": 226
         },
         {
-          "chars": 2824,
-          "end_line": 323,
-          "id": "kn_6d11ba76218569099bf40273cac836855354f6ded38ecbe0c2e96f663b808975",
+          "chars": 3854,
+          "end_line": 331,
+          "id": "kn_8b91073f11a1152daa4de5c0e1042a19f38b548f01198c851c0006b0ba6edcc7",
           "index": 9,
-          "sha256": "91b352c4d4234ae31763c7883931dd1a7490a4e57a27e3892ee4353a5d558952",
-          "start_line": 288
+          "sha256": "88cb90f7af719b2a0ee701577a4b1fb2f78ef91660e9371ba9e744cbc28a69dd",
+          "start_line": 282
         }
       ],
       "component": "obsidian-knowledge-base",
       "path": "wiki/log.md",
-      "sha256": "c790353f436988167decc5a4952a367edec08e54806e9051e7cb1f5153c8ba38"
+      "sha256": "457c6fde393f204f95969508e2ec2ad90d7101fcc1e27afc46faa78c3288e752"
     },
     {
       "bytes": 64,
@@ -16949,74 +17911,231 @@
       "sha256": "29bb16a677cf305992fc34626620e63fcf14e4d817211e23416b98203d900fca"
     },
     {
-      "bytes": 4768,
+      "bytes": 122,
       "categories": [
         "code"
       ],
       "chunks": [
         {
-          "chars": 3370,
-          "end_line": 107,
-          "id": "kn_a6a77050c96b15d80dd07ce0cbb284f52a98a8a7c3b335bc4c6e6e932a8af02f",
+          "chars": 122,
+          "end_line": 6,
+          "id": "kn_85f598cd89df9c0df7fcab6ea0e9dab4df10ed1d47786a5784d9726ad575f18c",
           "index": 0,
-          "sha256": "ebb41a97e13b97f74f7ff45e005a3e1f7d8a7110084eea9435c6c66101101627",
+          "sha256": "7658563456d18b766cd221dcfa24f8721b5b8692639f60cbef9739d875501bab",
+          "start_line": 1
+        }
+      ],
+      "component": "candidate-runtime",
+      "path": "workers/candidate/__init__.py",
+      "sha256": "7658563456d18b766cd221dcfa24f8721b5b8692639f60cbef9739d875501bab"
+    },
+    {
+      "bytes": 2875,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 2875,
+          "end_line": 85,
+          "id": "kn_9485b2bfabf2d0775f15260139a2558dfebe7c2a3678907daf457ea710c64015",
+          "index": 0,
+          "sha256": "f4764e9e1705e972ff46ca825b8dfde3820abed5db4d6e5c177d46194e35dcd8",
+          "start_line": 1
+        }
+      ],
+      "component": "candidate-runtime",
+      "path": "workers/candidate/__main__.py",
+      "sha256": "f4764e9e1705e972ff46ca825b8dfde3820abed5db4d6e5c177d46194e35dcd8"
+    },
+    {
+      "bytes": 5166,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 3985,
+          "end_line": 115,
+          "id": "kn_94b7babb5082c8aa9f168bfaeaf82c4c9772e52d840173ac667e220f20606462",
+          "index": 0,
+          "sha256": "8a29ffa2ff217d0452497ecae1a4097e77db6b6b6efa68df82e7cade4b1f3864",
           "start_line": 1
         },
         {
-          "chars": 1749,
-          "end_line": 138,
-          "id": "kn_d8c9119729969759923dedb97f5841d84291557ea647c55734bb947716bd832a",
+          "chars": 1575,
+          "end_line": 146,
+          "id": "kn_bee557df1933e038a32a602ff4ff00b306c1f6108fc596fa3abba56ef90ffac8",
           "index": 1,
-          "sha256": "adbbe8eef9dc6aae565748c53bbfd21d4fa64b5df12fa487184f5c5c1b4c9e2a",
-          "start_line": 92
+          "sha256": "1077a6aea21c9e94c4bdcef264d7461a72ddab09b2e2b75a980bd72902463994",
+          "start_line": 104
+        }
+      ],
+      "component": "candidate-runtime",
+      "path": "workers/candidate/fallback.py",
+      "sha256": "e26c7a6707e532ea8517b79d79b373f9de66f867f53a4df2693931fcc09554f3"
+    },
+    {
+      "bytes": 1699,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 1699,
+          "end_line": 48,
+          "id": "kn_7b4d00d2336a752bdfe2ec67d47120b255c4f6acbae94e1eb2f26f51d70f0d3e",
+          "index": 0,
+          "sha256": "c333c3815c7c60884a210294cbf12a2e608af03aefcb6c8b37b507a9f592883b",
+          "start_line": 1
+        }
+      ],
+      "component": "candidate-runtime",
+      "path": "workers/candidate/market.py",
+      "sha256": "c333c3815c7c60884a210294cbf12a2e608af03aefcb6c8b37b507a9f592883b"
+    },
+    {
+      "bytes": 3352,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 3352,
+          "end_line": 91,
+          "id": "kn_6cfe1152f733abbcde3a8c320732a1891f6c8b3d7074725b128d5df63480f31b",
+          "index": 0,
+          "sha256": "6cc845cfd38dad7f3b97f9e5d5980483382a8ed0e1b6c2b52c6a57974a75e085",
+          "start_line": 1
+        }
+      ],
+      "component": "candidate-runtime",
+      "path": "workers/candidate/ollama.py",
+      "sha256": "6cc845cfd38dad7f3b97f9e5d5980483382a8ed0e1b6c2b52c6a57974a75e085"
+    },
+    {
+      "bytes": 5671,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 2642,
+          "end_line": 78,
+          "id": "kn_c185dbc4fbdb461ff94609bb1534cdcf0a11ee9af833f71011e06e1f8b96e8af",
+          "index": 0,
+          "sha256": "859677107bd084ae168393875523a5de50e7c69a78fe5965d1a9f454f32b5e9c",
+          "start_line": 1
+        },
+        {
+          "chars": 3353,
+          "end_line": 151,
+          "id": "kn_0a5ec423c7b056bad9d15e21c1e6c2c979d31bf0789026eab1a7f5a77153b059",
+          "index": 1,
+          "sha256": "841fab7009163f520977c137d1d3ac7016b700b2452631eccda896444a2ee5ed",
+          "start_line": 71
+        }
+      ],
+      "component": "candidate-runtime",
+      "path": "workers/candidate/runtime.py",
+      "sha256": "5c7fc832fa8cc4c5e8c561093458fa699adeaf1bb873f9724a965996b513ea3f"
+    },
+    {
+      "bytes": 2777,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 2777,
+          "end_line": 82,
+          "id": "kn_0d47823700f621cdbe66a301fc7e901e15ccce7248c4ee5172c8d4480598fa07",
+          "index": 0,
+          "sha256": "ea9f66391a5a901404c5ffd331cf24eab1ccd475d956a299929c2ba501b3da1e",
+          "start_line": 1
+        }
+      ],
+      "component": "candidate-runtime",
+      "path": "workers/candidate/service.py",
+      "sha256": "ea9f66391a5a901404c5ffd331cf24eab1ccd475d956a299929c2ba501b3da1e"
+    },
+    {
+      "bytes": 7329,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 3867,
+          "end_line": 108,
+          "id": "kn_d19c49a063afeb933ecc9ba962fbafdae112d8cca1a7cfcd074ff925a786ff86",
+          "index": 0,
+          "sha256": "ef8964c890ec643131a7d7bd0b6c1795abcfd2814af87de2c3224e441f0de8b0",
+          "start_line": 1
+        },
+        {
+          "chars": 3809,
+          "end_line": 199,
+          "id": "kn_fbf95b4d67685c52a71568ff4571f15399b6e78b83e24515a46c3f3bcf424ff7",
+          "index": 1,
+          "sha256": "8d362a25797ee456333923dd6c5d5ba57d16e053e7970159dbafc81c6a21cccd",
+          "start_line": 102
         }
       ],
       "component": "orchestration-runtime",
       "path": "workers/config.py",
-      "sha256": "739ff0166a9792e02c83b3307d201daee89d961ec44c7fbebdfc067ba0f8a57a"
+      "sha256": "6d2f7a0540a33c16869af5fa219394373319749c2421be6274a90f88551ff3bd"
     },
     {
-      "bytes": 13942,
+      "bytes": 15069,
       "categories": [
         "code"
       ],
       "chunks": [
         {
-          "chars": 3887,
-          "end_line": 103,
-          "id": "kn_b455a827fc3b86d86c8d7b85fed8338e67ffd7340878a2ec099dee13106fde38",
+          "chars": 3994,
+          "end_line": 100,
+          "id": "kn_896b541852277d8eb00724a6445e5fda7ec9eb90125a71fde5eef82c4eb66c1e",
           "index": 0,
-          "sha256": "311b3fe74c0f1db997584ca45c49b14251b4353856ea6580ce1b8a8080339de5",
+          "sha256": "a0c56f3cb6e381bcf4e4780bff7ad57414484a87ae149f6ecd997ea2b5d62643",
           "start_line": 1
         },
         {
-          "chars": 3977,
-          "end_line": 191,
-          "id": "kn_b24e74b2e2e4959271cc554ee5d5edca63946e47bd027eacd1137a43f0c74da1",
+          "chars": 3975,
+          "end_line": 189,
+          "id": "kn_2675b80c88a074275334aab534541c53800f096db04ded15aa7edd75435e4cf6",
           "index": 1,
-          "sha256": "020842e5e5712a15004001ed692e7dce7a61020852cc52a63d095823bf6bf9a2",
-          "start_line": 90
+          "sha256": "3c90f2df07248ea1c39943f7a89883735e6ee0f3ae6e11dfceb0efd1bba4de00",
+          "start_line": 93
         },
         {
-          "chars": 3870,
-          "end_line": 285,
-          "id": "kn_55d922cd4c856a0e8225300c7884df9ffa4f17b53567b199fd6eedd1c48e58ad",
+          "chars": 3786,
+          "end_line": 278,
+          "id": "kn_a5bf7c5be2304a83c7e6d7099f71b7d5711ee1874ef339241766318d236889be",
           "index": 2,
-          "sha256": "b5fb34811d1a4a9c373394b7dda89fb23fa428e81456b0f09b5bec3afc4e8393",
+          "sha256": "40d0c39b70294b39228dd5a6dafb6662eb40c48630f28759ae4182c809970a5b",
           "start_line": 181
         },
         {
-          "chars": 3301,
-          "end_line": 360,
-          "id": "kn_7fb35628f0722628a7a027fbedcc5c20ea82271ac6ca7c0c032f9671b982b836",
+          "chars": 3266,
+          "end_line": 353,
+          "id": "kn_bcf8e282b9924314b6a1c92172901925a08536c56df3855fffec800b680f8748",
           "index": 3,
-          "sha256": "5631bd69be358eb60650f7d3dc60520e6c6b3e6f6446cfcf710aa6710a1737a1",
-          "start_line": 273
+          "sha256": "a8e62148e11f92031e3ee647b51724a79af182390c1666adf6abe5382f88e56a",
+          "start_line": 268
+        },
+        {
+          "chars": 1550,
+          "end_line": 386,
+          "id": "kn_ec5b97c71370a8f32107c993336ada05abf7d2acf8ce64123f6e6b257597f811",
+          "index": 4,
+          "sha256": "36197d5a3bfb889c2c8acedf8bb1620f46f4d89635d4678621492a346f697d91",
+          "start_line": 343
         }
       ],
       "component": "orchestration-runtime",
       "path": "workers/contracts.py",
-      "sha256": "eee8ae59e2556d78a489254f75feed8e560d39061cd99e4800aec77d9e17a75b"
+      "sha256": "bb03ce6d7b91faece0aa09c1620a84a26fa3baf70b1620caeb5b9660a10b24e1"
     },
     {
       "bytes": 133,
@@ -17111,31 +18230,90 @@
       "sha256": "ee0c26fda4bfcda7302e9bab4544e1852441fd3943fa10e91230a30e6722c1a9"
     },
     {
-      "bytes": 4090,
+      "bytes": 5965,
       "categories": [
         "code"
       ],
       "chunks": [
         {
-          "chars": 3999,
-          "end_line": 136,
-          "id": "kn_6800fbc8062240d9cf0d0d17f1b4cf70912f0a9c7639c574de030e4fb66d29a7",
+          "chars": 3919,
+          "end_line": 123,
+          "id": "kn_1eca5d30dfb9afe6b1cbd0ce89d14cca62ddffde0e11a25d8e097b486a731f6c",
           "index": 0,
-          "sha256": "f1fb6616a939828fb4cc50a0e9a9586c440487225f671d84803a235bea652172",
+          "sha256": "7632d2b54a1d2a0aad45aa1ed97a586c9609e44722f29728f82f7e481fd9c922",
           "start_line": 1
         },
         {
-          "chars": 464,
-          "end_line": 141,
-          "id": "kn_03d171cde8baefdaf160904c9632f5965ce6334ebf6a2766fcf9390cb2dda7de",
+          "chars": 2382,
+          "end_line": 184,
+          "id": "kn_002c9804a9917067ba47031a56216a9a988d5a5c83536002882cd46225309542",
           "index": 1,
-          "sha256": "dea92080dade17520e19e907e62da39c1b4aeb80a9a70392abe302378650e8f7",
-          "start_line": 120
+          "sha256": "f0a8cb7e19b54468193bb7a44fbbb3b351d77e6d43cd20d6b015753d3484ab43",
+          "start_line": 112
         }
       ],
       "component": "risk-decision-runtime",
       "path": "workers/decision/runtime.py",
-      "sha256": "5d21a2126ae7c82642a072d4a4c74e264b560bbe9420409089aa4a197352df2c"
+      "sha256": "9bd008e16971a9883280e5f90fa111c42987dbf940b06fab3e5174496b89661a"
+    },
+    {
+      "bytes": 18199,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 3952,
+          "end_line": 112,
+          "id": "kn_464350ca39e79167e88e46b00ed3b23c9a13e06762e692787ee36ce6d0e5bd16",
+          "index": 0,
+          "sha256": "3fcd22f478df626cef1b25f69394f641ce84845ac21ce43cd948fc17788ea3a3",
+          "start_line": 1
+        },
+        {
+          "chars": 3441,
+          "end_line": 184,
+          "id": "kn_cebbe41ee29ac0ec9d21d7b7b4153dbd9d9c59c37e3721d8b416b9dacb784599",
+          "index": 1,
+          "sha256": "80e876e8697f4720f1074400d6c939e5d361da1260a6ec7ebcbb4992a9cf9ffd",
+          "start_line": 101
+        },
+        {
+          "chars": 3883,
+          "end_line": 269,
+          "id": "kn_4f7583d3b7a03f64f74cfe87ab1b61099ea9d197c0ec7e3a8543b02cced0bd7a",
+          "index": 2,
+          "sha256": "8f72ba8f0e8dedd989be3010d78884c11e7a9e0ecd51c0a1fbdb8b54fd89a1d5",
+          "start_line": 170
+        },
+        {
+          "chars": 2680,
+          "end_line": 330,
+          "id": "kn_121a3d21a870901548e62d52f5c749464535f231ee55632b19584e22ea6a3be4",
+          "index": 3,
+          "sha256": "afdced75431f92c04960cdbeb7c7f61d357416d368265f2484a7f824fefe1d5e",
+          "start_line": 259
+        },
+        {
+          "chars": 3834,
+          "end_line": 413,
+          "id": "kn_364b15fd97cebb61cf06b2d70a0d250a47e81fcc17830c89aaddaa4f51961b3c",
+          "index": 4,
+          "sha256": "87af3bec058caae913284b85606a1477d07d0c8eaa1fdbef76c2dfa049bca1ad",
+          "start_line": 320
+        },
+        {
+          "chars": 2293,
+          "end_line": 457,
+          "id": "kn_f3fd7f03452cadc58b08b099b907905920479937a755c7945469208968a281ec",
+          "index": 5,
+          "sha256": "7771aaa735c0133a07d04ff95317c018a28b5427062c832d505036beebb37346",
+          "start_line": 402
+        }
+      ],
+      "component": "orchestration-runtime",
+      "path": "workers/durability.py",
+      "sha256": "3f2ae3a5df0d6c54ca962f58ba232fec0db459691577f4855d92b11c1bef5d3e"
     },
     {
       "bytes": 214,
@@ -17230,31 +18408,166 @@
       "sha256": "488f9b31b3fa478994e1a01d6e42efec39903a96f192c7a235bcf989c8aec069"
     },
     {
-      "bytes": 4945,
+      "bytes": 7426,
       "categories": [
         "code"
       ],
       "chunks": [
         {
-          "chars": 3699,
-          "end_line": 116,
-          "id": "kn_0957c8d328f80a03ec6e893c8d37f9da3aa8916c4221a18cfac6500d490687ff",
+          "chars": 3008,
+          "end_line": 95,
+          "id": "kn_6dcedc9c93d12a947241da3997b1fe63f662e21255cb027fa80556e33f11bc8f",
           "index": 0,
-          "sha256": "d188db2641d4380f9b62231d5d73b84a45d4a2c89dbb3b83ed1d5b4ca5714987",
+          "sha256": "de0ceef7119943263daa4067d446adefe945e4fe4ac1292c47ee015b7a231304",
           "start_line": 1
         },
         {
-          "chars": 1608,
-          "end_line": 161,
-          "id": "kn_f33a3034b94a2ad01c99fe2212c3c2eba433b626921c2f9bb6f639a66060ede0",
+          "chars": 2662,
+          "end_line": 146,
+          "id": "kn_ae9918bf0121b12703adda0e9c67d39237e1308987a8e18d0f1877d1631b6ef4",
           "index": 1,
-          "sha256": "78efcc160b7d448e12fab520a02b42cdaba00f688eb29461f042afb52f491e23",
-          "start_line": 104
+          "sha256": "0f279e3bddc42e65f072221cdc8596e2284c475d7d1a0e8b11696a00fa962a16",
+          "start_line": 85
+        },
+        {
+          "chars": 2519,
+          "end_line": 213,
+          "id": "kn_a238b57be9a863540d83d05b5f7423718de5be52786c347761c4926a6a98a1c6",
+          "index": 2,
+          "sha256": "a8f0e343b39f265656dfe3c62c17903e35d2714dc03fd2d36bc2dc94a510d003",
+          "start_line": 135
         }
       ],
       "component": "paper-execution-runtime",
       "path": "workers/execution/runtime.py",
-      "sha256": "75152b0107cba194f9c2dd89350c1e6f61a43545208b9661ef4241cc6892f98d"
+      "sha256": "5f001081b7bf83372f86c2204ff645353dac3de7ca1168484e49c748259a9cc8"
+    },
+    {
+      "bytes": 177,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 177,
+          "end_line": 6,
+          "id": "kn_217df84095da04dfd05770c8a005bb3a1a75a7bded1017cd43f9df72c7ff5e67",
+          "index": 0,
+          "sha256": "a99c5c65671c72f80194fe6a0707ed2e26226c5580f2db7c5dd661dbf5cb18e7",
+          "start_line": 1
+        }
+      ],
+      "component": "feature-runtime",
+      "path": "workers/features/__init__.py",
+      "sha256": "a99c5c65671c72f80194fe6a0707ed2e26226c5580f2db7c5dd661dbf5cb18e7"
+    },
+    {
+      "bytes": 2100,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 2100,
+          "end_line": 67,
+          "id": "kn_00c3fa2b4a3b6833e1433e8a6361a9eea25cdf42a3c851a9c57db3427bade5a0",
+          "index": 0,
+          "sha256": "a2b74951e190f48e2785b3c7ee394d92114e286c6d570c89eb4551a2250e8a1c",
+          "start_line": 1
+        }
+      ],
+      "component": "feature-runtime",
+      "path": "workers/features/__main__.py",
+      "sha256": "a2b74951e190f48e2785b3c7ee394d92114e286c6d570c89eb4551a2250e8a1c"
+    },
+    {
+      "bytes": 5520,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 3973,
+          "end_line": 93,
+          "id": "kn_23df3d02c5135204a1d34f561cd0beadc84a9f119638eb67295a23822a030fff",
+          "index": 0,
+          "sha256": "958ca5ab847a64daf7ea1a4ba95edf510c6f528759cf4d688d953a4f50681dba",
+          "start_line": 1
+        },
+        {
+          "chars": 1901,
+          "end_line": 124,
+          "id": "kn_14b437be34146994b78ed6696ce7564473bd99e42b9a0862118c21b5182a8678",
+          "index": 1,
+          "sha256": "1b664ffbad36afc45c40929cba82de903bf2025343f18bb392b3834283042f40",
+          "start_line": 83
+        }
+      ],
+      "component": "feature-runtime",
+      "path": "workers/features/postgres.py",
+      "sha256": "1a298c24a161790f177c2413100b1ec6196a67c0df75d069bf64df90fb4ddd34"
+    },
+    {
+      "bytes": 9113,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 2576,
+          "end_line": 79,
+          "id": "kn_61e02086ab9bbaffa6b07711d5eaaeb7c18f6220e4d6f76d3957b063b11c2e98",
+          "index": 0,
+          "sha256": "7986a930cbab6559c0f248ed69fad7e2931cf99769ee95170fa70afa699c2c4b",
+          "start_line": 1
+        },
+        {
+          "chars": 2093,
+          "end_line": 119,
+          "id": "kn_14849aeccba2ae04c2e7b6efae743dc0852470ed68f952b4e6aede5154a4c1a5",
+          "index": 1,
+          "sha256": "fe7fbc8f6b9c429426496fca1667095b111f9efcff1e8fdf866384262f1ed58e",
+          "start_line": 70
+        },
+        {
+          "chars": 3954,
+          "end_line": 208,
+          "id": "kn_7d7608b3d07390dc3576e0c5dae0abb2051691f46d8f6edd178d52334748cdbf",
+          "index": 2,
+          "sha256": "eaa29533537d8fa284aaf07f902cf9fa85596847af3e7dc29b885983aa7e11ff",
+          "start_line": 110
+        },
+        {
+          "chars": 1627,
+          "end_line": 232,
+          "id": "kn_6224fca14c8134f9e533ebd2a7a5b975dd5484e477b4f4e36c734c090abda5cc",
+          "index": 3,
+          "sha256": "8e282ee0575c464ba4706561c4cdc40ebfdee2338ed3a18df2a8c458b1b261e2",
+          "start_line": 198
+        }
+      ],
+      "component": "feature-runtime",
+      "path": "workers/features/runtime.py",
+      "sha256": "d374abee0fc6855d364d6c09f53f8ff87989469e87d72b0fad37853599723f51"
+    },
+    {
+      "bytes": 1449,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 1449,
+          "end_line": 53,
+          "id": "kn_f37eefec19091c1b5cc561835faa49ae6b6825d88b33a398f1287d72c932126f",
+          "index": 0,
+          "sha256": "3050a4810d385e0bda217c063bacc54b55f4b96548f5464bd87214c8d072c115",
+          "start_line": 1
+        }
+      ],
+      "component": "feature-runtime",
+      "path": "workers/features/service.py",
+      "sha256": "3050a4810d385e0bda217c063bacc54b55f4b96548f5464bd87214c8d072c115"
     },
     {
       "bytes": 142,
@@ -17276,23 +18589,23 @@
       "sha256": "3b46e479162abb6883f608fd3f2b7ae72c4fe8f77ae2ef8f7f0b1d7d042191a5"
     },
     {
-      "bytes": 959,
+      "bytes": 2272,
       "categories": [
         "code"
       ],
       "chunks": [
         {
-          "chars": 959,
-          "end_line": 38,
-          "id": "kn_96c7568e017b937a65f693129214cf406abc0ca7c496ec50a7c1f30d7399126e",
+          "chars": 2272,
+          "end_line": 76,
+          "id": "kn_dd1978d3f81bef4f7a82d59d3d8d128da7864f1df31e53603bb3e7927a5a10db",
           "index": 0,
-          "sha256": "4f698efe1fcd6d0f9000431227d4742b1e06448836d44762bec84efe3e506bbc",
+          "sha256": "467b885c8bdaa993e17e4b67e57cbc085da64f670bb3fe0930231d34b2549410",
           "start_line": 1
         }
       ],
       "component": "market-ingestion-runtime",
       "path": "workers/market_data/__main__.py",
-      "sha256": "4f698efe1fcd6d0f9000431227d4742b1e06448836d44762bec84efe3e506bbc"
+      "sha256": "467b885c8bdaa993e17e4b67e57cbc085da64f670bb3fe0930231d34b2549410"
     },
     {
       "bytes": 342,
@@ -17390,74 +18703,301 @@
       "sha256": "54dce5aee0619dd7af498401897c981baca6c296a19efbd852fbe67a317fe990"
     },
     {
-      "bytes": 9071,
+      "bytes": 10400,
       "categories": [
         "code"
       ],
       "chunks": [
         {
-          "chars": 3667,
-          "end_line": 117,
-          "id": "kn_8386c31b112b80da68a911ddb224796289f11c7ac9d88e116448ab9b12adcf6d",
+          "chars": 3999,
+          "end_line": 132,
+          "id": "kn_e518af93b7e52e26b00ea4ee926c6bd4e3044d9ac4abdfdc7e36b9155744a80b",
           "index": 0,
-          "sha256": "23254687c4a25de94ba265d165ff7c8af9a24543f01ef25e9afda4940574b0b8",
+          "sha256": "22f18b406839d3f5225a171d7599681435e42f2f7d76fa5258f583e45022f0e1",
           "start_line": 1
         },
         {
-          "chars": 3857,
-          "end_line": 203,
-          "id": "kn_695e50e31169bad2517038d14d0e7adc1ca22c7784dac5f61a4a4511626ed408",
+          "chars": 3901,
+          "end_line": 219,
+          "id": "kn_87498bfcb70962d9bef1bb7f759ea7df816f162023e29a791ef466ad8610c774",
           "index": 1,
-          "sha256": "4238a52ae359224899d28189c7df2242086535ab366acdde8d04da72484b28fc",
-          "start_line": 100
+          "sha256": "de42ff7490da1ddf98a673bb8a65b2fd85276c16ce521fbf3f6718843d211962",
+          "start_line": 116
         },
         {
-          "chars": 2297,
-          "end_line": 253,
-          "id": "kn_c28dfbe7beb923cf199fb25f78945b722a620152b8f65bd430dde5beb41ba72c",
+          "chars": 3265,
+          "end_line": 293,
+          "id": "kn_b7ae04d6b55692eb4ab57c67c586ff6d0dc97112d6effa9dd7fb0f489ecbb336",
           "index": 2,
-          "sha256": "93cc3b3f52b7f6bf14de3f6cc4367a409a37a1b53c64364f284d5a3982c589af",
-          "start_line": 193
+          "sha256": "82991f74ab41f49d65b125579668a0375634aa0f2ef41c9029fb54ec14a92b6d",
+          "start_line": 209
         }
       ],
       "component": "market-ingestion-runtime",
       "path": "workers/market_data/runtime.py",
-      "sha256": "54d79d74d2cd9d725838fcc098990db188034b6f2e7c844e511fa105fa5b9f24"
+      "sha256": "ffbdc332f9533485f578254f1bdc9ea46402cef07b8c14ecb3bb792b5252fed4"
     },
     {
-      "bytes": 6697,
+      "bytes": 125,
       "categories": [
         "code"
       ],
       "chunks": [
         {
-          "chars": 3950,
-          "end_line": 110,
-          "id": "kn_0998b43772151f731a19dea4531479a797477d17dffee60e21027878c0f4d61a",
+          "chars": 125,
+          "end_line": 6,
+          "id": "kn_14e1c311c2759e8e2a44ec48bcc9d822d15845ca7f4b604d03c1fd58ef5bb30e",
           "index": 0,
-          "sha256": "3c484b181fcadb705101be54dba2fca2fdf34704b48a62b00a57ed32ecb7f601",
+          "sha256": "aff0417d64888d0a41785b9e78b962e34e5ff90340376fa22551bf3220d980ad",
+          "start_line": 1
+        }
+      ],
+      "component": "market-producer-runtime",
+      "path": "workers/market_producer/__init__.py",
+      "sha256": "aff0417d64888d0a41785b9e78b962e34e5ff90340376fa22551bf3220d980ad"
+    },
+    {
+      "bytes": 1901,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 1901,
+          "end_line": 65,
+          "id": "kn_e16333ab38fcc48ce6ff1193639607827c9338169318be876e19eb2146bd946b",
+          "index": 0,
+          "sha256": "f97304c9f3d8dcc28d054132c28f2c7d8f12ea069226a0ee3986b33b793e2d1e",
+          "start_line": 1
+        }
+      ],
+      "component": "market-producer-runtime",
+      "path": "workers/market_producer/__main__.py",
+      "sha256": "f97304c9f3d8dcc28d054132c28f2c7d8f12ea069226a0ee3986b33b793e2d1e"
+    },
+    {
+      "bytes": 3968,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 3968,
+          "end_line": 126,
+          "id": "kn_f6119c56fae25f67ca040269e75356c8e543e20c025015f68f9ba040d5d20dd1",
+          "index": 0,
+          "sha256": "bb8f93a54cf252ac21f929d61a0b3a3f205887dd1453eeff16dae5d9e9005305",
+          "start_line": 1
+        }
+      ],
+      "component": "market-producer-runtime",
+      "path": "workers/market_producer/runtime.py",
+      "sha256": "bb8f93a54cf252ac21f929d61a0b3a3f205887dd1453eeff16dae5d9e9005305"
+    },
+    {
+      "bytes": 14078,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 3872,
+          "end_line": 115,
+          "id": "kn_6f41ad16c5f896cdd84acf7b94104b806a04330b04f35d75f22943acd541b383",
+          "index": 0,
+          "sha256": "3111121005fac26968bba1eff9a1f552f3befe6a1884840aed7407e54f803c20",
           "start_line": 1
         },
         {
-          "chars": 3080,
-          "end_line": 193,
-          "id": "kn_d86840e244b90f323426834ec0c77abb580532cebe1aaf219f8a6f22f89f21cf",
+          "chars": 3543,
+          "end_line": 201,
+          "id": "kn_79563c460b14561ae51f026f16f6b1137a89a4f63daf6a85d4e213ffbd9f8b72",
           "index": 1,
-          "sha256": "0ec662ebdfe9a90f1b3f0ffec094404506fd8303aaec3b59e6d84e28f984592b",
+          "sha256": "893b2d55cc3d3c5fddde9702f45577a076b31c8db232fe1ddabd02d0608eac89",
           "start_line": 102
+        },
+        {
+          "chars": 3709,
+          "end_line": 276,
+          "id": "kn_ed0b266ee04f9dc93a684c9661976a0c945bb484fd8e6f7a54ef20718bbc2cec",
+          "index": 2,
+          "sha256": "b9e621e99f99bdb071c37a67076ea7dd1db01794cedab4e95dfc0775040a8849",
+          "start_line": 188
+        },
+        {
+          "chars": 3455,
+          "end_line": 370,
+          "id": "kn_2e5747726ee3fb5a0be9b5c93a5913ab0220c115ad1bf334d297ffeaf16f90a3",
+          "index": 3,
+          "sha256": "2b302447961ab601c0d5eed93aa71a0f5a1f121387b1e564ca79ce79315dd87a",
+          "start_line": 268
+        },
+        {
+          "chars": 1014,
+          "end_line": 386,
+          "id": "kn_56313d3b8adddbfbc427bdf36a8c5d53d54c8541d33c6b375f7bdf19f988f983",
+          "index": 4,
+          "sha256": "97088f9938602917e54822ee1efae2d3860f4b6be78d4bc36dceb86c8f2ce912",
+          "start_line": 356
         }
       ],
       "component": "orchestration-runtime",
       "path": "workers/nats_runtime.py",
-      "sha256": "80905a99376787900c38daa297cd84e1e16d7819bf458f5e30a4a11b5e49e96a"
+      "sha256": "8399dd78d7c79cf90fa04f8d07154a2e3b2d3afc1039f6746ed2dce56ebcf818"
+    },
+    {
+      "bytes": 190,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 190,
+          "end_line": 6,
+          "id": "kn_7881043898d103461bcec7c97edc659ec81ce65b342260726b7e4028c51df03c",
+          "index": 0,
+          "sha256": "0dbac5b4d6f860396bd4fa3017dc568cb8de0ae3d688101775b41a0a85980ed8",
+          "start_line": 1
+        }
+      ],
+      "component": "reconciliation-runtime",
+      "path": "workers/reconciliation/__init__.py",
+      "sha256": "0dbac5b4d6f860396bd4fa3017dc568cb8de0ae3d688101775b41a0a85980ed8"
+    },
+    {
+      "bytes": 2937,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 2937,
+          "end_line": 88,
+          "id": "kn_02c2f408541d01193b7be5198eff6ac088ed944e09318ab09a23e318a19c3a22",
+          "index": 0,
+          "sha256": "e74c6a21e1fadede6110cc84a02480dd6d708381d2f0a8f43152a63c5f648eb0",
+          "start_line": 1
+        }
+      ],
+      "component": "reconciliation-runtime",
+      "path": "workers/reconciliation/__main__.py",
+      "sha256": "e74c6a21e1fadede6110cc84a02480dd6d708381d2f0a8f43152a63c5f648eb0"
+    },
+    {
+      "bytes": 6240,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 3394,
+          "end_line": 97,
+          "id": "kn_1b346bc6d866f04e026a4d51a184ec389c8fccb182bbfd04173891385e0c99d5",
+          "index": 0,
+          "sha256": "2b0e2b0cbc27e86480295b28a9a3b255eff92113aae488dbb5f19cbdaeb032b2",
+          "start_line": 1
+        },
+        {
+          "chars": 3245,
+          "end_line": 162,
+          "id": "kn_3e796a0256e0e7efe56629b1fbc1157f23ea984a8f9e23b28ddb4bb4d1a24fc0",
+          "index": 1,
+          "sha256": "ac1a21a9ca232a1a2387305ba56cac863ef32dfe334b13b921302d22f48309c2",
+          "start_line": 84
+        }
+      ],
+      "component": "reconciliation-runtime",
+      "path": "workers/reconciliation/authority.py",
+      "sha256": "9a9b0b2eb5abf37844cb9dcb8585e1d92be3b1db39e4f528a6221c32601c0984"
+    },
+    {
+      "bytes": 7303,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 2138,
+          "end_line": 62,
+          "id": "kn_b942c4e5af0e370ad1d0a2dc26ad00644f80dece058bc38d8f1c60bc26950e50",
+          "index": 0,
+          "sha256": "a7959e68703ac26f17eb0e24a375eba5a7936ab9e2866f6061c36415ba10cfc3",
+          "start_line": 1
+        },
+        {
+          "chars": 3972,
+          "end_line": 138,
+          "id": "kn_e0ee8103eb209b62362c2d4a9d8e2493ec379b95e7573067f7cf121e9a052381",
+          "index": 1,
+          "sha256": "2fbd77b418eb71adf22c199bf8d21c5f0cbcd654eddd83ff8e65574accec9c9d",
+          "start_line": 49
+        },
+        {
+          "chars": 1978,
+          "end_line": 174,
+          "id": "kn_c6b6344dd8395281924ff99f8c5dc99fb992ce58942dc69c0ebfc69990a8363d",
+          "index": 2,
+          "sha256": "005782238e3cd9cc790fea9f3f9876489454909ebf8cc36d08b7235086d8df7e",
+          "start_line": 130
+        }
+      ],
+      "component": "reconciliation-runtime",
+      "path": "workers/reconciliation/postgres.py",
+      "sha256": "131f9d77e8d632c40b4cba40c8ebe443be5c0927fd001f0e2e657049d8bd1574"
+    },
+    {
+      "bytes": 5375,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 3878,
+          "end_line": 108,
+          "id": "kn_0ba4710cdbaabaaef0922ce24d12268269118900cc27bd80e5451e37a053d327",
+          "index": 0,
+          "sha256": "0124842de57e73d2d590c980ae7395a8d10a833e2f9d911fc4735982e22a7a53",
+          "start_line": 1
+        },
+        {
+          "chars": 1875,
+          "end_line": 147,
+          "id": "kn_4114247fd479707e55eeb60cfe04bc3ac7f562dae4f253d69d6ac537fc85054b",
+          "index": 1,
+          "sha256": "0198037ac30617579c89df85f829d1db43106da037da346340e6232a2a33eb2b",
+          "start_line": 99
+        }
+      ],
+      "component": "reconciliation-runtime",
+      "path": "workers/reconciliation/projection.py",
+      "sha256": "83de349d6385be4a140b315a5a1f161744044a67d395a78ee7e7280459752bda"
+    },
+    {
+      "bytes": 3866,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 3866,
+          "end_line": 117,
+          "id": "kn_08a0b67f0d7704e7947dae67248b0d811753619a13c9227f0d4f9ba36ccaec45",
+          "index": 0,
+          "sha256": "4bd86769b849ab8b9fc5dcba89a1d0e130d09eb98ca8182c03a3d7143cf47d07",
+          "start_line": 1
+        }
+      ],
+      "component": "reconciliation-runtime",
+      "path": "workers/reconciliation/service.py",
+      "sha256": "4bd86769b849ab8b9fc5dcba89a1d0e130d09eb98ca8182c03a3d7143cf47d07"
     }
   ],
   "summary": {
-    "chunk_count": 1150,
-    "component_count": 20,
-    "content_bytes": 3370218,
-    "governed_bytes": 5339886,
-    "governed_file_count": 508,
-    "source_count": 393
+    "chunk_count": 1225,
+    "component_count": 24,
+    "content_bytes": 3572101,
+    "governed_bytes": 7870194,
+    "governed_file_count": 575,
+    "source_count": 429
   }
 }

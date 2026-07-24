@@ -51,6 +51,7 @@ workers = [
     "nats-py==2.15.0",
 ]
 dev = [
+    "cryptography==49.0.0",
     "pytest>=8.2,<10",
     "pytest-asyncio>=0.23,<2",
     "pytest-timeout>=2.3,<3",

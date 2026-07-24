@@ -33,13 +33,50 @@ def validate_project_name(value: str) -> str:
 
 
 def prepare_compose(
-    rendered: dict[str, Any], *, password: str, runtime_password: str | None = None
+    rendered: dict[str, Any],
+    *,
+    password: str,
+    runtime_password: str | None = None,
+    secret_directory: Path | None = None,
+    state_directory: Path | None = None,
 ) -> dict[str, Any]:
     runtime_password = runtime_password or password
     result = deepcopy(rendered)
-    for service in result.get("services", {}).values():
+    for service_name, service in result.get("services", {}).items():
         service.pop("container_name", None)
         service.pop("ports", None)
+        temporary_mounts: list[str] = []
+        retained_volumes: list[Any] = []
+        for mount in service.get("volumes", []):
+            if isinstance(mount, dict) and mount.get("type") == "volume":
+                target = mount.get("target")
+                if isinstance(target, str):
+                    if service_name == "nats" and state_directory is not None:
+                        retained_volumes.append(
+                            {
+                                "type": "bind",
+                                "source": str(state_directory / "nats"),
+                                "target": target,
+                                "read_only": False,
+                            }
+                        )
+                        continue
+                    options = "rw,noexec,nosuid,size=512m"
+                    if service_name == "redis":
+                        options += ",uid=999,gid=1000,mode=0770"
+                    temporary_mounts.append(
+                        f"{target}:{options}"
+                    )
+                continue
+            retained_volumes.append(mount)
+        if retained_volumes:
+            service["volumes"] = retained_volumes
+        else:
+            service.pop("volumes", None)
+        if temporary_mounts:
+            service["tmpfs"] = sorted(
+                set([*service.get("tmpfs", []), *temporary_mounts])
+            )
         environment = service.get("environment")
         if not isinstance(environment, dict):
             continue
@@ -65,10 +102,19 @@ def prepare_compose(
             "mode": "ingress",
         }
     ]
-    for section in ("volumes", "networks"):
-        for item in result.get(section, {}).values():
-            item.pop("name", None)
-            item.pop("external", None)
+    result.pop("volumes", None)
+    for item in result.get("networks", {}).values():
+        item.pop("name", None)
+        item.pop("external", None)
+    if secret_directory is not None:
+        result["secrets"] = {
+            "postgres_admin_password": {
+                "file": str(secret_directory / "postgres_admin_password")
+            },
+            "db_runtime_password": {
+                "file": str(secret_directory / "db_runtime_password")
+            },
+        }
     return result
 
 
@@ -154,7 +200,13 @@ def _database_evidence(project: str, compose_path: Path) -> dict[str, int]:
     return {key: int(value) for key, value in json.loads(output.strip()).items()}
 
 
-def _render_isolated_compose(password: str, runtime_password: str) -> dict[str, Any]:
+def _render_isolated_compose(
+    password: str,
+    runtime_password: str,
+    *,
+    secret_directory: Path,
+    state_directory: Path,
+) -> dict[str, Any]:
     env = os.environ.copy()
     env["POSTGRES_PASSWORD"] = password
     env["DB_RUNTIME_PASSWORD"] = runtime_password
@@ -175,6 +227,8 @@ def _render_isolated_compose(password: str, runtime_password: str) -> dict[str, 
         json.loads(rendered.stdout),
         password=password,
         runtime_password=runtime_password,
+        secret_directory=secret_directory,
+        state_directory=state_directory,
     )
 
 
@@ -190,12 +244,31 @@ def run_acceptance(*, project: str, keep: bool = False) -> dict[str, Any]:
         "checks": {},
     }
     with tempfile.TemporaryDirectory(prefix="tradeagent-acceptance-") as directory:
-        compose_path = Path(directory) / "compose.json"
+        temporary_root = Path(directory)
+        secret_directory = temporary_root / "secrets"
+        secret_directory.mkdir()
+        state_directory = temporary_root / "state"
+        (state_directory / "nats").mkdir(parents=True)
+        (secret_directory / "postgres_admin_password").write_text(
+            password, encoding="utf-8"
+        )
+        (secret_directory / "db_runtime_password").write_text(
+            runtime_password, encoding="utf-8"
+        )
+        compose_path = temporary_root / "compose.json"
         compose_path.write_text(
-            json.dumps(_render_isolated_compose(password, runtime_password)), encoding="utf-8"
+            json.dumps(
+                _render_isolated_compose(
+                    password,
+                    runtime_password,
+                    secret_directory=secret_directory,
+                    state_directory=state_directory,
+                )
+            ),
+            encoding="utf-8",
         )
         try:
-            _compose(project, compose_path, "down", "-v", "--remove-orphans")
+            _compose(project, compose_path, "down", "--remove-orphans")
             _compose(project, compose_path, "up", "-d", "--build")
             baseline = _wait_for_readiness(True, timeout_seconds=180)
             report["checks"]["baseline_readiness"] = baseline
@@ -245,7 +318,7 @@ def run_acceptance(*, project: str, keep: bool = False) -> dict[str, Any]:
                 json.dumps(report, indent=2, sort_keys=True), encoding="utf-8"
             )
             if not keep:
-                _compose(project, compose_path, "down", "-v", "--remove-orphans")
+                _compose(project, compose_path, "down", "--remove-orphans")
     return report
 
 

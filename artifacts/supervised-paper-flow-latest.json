@@ -1,0 +1,55 @@
+{
+  "captured_at": "2026-07-24T17:21:56.856976+00:00",
+  "compose_project": "trade_agent_canonical",
+  "default_candidate_provider_restored": "ollama",
+  "execution_mode": "paper_live",
+  "live_trading_enabled": false,
+  "supervised_candidate_provider": {
+    "name": "deterministic_baseline",
+    "purpose": "real-public-feed paper plumbing acceptance only",
+    "risk_bypass": false
+  },
+  "counts": {
+    "raw_market_events": 74,
+    "validated_market_events": 74,
+    "feature_events": 46,
+    "candidate_events": 6,
+    "risk_decisions": 6,
+    "approved_decisions": 2,
+    "rejected_decisions": 4,
+    "order_intents": 2,
+    "fills": 2,
+    "reconciliation_runs": 429,
+    "reconciliation_mismatches": 0,
+    "duplicate_inbox": 0,
+    "duplicate_fills": 0,
+    "pending_outbox": 0,
+    "dead_letters": 0
+  },
+  "rejection_reasons": [
+    {
+      "reason_codes": ["PRICE_NOT_TICK_ALIGNED"],
+      "count": 4
+    }
+  ],
+  "nats": {
+    "streams": 1,
+    "consumers": 5,
+    "messages": 210,
+    "bytes": 225861
+  },
+  "lineage": [
+    {
+      "trace_id": "baseline:ce4342da-ee9b-55d6-bf46-050658be49af",
+      "approved": true,
+      "client_order_id": "qx_86d61d228fe14926064a7fa2",
+      "venue_fill_id": "fill_paper_d9c8c62518f5cd970e96_1"
+    },
+    {
+      "trace_id": "baseline:37ef17f7-cceb-5ce6-a034-542794c7edde",
+      "approved": true,
+      "client_order_id": "qx_4c860396bea95350ccd1f1d0",
+      "venue_fill_id": "fill_paper_c8e51a8ab0ef84401afc_1"
+    }
+  ]
+}

@@ -6,18 +6,35 @@
 
 # Default startup is the canonical local paper/replay runtime. Pre-canonical
 # services remain available only through the explicit `legacy` profile.
+x-bounded-logging: &bounded-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-canonical-process: &canonical-process
+  init: true
+  read_only: true
+  cap_drop: ["ALL"]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m
+  logging: *bounded-logging
+
 services:
   # ── LAYER 1: INFRASTRUCTURE ─────────────────────────────
 
   postgres:
-    image: pgvector/pgvector:pg16
-    container_name: quantex-postgres
+    image: pgvector/pgvector:pg16@sha256:ad2e18408bf447f62092a8a5259e7df10505c5a0360bd1a1853ac8b8b0763da2
     restart: unless-stopped
     ports: ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]
     environment:
       POSTGRES_DB: quantex
       POSTGRES_USER: quantex
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_admin_password
+    secrets:
+      - source: postgres_admin_password
+        mode: 0400
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -27,12 +44,14 @@ services:
       retries: 5
     deploy:
       resources:
-        limits: { cpus: "1.0", memory: 1G }
+        limits: { cpus: "1.0", memory: 1G, pids: 256 }
+    logging: *bounded-logging
+    security_opt: ["no-new-privileges:true"]
 
   redis:
-    image: redis:7.2-alpine
-    container_name: quantex-redis
+    image: redis:7.2-alpine@sha256:dfa18828cbc07b3ae6a95ec7343f6c214fdee2d836197b4be8e9904420762cd8
     restart: unless-stopped
+    user: redis
     ports: ["127.0.0.1:${REDIS_PORT:-6379}:6379"]
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
@@ -44,16 +63,21 @@ services:
       retries: 5
     deploy:
       resources:
-        limits: { cpus: "0.5", memory: 512M }
+        limits: { cpus: "0.5", memory: 512M, pids: 128 }
+    logging: *bounded-logging
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
 
   # ── LAYER 2-3: STORAGE + STREAMING ─────────────────────
 
   qdrant:
     profiles: ["legacy"]
-    image: qdrant/qdrant:latest
-    container_name: quantex-qdrant
+    image: qdrant/qdrant@sha256:75eab8c4ba42096724fdcfde8b4de0b5713d529dde32f285a1f86fdcb2c9e50c
     restart: unless-stopped
-    ports: ["6333:6333", "6334:6334"]
+    ports: ["127.0.0.1:6333:6333", "127.0.0.1:6334:6334"]
     volumes:
       - qdrant_data:/qdrant/storage
     deploy:
@@ -61,6 +85,7 @@ services:
         limits: { cpus: "1.0", memory: 1G }
 
   migrate:
+    <<: *canonical-process
     build:
       context: .
       dockerfile: infra/migrations/Dockerfile
@@ -69,18 +94,26 @@ services:
       PGPORT: "5432"
       PGDATABASE: ${POSTGRES_DB:-quantex}
       PGUSER: ${POSTGRES_USER:-quantex}
-      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGPASSWORD_FILE: /run/secrets/postgres_admin_password
       DB_RUNTIME_USER: quantex_runtime
-      DB_RUNTIME_PASSWORD: ${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}
+      DB_RUNTIME_PASSWORD_FILE: /run/secrets/db_runtime_password
+    secrets:
+      - source: postgres_admin_password
+        mode: 0400
+      - source: db_runtime_password
+        mode: 0400
     depends_on:
       postgres:
         condition: service_healthy
     restart: "no"
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 128M, pids: 64 }
 
   chroma:
-    image: chromadb/chroma:1.5.9
-    container_name: quantex-chroma
-    restart: unless-stopped
+    profiles: ["knowledge"]
+    image: chromadb/chroma:1.5.9@sha256:1e0b73a187a28757c572acba508c46f48c9e8b0acaf5c20e6d95cdedce1acdf6
+    restart: "no"
     ports:
       - "127.0.0.1:8100:8000"
     environment:
@@ -89,9 +122,13 @@ services:
       ANONYMIZED_TELEMETRY: "FALSE"
     volumes:
       - chroma_data:/data
+    networks:
+      - knowledge
+    logging: *bounded-logging
+    security_opt: ["no-new-privileges:true"]
     deploy:
       resources:
-        limits: { cpus: "1.0", memory: 1G }
+        limits: { cpus: "1.0", memory: 1G, pids: 128 }
 
   # ── LAYER 2-4: EVENT STREAM BUS ──────────────────────
   # NATS JetStream carries the canonical v1 boundaries:
@@ -99,8 +136,7 @@ services:
   # approval -> paper execution. No model may publish an execution command.
 
   nats:
-      image: nats:2.10-alpine
-      container_name: quantex-nats
+      image: nats:2.10-alpine@sha256:b83efabe3e7def1e0a4a31ec6e078999bb17c80363f881df35edc70fcb6bb927
       restart: unless-stopped
       ports:
         - "127.0.0.1:${NATS_PORT:-4222}:4222"
@@ -119,9 +155,16 @@ services:
         retries: 3
       deploy:
         resources:
-          limits: { cpus: "0.5", memory: 256M }
+          limits: { cpus: "0.5", memory: 256M, pids: 128 }
+      logging: *bounded-logging
+      read_only: true
+      cap_drop: ["ALL"]
+      security_opt: ["no-new-privileges:true"]
+      tmpfs:
+        - /tmp:rw,noexec,nosuid,size=32m
 
   control-plane:
+    <<: *canonical-process
     build:
       context: .
       dockerfile: infra/workers/Dockerfile
@@ -130,12 +173,19 @@ services:
     ports:
       - "127.0.0.1:${CONTROL_PLANE_PORT:-8001}:8001"
     environment:
-      DATABASE_URL: postgresql://quantex_runtime:${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-quantex}
+      DB_USER: quantex_runtime
+      DB_RUNTIME_PASSWORD_FILE: /run/secrets/db_runtime_password
       NATS_URL: nats://nats:4222
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       RUNTIME_MODE: ${RUNTIME_MODE:-paper_live}
       ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
       CONTROL_PLANE_PORT: "8001"
+    secrets:
+      - source: db_runtime_password
+        mode: 0444
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -157,21 +207,29 @@ services:
       start_period: 10s
     deploy:
       resources:
-        limits: { cpus: "0.5", memory: 512M }
+        limits: { cpus: "0.5", memory: 512M, pids: 128 }
 
   market-data-worker:
+    <<: *canonical-process
     build:
       context: .
       dockerfile: infra/workers/Dockerfile
     command: ["python", "-m", "workers.market_data"]
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://quantex_runtime:${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-quantex}
+      DB_USER: quantex_runtime
+      DB_RUNTIME_PASSWORD_FILE: /run/secrets/db_runtime_password
       NATS_URL: nats://nats:4222
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       RUNTIME_MODE: paper_live
       ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
       NATS_STREAM: QUANTEX_CORE
+    secrets:
+      - source: db_runtime_password
+        mode: 0444
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -181,20 +239,28 @@ services:
         condition: service_healthy
     deploy:
       resources:
-        limits: { cpus: "0.5", memory: 256M }
+        limits: { cpus: "0.5", memory: 256M, pids: 128 }
 
   market-producer:
+    <<: *canonical-process
     build:
       context: .
       dockerfile: infra/workers/Dockerfile
     command: ["python", "-m", "workers.market_producer"]
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://quantex_runtime:${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-quantex}
+      DB_USER: quantex_runtime
+      DB_RUNTIME_PASSWORD_FILE: /run/secrets/db_runtime_password
       NATS_URL: nats://nats:4222
       RUNTIME_MODE: paper_live
       ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
       NATS_STREAM: QUANTEX_CORE
+    secrets:
+      - source: db_runtime_password
+        mode: 0444
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -202,20 +268,28 @@ services:
         condition: service_healthy
     deploy:
       resources:
-        limits: { cpus: "0.25", memory: 192M }
+        limits: { cpus: "0.25", memory: 192M, pids: 128 }
 
   feature-worker:
+    <<: *canonical-process
     build:
       context: .
       dockerfile: infra/workers/Dockerfile
     command: ["python", "-m", "workers.features"]
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://quantex_runtime:${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-quantex}
+      DB_USER: quantex_runtime
+      DB_RUNTIME_PASSWORD_FILE: /run/secrets/db_runtime_password
       NATS_URL: nats://nats:4222
       RUNTIME_MODE: paper_live
       ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
       NATS_STREAM: QUANTEX_CORE
+    secrets:
+      - source: db_runtime_password
+        mode: 0444
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -223,20 +297,29 @@ services:
         condition: service_healthy
     deploy:
       resources:
-        limits: { cpus: "0.5", memory: 256M }
+        limits: { cpus: "0.5", memory: 256M, pids: 128 }
 
   candidate-worker:
+    <<: *canonical-process
     build:
       context: .
       dockerfile: infra/workers/Dockerfile
     command: ["python", "-m", "workers.candidate"]
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://quantex_runtime:${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-quantex}
+      DB_USER: quantex_runtime
+      DB_RUNTIME_PASSWORD_FILE: /run/secrets/db_runtime_password
       NATS_URL: nats://nats:4222
       RUNTIME_MODE: paper_live
       ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
       NATS_STREAM: QUANTEX_CORE
+      CANDIDATE_PROVIDER: ${CANDIDATE_PROVIDER:-ollama}
+    secrets:
+      - source: db_runtime_password
+        mode: 0444
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -248,20 +331,28 @@ services:
         condition: service_started
     deploy:
       resources:
-        limits: { cpus: "1.0", memory: 512M }
+        limits: { cpus: "1.0", memory: 512M, pids: 128 }
 
   reconciliation-worker:
+    <<: *canonical-process
     build:
       context: .
       dockerfile: infra/workers/Dockerfile
     command: ["python", "-m", "workers.reconciliation"]
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://quantex_runtime:${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-quantex}
+      DB_USER: quantex_runtime
+      DB_RUNTIME_PASSWORD_FILE: /run/secrets/db_runtime_password
       NATS_URL: nats://nats:4222
       RUNTIME_MODE: paper_live
       ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
       NATS_STREAM: QUANTEX_CORE
+    secrets:
+      - source: db_runtime_password
+        mode: 0444
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -269,21 +360,29 @@ services:
         condition: service_healthy
     deploy:
       resources:
-        limits: { cpus: "0.25", memory: 192M }
+        limits: { cpus: "0.25", memory: 192M, pids: 128 }
 
   decision-worker:
+    <<: *canonical-process
     build:
       context: .
       dockerfile: infra/workers/Dockerfile
     command: ["python", "-m", "workers.decision"]
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://quantex_runtime:${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-quantex}
+      DB_USER: quantex_runtime
+      DB_RUNTIME_PASSWORD_FILE: /run/secrets/db_runtime_password
       NATS_URL: nats://nats:4222
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       RUNTIME_MODE: paper_live
       ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
       NATS_STREAM: QUANTEX_CORE
+    secrets:
+      - source: db_runtime_password
+        mode: 0444
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -295,21 +394,29 @@ services:
         condition: service_started
     deploy:
       resources:
-        limits: { cpus: "0.75", memory: 384M }
+        limits: { cpus: "0.75", memory: 384M, pids: 128 }
 
   execution-worker:
+    <<: *canonical-process
     build:
       context: .
       dockerfile: infra/workers/Dockerfile
     command: ["python", "-m", "workers.execution"]
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://quantex_runtime:${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-quantex}
+      DB_USER: quantex_runtime
+      DB_RUNTIME_PASSWORD_FILE: /run/secrets/db_runtime_password
       NATS_URL: nats://nats:4222
       OLLAMA_BASE_URL: http://host.docker.internal:11434
       RUNTIME_MODE: paper_live
       ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
       NATS_STREAM: QUANTEX_CORE
+    secrets:
+      - source: db_runtime_password
+        mode: 0444
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -319,14 +426,13 @@ services:
         condition: service_healthy
     deploy:
       resources:
-        limits: { cpus: "0.5", memory: 384M }
+        limits: { cpus: "0.5", memory: 384M, pids: 128 }
 
   influxdb:
     profiles: ["legacy"]
-    image: influxdb:2.7
-    container_name: quantex-influxdb
+    image: influxdb:2.7@sha256:b8d940ca9376f85118260f5b6bd236b8a00b1749c3350c5578d4cde8e27f31f2
     restart: unless-stopped
-    ports: ["8086:8086"]
+    ports: ["127.0.0.1:8086:8086"]
     volumes:
       - influx_data:/var/lib/influxdb2
     deploy:
@@ -340,7 +446,6 @@ services:
     build:
       context: .
       dockerfile: orchestrator/Dockerfile
-    container_name: quantex-orchestrator
     restart: unless-stopped
     # Not exposed directly to host — accessed through nginx reverse proxy
     ports: []
@@ -348,7 +453,6 @@ services:
       - "8001"
     environment:
       INFERENCE_BUDGET_TIER: ${INFERENCE_BUDGET_TIER:-free}
-      DATABASE_URL: postgresql://quantex_runtime:${DB_RUNTIME_PASSWORD:?DB_RUNTIME_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
       REDIS_HOST: redis
       INITIAL_BALANCE: ${INITIAL_BALANCE:-1000.0}
       FORWARDED_ALLOW_IPS: "*"
@@ -377,12 +481,10 @@ services:
     build:
       context: .
       dockerfile: services/market_data/Dockerfile
-    container_name: quantex-market-data
     restart: unless-stopped
-    ports: ["8081:8081"]
+    ports: ["127.0.0.1:8081:8081"]
     environment:
       REDIS_HOST: redis
-      POSTGRES_URL: postgresql://${POSTGRES_USER:-quantex}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-quantex}
       NATS_URL: nats://nats:4222
     volumes:
       - ./data:/app/data
@@ -402,9 +504,8 @@ services:
     build:
       context: .
       dockerfile: services/feature_engine/Dockerfile
-    container_name: quantex-feature-engine
     restart: unless-stopped
-    ports: ["8082:8082"]
+    ports: ["127.0.0.1:8082:8082"]
     environment:
       REDIS_HOST: redis
       NATS_URL: nats://nats:4222
@@ -426,9 +527,8 @@ services:
     build:
       context: .
       dockerfile: services/orderbook/Dockerfile
-    container_name: quantex-orderbook
     restart: unless-stopped
-    ports: ["8083:8083"]
+    ports: ["127.0.0.1:8083:8083"]
     environment:
       REDIS_HOST: redis
       NATS_URL: nats://nats:4222
@@ -450,9 +550,8 @@ services:
     build:
       context: .
       dockerfile: services/moe_router/Dockerfile
-    container_name: quantex-moe-router
     restart: unless-stopped
-    ports: ["8084:8084"]
+    ports: ["127.0.0.1:8084:8084"]
     environment:
       REDIS_HOST: redis
       NATS_URL: nats://nats:4222
@@ -472,13 +571,12 @@ services:
         limits: { cpus: "1.0", memory: 1G }
 
   inference:
-    profiles: ["legacy"]
+    profiles: ["gpu"]
     build:
       context: .
       dockerfile: services/inference/Dockerfile
-    container_name: quantex-inference
-    restart: unless-stopped
-    ports: ["8085:8085"]
+    restart: "no"
+    ports: ["127.0.0.1:8085:8085"]
     environment:
       REDIS_HOST: redis
       NATS_URL: nats://nats:4222
@@ -495,10 +593,9 @@ services:
         limits: { cpus: "1.0", memory: 1G }
 
   vllm:
-    profiles: ["legacy"]
-    image: vllm/vllm-openai:latest
-    container_name: quantex-vllm
-    restart: unless-stopped
+    profiles: ["gpu"]
+    image: vllm/vllm-openai@sha256:251eba5cc7c12fed0b75da22a9240e582b1c9e39f6fbc064f86781b963bd814f
+    restart: "no"
     ports: ["127.0.0.1:8000:8000"]
     # RTX 4050 laptop (6GB VRAM) — AWQ 4-bit quantized 7B model
     # Alternatives: Qwen/Qwen2.5-3B-Instruct (fp16, ~6GB) for faster inference
@@ -523,9 +620,8 @@ services:
     build:
       context: .
       dockerfile: services/execution/Dockerfile
-    container_name: quantex-execution
     restart: unless-stopped
-    ports: ["8096:8086"]
+    ports: ["127.0.0.1:8096:8086"]
     environment:
       REDIS_HOST: redis
       NATS_URL: nats://nats:4222
@@ -547,9 +643,8 @@ services:
     build:
       context: .
       dockerfile: services/risk/Dockerfile
-    container_name: quantex-risk
     restart: unless-stopped
-    ports: ["8087:8087"]
+    ports: ["127.0.0.1:8087:8087"]
     environment:
       REDIS_HOST: redis
       NATS_URL: nats://nats:4222
@@ -571,9 +666,8 @@ services:
     build:
       context: .
       dockerfile: services/rl_learning/Dockerfile
-    container_name: quantex-rl-learning
     restart: unless-stopped
-    ports: ["8088:8088"]
+    ports: ["127.0.0.1:8088:8088"]
     environment:
       REDIS_HOST: redis
       NATS_URL: nats://nats:4222
@@ -594,9 +688,8 @@ services:
     build:
       context: .
       dockerfile: services/dashboard/Dockerfile
-    container_name: quantex-dashboard
     restart: unless-stopped
-    ports: ["8080:8080"]
+    ports: ["127.0.0.1:8080:8080"]
     environment:
       REDIS_HOST: redis
       NATS_URL: nats://nats:4222
@@ -624,7 +717,6 @@ services:
   realtime:
     profiles: ["legacy"]
     build: ./realtime
-    container_name: quantex-realtime
     restart: unless-stopped
     # Not exposed directly to host — accessed through nginx reverse proxy
     ports: []
@@ -647,7 +739,6 @@ services:
   frontend:
     profiles: ["legacy"]
     build: ./frontend
-    container_name: quantex-frontend
     restart: unless-stopped
     # Not exposed directly to host — accessed through nginx reverse proxy
     ports: []
@@ -670,11 +761,10 @@ services:
   nginx:
     profiles: ["legacy"]
     build: ./deployment/nginx
-    container_name: quantex-nginx
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - "127.0.0.1:80:80"
+      - "127.0.0.1:443:443"
     volumes:
       - nginx_logs:/var/log/nginx
       - certbot_www:/var/www/certbot:ro
@@ -715,8 +805,7 @@ services:
   # via periodic reload (every 12h).
 
   certbot:
-    image: certbot/certbot:v2.2.0
-    container_name: quantex-certbot
+    image: certbot/certbot:v2.2.0@sha256:f632e55104da84ba5b54bc858a67ac6c9b4f68790ea823515867c993153c3fb4
     profiles:
       - legacy
       - certbot
@@ -738,13 +827,13 @@ services:
 
   prometheus:
     profiles: ["legacy"]
-    image: prom/prometheus:latest
-    container_name: quantex-prometheus
+    image: prom/prometheus@sha256:c6b27ea434f8389bfe233fbc7be381cf50587c286e871bc842008f5a1b1908a7
     restart: unless-stopped
-    ports: ["9090:9090"]
+    ports: ["127.0.0.1:9090:9090"]
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - ./monitoring/recording_rules.yml:/etc/prometheus/recording_rules.yml:ro
       - prometheus_data:/prometheus
     command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=30d"]
     depends_on:
@@ -756,8 +845,7 @@ services:
 
   nats-exporter:
     profiles: ["legacy"]
-    image: natsio/prometheus-nats-exporter:latest
-    container_name: quantex-nats-exporter
+    image: natsio/prometheus-nats-exporter@sha256:4fbf6dacb84780a45a1c3af9b1080c69451a288d20902deae671b80717bb8f61
     restart: unless-stopped
     entrypoint: ["/prometheus-nats-exporter"]
     command:
@@ -774,14 +862,12 @@ services:
 
   grafana:
     profiles: ["legacy"]
-    image: grafana/grafana:latest
-    container_name: quantex-grafana
+    image: grafana/grafana@sha256:121a7a9ece6dc10b969f1f96eed64b4f07dfac0d0b8abc070f7cb83bbde86f63
     restart: unless-stopped
-    ports: ["3001:3000"]
+    ports: ["127.0.0.1:3001:3000"]
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
-      GF_INSTALL_PLUGINS: grafana-piechart-panel
     secrets:
       - grafana_admin_password
     entrypoint:
@@ -817,6 +903,14 @@ volumes:
   prometheus_data:
   grafana_data:
 
+networks:
+  knowledge:
+    internal: true
+
 secrets:
+  postgres_admin_password:
+    file: ${POSTGRES_PASSWORD_FILE_PATH:-.local/secrets/postgres_admin_password}
+  db_runtime_password:
+    file: ${DB_RUNTIME_PASSWORD_FILE_PATH:-.local/secrets/db_runtime_password}
   grafana_admin_password:
-    environment: GRAFANA_ADMIN_PASSWORD
+    file: ${GRAFANA_ADMIN_PASSWORD_FILE_PATH:-.local/secrets/grafana_admin_password}

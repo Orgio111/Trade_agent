@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
 from packages.domain import MarketEvent, canonical_json
@@ -14,10 +16,18 @@ from .runtime import FeatureSnapshot, IncrementalFeatureEngine
 
 
 class PostgresFeatureRepository:
-    def __init__(self, pool: PostgresPool, *, stream_name: str, durable_name: str) -> None:
+    def __init__(
+        self,
+        pool: PostgresPool,
+        *,
+        stream_name: str,
+        durable_name: str,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self._pool = pool
         self._stream_name = stream_name
         self._durable_name = durable_name
+        self._clock = clock or (lambda: datetime.now(UTC))
 
     async def process(self, event: MarketEvent) -> FeatureSnapshot:
         async with self._pool.acquire() as connection:
@@ -53,7 +63,7 @@ class PostgresFeatureRepository:
                         raise RuntimeError("feature inbox exists without checkpoint")
                     return FeatureSnapshot.model_validate(row["feature_snapshot"])
                 engine = self._restore(row)
-                snapshot = engine.update(event)
+                snapshot = engine.update(event, evaluated_at=self._clock())
                 checkpoint = engine.checkpoint_json()
                 checkpoint_checksum = hashlib.sha256(checkpoint.encode()).hexdigest()
                 snapshot_json = snapshot.canonical_json()
@@ -105,7 +115,8 @@ class PostgresFeatureRepository:
         if row is None:
             return IncrementalFeatureEngine()
         checkpoint = row["checkpoint"]
-        encoded = checkpoint if isinstance(checkpoint, str) else canonical_json(checkpoint)
+        decoded = json.loads(checkpoint) if isinstance(checkpoint, str) else checkpoint
+        encoded = canonical_json(decoded)
         expected = hashlib.sha256(encoded.encode()).hexdigest()
         if expected != str(row["checkpoint_checksum"]):
             raise RuntimeError("feature checkpoint checksum mismatch")

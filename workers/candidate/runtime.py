@@ -24,6 +24,17 @@ class CandidateModel(Protocol):
     def complete(self, prompt: str) -> Awaitable[str]: ...
 
 
+class CandidateProducer(Protocol):
+    async def generate(
+        self,
+        feature: FeatureSnapshot,
+        market: MarketSnapshot,
+        *,
+        generated_at: datetime,
+        source_mode: SourceMode = SourceMode.PAPER_LIVE,
+    ) -> CandidateForRiskEvent | None: ...
+
+
 class _RawCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 

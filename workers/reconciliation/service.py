@@ -7,10 +7,14 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from decimal import Decimal
 import hashlib
-from typing import Awaitable, Protocol, Sequence
+import logging
+from typing import Awaitable, Callable, Protocol, Sequence
 
 from packages.risk import PortfolioState
 from workers.reconciliation.projection import FillRow, PaperPortfolioProjector
+
+
+logger = logging.getLogger(__name__)
 
 
 class ReconciliationRepository(Protocol):
@@ -73,15 +77,28 @@ async def run_periodic(
     account_id: str,
     runtime_wait: Awaitable[None],
     interval_seconds: float = 5,
+    on_cycle_failure: Callable[[Exception], None] | None = None,
+    on_cycle_success: Callable[[], None] | None = None,
 ) -> None:
-    """Run reconciliation and transport heartbeat; propagate either terminal exit."""
+    """Retry reconciliation cycles while propagating terminal transport exits."""
 
     async def reconcile() -> None:
         while True:
-            await service.run_once(
-                account_id=account_id,
-                reconciled_at=datetime.now(UTC),
-            )
+            try:
+                await service.run_once(
+                    account_id=account_id,
+                    reconciled_at=datetime.now(UTC),
+                )
+            except Exception as exc:
+                if on_cycle_failure is not None:
+                    on_cycle_failure(exc)
+                logger.error(
+                    "reconciliation cycle failed: %s",
+                    type(exc).__name__,
+                )
+            else:
+                if on_cycle_success is not None:
+                    on_cycle_success()
             await asyncio.sleep(interval_seconds)
 
     reconcile_task = asyncio.create_task(reconcile())

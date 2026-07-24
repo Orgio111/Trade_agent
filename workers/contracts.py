@@ -17,6 +17,8 @@ from packages.risk import CandidateSignal, RiskDecision
 
 
 _ZERO_UUID = UUID(int=0)
+DETERMINISTIC_BASELINE_MODEL = "baseline-feature-v1"
+CandidateProvider = Literal["ollama", "deterministic_baseline"]
 
 
 def _utc(value: datetime) -> datetime:
@@ -36,8 +38,8 @@ class CandidateForRiskEvent(_StrictEnvelope):
     event_id: UUID = _ZERO_UUID
     trace_id: str = Field(min_length=1, max_length=128)
     market_event_id: UUID
-    provider: Literal["ollama"] = "ollama"
-    model_role: LocalModelRole
+    provider: CandidateProvider = "ollama"
+    model_role: LocalModelRole | None
     model: str = Field(min_length=1, max_length=128)
     model_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     candidate: CandidateSignal
@@ -54,13 +56,7 @@ class CandidateForRiskEvent(_StrictEnvelope):
     def bind_identity(self) -> CandidateForRiskEvent:
         if self.trace_id != self.candidate.trace_id:
             raise ValueError("event trace_id does not match candidate")
-        if self.model_role not in {
-            LocalModelRole.REASONING,
-            LocalModelRole.FAST,
-        }:
-            raise ValueError("candidate must come from a reasoning or fast model role")
-        if self.model != LOCAL_MODEL_BY_ROLE[self.model_role]:
-            raise ValueError("candidate model does not match the approved local role")
+        self._validate_provenance()
         if (
             self.market.venue != self.candidate.venue
             or self.market.market_type != self.candidate.market_type
@@ -81,6 +77,25 @@ class CandidateForRiskEvent(_StrictEnvelope):
         if self.event_id == _ZERO_UUID:
             object.__setattr__(self, "event_id", expected_id)
         return self
+
+    def _validate_provenance(self) -> None:
+        if self.provider == "ollama":
+            if self.model_role not in {
+                LocalModelRole.REASONING,
+                LocalModelRole.FAST,
+            }:
+                raise ValueError(
+                    "Ollama candidate must come from a reasoning or fast model role"
+                )
+            if self.model != LOCAL_MODEL_BY_ROLE[self.model_role]:
+                raise ValueError(
+                    "candidate model does not match the approved local role"
+                )
+            return
+        if self.model_role is not None or self.model != DETERMINISTIC_BASELINE_MODEL:
+            raise ValueError("deterministic baseline provenance is invalid")
+        if self.candidate.strategy_id != DETERMINISTIC_BASELINE_MODEL:
+            raise ValueError("deterministic baseline strategy identity is invalid")
 
     def content_payload(self) -> dict[str, Any]:
         return {
@@ -108,8 +123,8 @@ class RiskDecisionEvent(_StrictEnvelope):
     trace_id: str = Field(min_length=1, max_length=128)
     candidate_event_id: UUID
     market_event_id: UUID
-    provider: Literal["ollama"] = "ollama"
-    model_role: LocalModelRole
+    provider: CandidateProvider = "ollama"
+    model_role: LocalModelRole | None
     model: str = Field(min_length=1, max_length=128)
     model_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     candidate: CandidateSignal
@@ -134,13 +149,24 @@ class RiskDecisionEvent(_StrictEnvelope):
             or self.candidate.trace_id != self.decision.trace_id
         ):
             raise ValueError("event trace_id does not match decision and candidate")
-        if self.model_role not in {
-            LocalModelRole.REASONING,
-            LocalModelRole.FAST,
-        }:
-            raise ValueError("risk event must retain a reasoning or fast model role")
-        if self.model != LOCAL_MODEL_BY_ROLE[self.model_role]:
-            raise ValueError("risk event model does not match the approved local role")
+        if self.provider == "ollama":
+            if self.model_role not in {
+                LocalModelRole.REASONING,
+                LocalModelRole.FAST,
+            }:
+                raise ValueError(
+                    "Ollama risk event must retain a reasoning or fast model role"
+                )
+            if self.model != LOCAL_MODEL_BY_ROLE[self.model_role]:
+                raise ValueError(
+                    "risk event model does not match the approved local role"
+                )
+        elif (
+            self.model_role is not None
+            or self.model != DETERMINISTIC_BASELINE_MODEL
+            or self.candidate.strategy_id != DETERMINISTIC_BASELINE_MODEL
+        ):
+            raise ValueError("deterministic baseline risk provenance is invalid")
         if self.decision.signal_id != self.candidate.signal_id:
             raise ValueError("decision signal_id does not match candidate")
         if self.decision.candidate_hash != self.candidate.content_hash():

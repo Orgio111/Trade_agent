@@ -2,22 +2,62 @@ name: QUANTEX CI/CD
 
 on:
   push:
-    branches: [main, develop, 'claude/**', 'codex/**']
   pull_request:
-    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: '3.12'
+  PYTHON_VERSION: "3.12"
+  UV_VERSION: "0.11.24"
 
 jobs:
-  # Deterministic, offline integrity gate for code/docs/ownership/embedding drift.
+  security-boundary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+        with:
+          fetch-depth: 0
+
+      - name: Scan repository for committed secrets
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install configuration-gate dependencies
+        run: pip install "PyYAML==6.0.2"
+
+      - name: Validate canonical environment template
+        run: python scripts/config_preflight.py --env-file .env.example --allow-placeholders
+
+      - name: Render the default Compose graph fail-closed
+        run: docker compose -f docker-compose.yml config --quiet
+
+      - name: Validate Prometheus configuration and rules
+        run: |
+          docker run --rm --entrypoint /bin/promtool \
+            --volume "$PWD/monitoring:/etc/prometheus:ro" \
+            prom/prometheus@sha256:c6b27ea434f8389bfe233fbc7be381cf50587c286e871bc842008f5a1b1908a7 \
+            check config /etc/prometheus/prometheus.yml
+
   knowledge-integrity:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
 
-      - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -29,127 +69,149 @@ jobs:
           python -m packages.knowledge.cli validate
           python scripts/knowledge.py check
 
-  # ── Lint & Typecheck ──────────────────────────────────
-  lint:
+  python-quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
 
-      - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install dependencies
+      - name: Install frozen dependencies
         run: |
-          pip install uv==0.11.24
+          pip install "uv==${UV_VERSION}"
           uv sync --frozen --all-extras
 
-      - name: Canonical core Ruff gate
-        run: uv run --frozen ruff check packages/ workers/
-
-      - name: Hermes and knowledge quality gates
+      - name: Ruff and MyPy
         run: |
+          uv run --frozen ruff check packages/ workers/ scripts/config_preflight.py scripts/apply_migrations.py
           uv run --frozen ruff check packages/hermes/ packages/knowledge/ scripts/benchmark_hermes.py tests/unit/test_hermes_*.py tests/integration/test_hermes_api.py
           uv run --frozen ruff format --check packages/hermes/ packages/knowledge/ scripts/benchmark_hermes.py tests/unit/test_hermes_*.py tests/integration/test_hermes_api.py
           uv run --frozen mypy packages/hermes/ --ignore-missing-imports --follow-imports=skip
           uv run --frozen mypy packages/knowledge/ --ignore-missing-imports --follow-imports=skip
+          uv run --frozen mypy packages/ workers/ --ignore-missing-imports --explicit-package-bases
 
-      - name: Canonical core MyPy gate
-        run: uv run --frozen mypy packages/ workers/ --ignore-missing-imports --explicit-package-bases
-
-  # ── Frontend Quality ──────────────────────────────────
   frontend-quality:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '22'
+          node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install frozen frontend dependencies
         run: npm ci
 
-      - name: Frontend lint
-        run: npm run lint
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
 
-      - name: Frontend typecheck
-        run: npm run typecheck
+      - name: Frontend quality gates
+        run: |
+          npm run lint
+          npm run typecheck
+          npm run build
 
-  # ── Unit Tests ────────────────────────────────────────
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Frontend end-to-end tests
+        run: npx playwright test
+
+  go-quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: realtime
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
+
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: realtime/go.mod
+          cache-dependency-path: realtime/go.sum
+
+      - name: Vet and test
+        run: |
+          go vet ./...
+          go test ./...
+
   test:
     runs-on: ubuntu-latest
-    needs: [lint, knowledge-integrity]
+    needs: [security-boundary, knowledge-integrity, python-quality]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
 
-      - name: Setup Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install dependencies
+      - name: Install frozen dependencies
         run: |
-          pip install uv==0.11.24
+          pip install "uv==${UV_VERSION}"
           uv sync --frozen --all-extras
 
       - name: Run tests
         run: |
-          # Keep quarantined legacy imports in a separate process so native ML
-          # teardown cannot accumulate state in the canonical runtime suite.
           uv run --frozen pytest tests/contract tests/integration tests/replay tests/unit -q --timeout=60
           uv run --frozen pytest tests/test_*.py -q --timeout=60
 
-  # ── Build Docker Images ───────────────────────────────
   docker:
     runs-on: ubuntu-latest
-    needs: [test, frontend-quality]
-    if: github.ref == 'refs/heads/main'
+    needs: [test, frontend-quality, go-quality]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.9.0
 
       - name: Build orchestrator
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
         with:
           context: .
           file: ./orchestrator/Dockerfile
-          tags: quantex/orchestrator:latest
+          tags: quantex/orchestrator:${{ github.sha }}
           load: true
+          sbom: true
+          provenance: mode=max
 
       - name: Build canonical local workers
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
         with:
           context: .
           file: ./infra/workers/Dockerfile
-          tags: quantex/canonical-workers:latest
+          tags: quantex/canonical-workers:${{ github.sha }}
           load: true
+          sbom: true
+          provenance: mode=max
 
       - name: Build frontend
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
-          tags: quantex/frontend:latest
+          tags: quantex/frontend:${{ github.sha }}
           load: true
+          sbom: true
+          provenance: mode=max
 
-  # ── Notify on Failure ─────────────────────────────────
   notify:
     runs-on: ubuntu-latest
-    needs: [knowledge-integrity, lint, frontend-quality, test, docker]
+    needs: [security-boundary, knowledge-integrity, python-quality, frontend-quality, go-quality, test, docker]
     if: failure() && github.ref == 'refs/heads/main'
     steps:
-      - name: Send failure notification
+      - name: Report failure
         run: |
-          echo "::warning::QUANTEX CI/CD pipeline failed on main branch!"
+          echo "::warning::QUANTEX CI/CD pipeline failed on main branch"
           echo "Commit: ${{ github.sha }}"
           echo "URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

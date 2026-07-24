@@ -91,6 +91,7 @@ include = [
   "deployment/**/*.tf",
   "deployment/**/*.sh",
   "deployment/**/*.conf",
+  "deployment/**/*.md",
   "deployment/**/Dockerfile",
   "infra/**/*.yml",
   "infra/**/Dockerfile",
@@ -103,6 +104,10 @@ include = [
   "AGENTS.md",
   "README.md",
   "CHANGELOG.md",
+  "remediation/**/*.md",
+  "artifacts/acceptance-latest.json",
+  "artifacts/restore-drill-latest.json",
+  "artifacts/supervised-paper-flow-latest.json",
   "install.ps1",
   "wiki/ZCODE.md",
   "wiki/README.md",
@@ -464,6 +469,10 @@ owned_paths = [
   "tests/replay/**/*.py",
   "tests/unit/test_nats_runtime.py",
   "tests/unit/test_worker_config.py",
+  "scripts/replay_dlq.py",
+  "tests/unit/test_dlq_replay.py",
+  "tests/unit/test_inbox_outbox.py",
+  "workers/durability.py",
   "tests/integration/test_decision_vertical_slice.py",
   "tests/integration/test_replay_cli.py",
 ]
@@ -473,6 +482,8 @@ tests = [
   "tests/replay/**/*.py",
   "tests/unit/test_nats_runtime.py",
   "tests/unit/test_worker_config.py",
+  "tests/unit/test_dlq_replay.py",
+  "tests/unit/test_inbox_outbox.py",
   "tests/integration/test_decision_vertical_slice.py",
   "tests/integration/test_replay_cli.py",
 ]
@@ -489,10 +500,55 @@ embedding_inputs = [
   "workers/nats_runtime.py",
   "packages/replay/**/*.py",
   "scripts/replay_market.py",
+  "scripts/replay_dlq.py",
+  "workers/durability.py",
 ]
 forbidden_imports = [
   "anthropic",
   "google",
+  "openai",
+  "qdrant_client",
+  "sentence_transformers",
+]
+
+[[components]]
+id = "market-producer-runtime"
+owner = "software-engineering/market-data"
+primary_responsibility = "Publish authenticated, ordered public closed-candle events into the canonical paper boundary."
+runtime_status = "active"
+depends_on = ["orchestration-runtime"]
+entrypoints = [
+  { path = "workers/market_producer/__main__.py", kind = "worker", default = true },
+]
+authorities = [
+  { id = "market.public-ingestion", sensitive = false },
+]
+allowed_modes = ["paper_live", "replay"]
+allowed_egress = [
+  "nats://127.0.0.1:4222",
+  "wss://stream.binance.com:9443",
+]
+license = { expression = "NOASSERTION", source = "none-declared" }
+owned_paths = [
+  "workers/market_producer/**/*.py",
+  "tests/unit/test_binance_market_producer.py",
+]
+tests = [
+  "tests/unit/test_binance_market_producer.py",
+]
+documentation = [
+  "wiki/content/concepts/nats-event-system.md",
+]
+architecture = [
+  "wiki/content/decisions/canonical-local-paper-runtime-v1.md",
+]
+embedding_inputs = [
+  "workers/market_producer/**/*.py",
+]
+forbidden_imports = [
+  "anthropic",
+  "google",
+  "ollama",
   "openai",
   "qdrant_client",
   "sentence_transformers",
@@ -541,6 +597,103 @@ forbidden_imports = [
   "anthropic",
   "google",
   "ollama",
+  "openai",
+  "qdrant_client",
+  "sentence_transformers",
+]
+
+[[components]]
+id = "feature-runtime"
+owner = "software-engineering/features"
+primary_responsibility = "Build deterministic incremental features from validated market events."
+runtime_status = "active"
+depends_on = ["market-ingestion-runtime", "orchestration-runtime"]
+entrypoints = [
+  { path = "workers/features/__main__.py", kind = "worker", default = true },
+]
+authorities = [
+  { id = "features.canonical", sensitive = false },
+]
+allowed_modes = ["paper_live", "replay"]
+license = { expression = "NOASSERTION", source = "none-declared" }
+owned_paths = [
+  "workers/features/**/*.py",
+  "tests/unit/test_feature_worker_runtime.py",
+  "tests/unit/test_incremental_features.py",
+]
+tests = [
+  "tests/unit/test_feature_worker_runtime.py",
+  "tests/unit/test_incremental_features.py",
+]
+documentation = [
+  "wiki/content/concepts/incremental-candle-state.md",
+]
+architecture = [
+  "wiki/content/decisions/canonical-local-paper-runtime-v1.md",
+]
+embedding_inputs = [
+  "workers/features/**/*.py",
+]
+forbidden_imports = [
+  "anthropic",
+  "google",
+  "ollama",
+  "openai",
+  "qdrant_client",
+  "sentence_transformers",
+]
+
+[[components]]
+id = "candidate-runtime"
+owner = "software-engineering/candidate"
+primary_responsibility = "Produce schema-bound model or explicit fallback candidates without execution authority."
+runtime_status = "active"
+depends_on = ["feature-runtime", "local-ai-runtime", "orchestration-runtime"]
+entrypoints = [
+  { path = "workers/candidate/__main__.py", kind = "worker", default = true },
+]
+authorities = [
+  { id = "signals.candidate", sensitive = false },
+]
+allowed_modes = ["paper_live", "replay"]
+allowed_egress = [
+  "nats://127.0.0.1:4222",
+  "http://127.0.0.1:11434",
+  "http://host.docker.internal:11434",
+  "https://api.binance.com",
+]
+allowed_models = [
+  "qwen3:8b",
+  "phi3:3.8b",
+]
+license = { expression = "NOASSERTION", source = "none-declared" }
+owned_paths = [
+  "workers/candidate/**/*.py",
+  "tests/unit/test_candidate_market.py",
+  "tests/unit/test_candidate_ollama.py",
+  "tests/unit/test_candidate_worker_runtime.py",
+  "tests/unit/test_candidate_fallback.py",
+  "tests/unit/test_typed_candidate_producer.py",
+]
+tests = [
+  "tests/unit/test_candidate_market.py",
+  "tests/unit/test_candidate_ollama.py",
+  "tests/unit/test_candidate_worker_runtime.py",
+  "tests/unit/test_candidate_fallback.py",
+  "tests/unit/test_typed_candidate_producer.py",
+]
+documentation = [
+  "wiki/content/concepts/local-trading-ai-architecture.md",
+]
+architecture = [
+  "wiki/content/decisions/canonical-local-paper-runtime-v1.md",
+]
+embedding_inputs = [
+  "workers/candidate/**/*.py",
+]
+forbidden_imports = [
+  "anthropic",
+  "google",
   "openai",
   "qdrant_client",
   "sentence_transformers",
@@ -635,6 +788,50 @@ architecture = [
 ]
 embedding_inputs = [
   "workers/execution/**/*.py",
+]
+forbidden_imports = [
+  "anthropic",
+  "google",
+  "ollama",
+  "openai",
+  "qdrant_client",
+  "sentence_transformers",
+]
+
+[[components]]
+id = "reconciliation-runtime"
+owner = "software-engineering/reconciliation"
+primary_responsibility = "Project paper portfolio truth, bootstrap authority, reconcile fills, and control the kill switch."
+runtime_status = "active"
+depends_on = ["database-migrations", "orchestration-runtime", "paper-execution-runtime"]
+entrypoints = [
+  { path = "workers/reconciliation/__main__.py", kind = "worker", default = true },
+]
+authorities = [
+  { id = "execution.reconciliation", sensitive = true },
+  { id = "risk.kill-switch", sensitive = true },
+]
+allowed_modes = ["paper_live", "replay"]
+license = { expression = "NOASSERTION", source = "none-declared" }
+owned_paths = [
+  "workers/reconciliation/**/*.py",
+  "tests/unit/test_paper_portfolio_projection.py",
+  "tests/unit/test_reconciliation_service.py",
+  "tests/unit/test_risk_authority_bootstrap.py",
+]
+tests = [
+  "tests/unit/test_paper_portfolio_projection.py",
+  "tests/unit/test_reconciliation_service.py",
+  "tests/unit/test_risk_authority_bootstrap.py",
+]
+documentation = [
+  "wiki/content/concepts/broker-abstraction-layer.md",
+]
+architecture = [
+  "wiki/content/decisions/canonical-local-paper-runtime-v1.md",
+]
+embedding_inputs = [
+  "workers/reconciliation/**/*.py",
 ]
 forbidden_imports = [
   "anthropic",
@@ -891,10 +1088,17 @@ owned_paths = [
   "uv.lock",
   "tests/test_imports.py",
   "tests/unit/test_legacy_safety_boundaries.py",
+  "artifacts/frontend-npm-audit-fixed.json",
+  "artifacts/frontend-npm-audit.json",
+  "artifacts/pip-audit.json",
+  "artifacts/requirements-audit.txt",
+  "scripts/config_preflight.py",
+  "tests/unit/test_config_preflight.py",
 ]
 tests = [
   "tests/test_imports.py",
   "tests/unit/test_legacy_safety_boundaries.py",
+  "tests/unit/test_config_preflight.py",
 ]
 documentation = [
   "wiki/content/playbooks/local-knowledge-pipeline-operations.md",
@@ -905,6 +1109,7 @@ architecture = [
 embedding_inputs = [
   ".github/workflows/*.yml",
   "pyproject.toml",
+  "scripts/config_preflight.py",
 ]
 
 [[components]]
@@ -932,11 +1137,15 @@ owned_paths = [
   "tests/contract/test_execution_migration.py",
   "tests/contract/test_migration_runner.py",
   "tests/contract/test_runtime_durability_migration.py",
+  "tests/contract/test_database_role_contract.py",
+  "tests/unit/test_database_roles.py",
 ]
 tests = [
   "tests/contract/test_execution_migration.py",
   "tests/contract/test_migration_runner.py",
   "tests/contract/test_runtime_durability_migration.py",
+  "tests/contract/test_database_role_contract.py",
+  "tests/unit/test_database_roles.py",
 ]
 documentation = [
   "wiki/content/playbooks/local-ai-deployment-guide.md",
@@ -976,10 +1185,26 @@ owned_paths = [
   "realtime/Dockerfile",
   "frontend/Dockerfile",
   "install.ps1",
+  "deployment/**/*.md",
+  "scripts/acceptance.ps1",
+  "scripts/acceptance.py",
+  "scripts/init_local_runtime.py",
+  "scripts/volume_backup.py",
+  "artifacts/acceptance-latest.json",
+  "artifacts/restore-drill-latest.json",
+  "artifacts/supervised-paper-flow-latest.json",
+  "artifacts/workers.spdx.json",
+  "artifacts/workers-fixed.spdx.json",
   "tests/contract/test_default_compose_boundary.py",
+  "tests/unit/test_acceptance_harness.py",
+  "tests/unit/test_init_local_runtime.py",
+  "tests/unit/test_volume_backup.py",
 ]
 tests = [
   "tests/contract/test_default_compose_boundary.py",
+  "tests/unit/test_acceptance_harness.py",
+  "tests/unit/test_init_local_runtime.py",
+  "tests/unit/test_volume_backup.py",
 ]
 documentation = [
   "wiki/content/playbooks/local-ai-deployment-guide.md",
@@ -998,6 +1223,9 @@ embedding_inputs = [
   "deployment/**/*.sh",
   "deployment/**/*.conf",
   "infra/**/*.yml",
+  "deployment/**/*.md",
+  "scripts/acceptance.ps1",
+  "scripts/acceptance.py",
 ]
 
 [[components]]
@@ -1038,6 +1266,7 @@ owned_paths = [
   "AGENTS.md",
   "README.md",
   "CHANGELOG.md",
+  "remediation/**/*.md",
   "tests/__init__.py",
 ]
 tests = [
@@ -1053,6 +1282,7 @@ embedding_inputs = [
   "AGENTS.md",
   "README.md",
   "CHANGELOG.md",
+  "remediation/**/*.md",
 ]
 
 [[components]]

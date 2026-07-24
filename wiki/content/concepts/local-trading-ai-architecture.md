@@ -12,6 +12,11 @@ status: stable
 
 # Local Trading AI Architecture
 
+> **2026-07-24 runtime update:** The default Ollama candidate worker and an
+> explicit digest-bound deterministic acceptance provider are now implemented
+> and verified in [[production-remediation-2026-07-24]]. Deterministic risk
+> remains the sole authorization boundary.
+
 ## Definition
 
 Trade_agent uses one host-local Ollama runtime for model inference while deterministic Python owns data validation, risk authorization, and paper execution. Model output is untrusted candidate input. It can never approve risk, create an order directly, disable the kill switch, or substitute for the execution ledger.

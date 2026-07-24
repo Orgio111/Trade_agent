@@ -16,6 +16,11 @@ status: stable
 
 # Infrastructure Overview
 
+> **2026-07-24 runtime update:** The operational default is now the 12-service
+> canonical paper graph verified in [[production-remediation-2026-07-24]]. Any
+> smaller service count or missing producer/bootstrap statement below is the
+> historical v1 baseline, not current runtime truth.
+
 The canonical deployment is a local Docker Compose paper/replay runtime. PostgreSQL and NATS own durable trading state and transport; Ollama is host-local; the FastAPI control plane is read-only. Earlier Kubernetes, Go/Rust, cloud/vLLM, dashboard, and monitoring paths are retained only as legacy research infrastructure.
 
 ## Default topology

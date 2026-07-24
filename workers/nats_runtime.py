@@ -32,6 +32,7 @@ _CORE_STREAM_MAX_BYTES = 512 * 1024 * 1024
 _CORE_MESSAGE_MAX_BYTES = 1024 * 1024
 _CORE_DUPLICATE_WINDOW_SECONDS = 120.0
 _DRAIN_TIMEOUT_SECONDS = 5.0
+_CONSUMER_MONITOR_TIMEOUT_SECONDS = 2.0
 
 
 class NatsRuntimeError(RuntimeError):
@@ -216,11 +217,19 @@ class NatsRuntime:
     async def heartbeat_once(self) -> None:
         if self.monitor_consumer:
             try:
-                info = await self.context.consumer_info(
-                    self.settings.stream_name, self.settings.durable_name
+                info = await asyncio.wait_for(
+                    self.context.consumer_info(
+                        self.settings.stream_name, self.settings.durable_name
+                    ),
+                    timeout=_CONSUMER_MONITOR_TIMEOUT_SECONDS,
                 )
                 self.consumer_lag = int(info.num_pending) + int(info.num_ack_pending)
                 self.consumer_healthy = True
+                if (
+                    self.last_error is not None
+                    and self.last_error.startswith("consumer monitor failed:")
+                ):
+                    self.last_error = None
             except Exception as exc:
                 self.consumer_lag = None
                 self.consumer_healthy = False
@@ -244,7 +253,21 @@ class NatsRuntime:
 
     async def _heartbeat_loop(self) -> None:
         while True:
-            await self.heartbeat_once()
+            if (
+                self.state is NatsLifecycleState.CONNECTED
+                and self.last_error is not None
+                and self.last_error.startswith("lease heartbeat failed:")
+            ):
+                # A failed database write expires the persisted lease. Let the
+                # next successful heartbeat restore it instead of keeping the
+                # in-memory worker unhealthy forever.
+                self.consumer_healthy = True
+                self.last_error = None
+            try:
+                await self.heartbeat_once()
+            except Exception as exc:
+                self.consumer_healthy = False
+                self.last_error = f"lease heartbeat failed: {type(exc).__name__}"
             await asyncio.sleep(self.settings.heartbeat_interval_seconds)
 
     async def close(self) -> None:

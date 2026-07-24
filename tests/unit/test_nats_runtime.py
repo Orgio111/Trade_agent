@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -227,6 +228,61 @@ async def test_deleted_consumer_marks_runtime_unready(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_consumer_monitor_recovery_clears_stale_error(monkeypatch) -> None:
+    context = FakeJetStream()
+    connection = FakeConnection(context)
+    attempts = 0
+
+    async def fake_connect(**_kwargs):
+        return connection
+
+    async def consumer_info(_stream: str, _durable: str):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise NotFoundError(stream="QUANTEX_CORE")
+        return SimpleNamespace(num_pending=0, num_ack_pending=0)
+
+    context.consumer_info = consumer_info
+    monkeypatch.setattr("workers.nats_runtime.nats.connect", fake_connect)
+    runtime = await connect_nats_runtime(settings())
+
+    await runtime.heartbeat_once()
+    await runtime.heartbeat_once()
+
+    assert runtime.ready is True
+    assert runtime.last_error is None
+
+
+@pytest.mark.asyncio
+async def test_consumer_monitor_timeout_expires_lease_without_stalling(
+    monkeypatch,
+) -> None:
+    context = FakeJetStream()
+    connection = FakeConnection(context)
+    store = FakeLeaseStore()
+
+    async def fake_connect(**_kwargs):
+        return connection
+
+    async def consumer_info(_stream: str, _durable: str):
+        await asyncio.Future()
+
+    context.consumer_info = consumer_info
+    monkeypatch.setattr("workers.nats_runtime.nats.connect", fake_connect)
+    monkeypatch.setattr(
+        "workers.nats_runtime._CONSUMER_MONITOR_TIMEOUT_SECONDS", 0.01
+    )
+    runtime = await connect_nats_runtime(settings(), lease_store=store)
+
+    await runtime.heartbeat_once()
+
+    assert runtime.ready is False
+    assert runtime.last_error == "consumer monitor failed: TimeoutError"
+    assert store.records[-1]["lease_seconds"] == 0
+
+
+@pytest.mark.asyncio
 async def test_producer_runtime_does_not_require_consumer(monkeypatch) -> None:
     context = FakeJetStream()
     connection = FakeConnection(context)
@@ -245,6 +301,50 @@ async def test_producer_runtime_does_not_require_consumer(monkeypatch) -> None:
 
     assert runtime.ready is True
     assert runtime.consumer_lag is None
+
+
+@pytest.mark.asyncio
+async def test_producer_lease_recovers_after_transient_store_failure(
+    monkeypatch,
+) -> None:
+    context = FakeJetStream()
+    connection = FakeConnection(context)
+
+    class FlakyLeaseStore(FakeLeaseStore):
+        attempts = 0
+
+        async def heartbeat(self, **record: object) -> None:
+            self.attempts += 1
+            if self.attempts == 1:
+                raise TimeoutError
+            await super().heartbeat(**record)
+
+    async def fake_connect(**_kwargs):
+        return connection
+
+    monkeypatch.setattr("workers.nats_runtime.nats.connect", fake_connect)
+    store = FlakyLeaseStore()
+    configured = settings().model_copy(update={"heartbeat_interval_seconds": 0.01})
+    runtime = await connect_nats_runtime(
+        configured,
+        lease_store=store,
+        monitor_consumer=False,
+    )
+
+    heartbeat = asyncio.create_task(runtime._heartbeat_loop())
+    try:
+        while not store.records:
+            await asyncio.sleep(0)
+    finally:
+        heartbeat.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await heartbeat
+
+    assert store.attempts >= 2
+    assert store.records[-1]["status"] == "ready"
+    assert store.records[-1]["lease_seconds"] > 0
+    assert runtime.ready is True
+    assert runtime.last_error is None
 
 
 @pytest.mark.asyncio

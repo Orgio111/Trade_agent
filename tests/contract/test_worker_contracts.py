@@ -13,7 +13,11 @@ from packages.domain import SourceMode
 from packages.execution import MarketSnapshot
 from packages.local_ai import LocalModelRole
 from packages.risk import CandidateSignal, RiskDecision, RiskReason
-from workers.contracts import CandidateForRiskEvent, RiskDecisionEvent
+from workers.contracts import (
+    DETERMINISTIC_BASELINE_MODEL,
+    CandidateForRiskEvent,
+    RiskDecisionEvent,
+)
 
 
 NOW = datetime(2026, 7, 16, 7, 0, tzinfo=UTC)
@@ -117,6 +121,50 @@ def test_candidate_event_rejects_unapproved_model_role_mapping() -> None:
             model="mistral",
             model_digest="a" * 64,
             candidate=candidate(),
+            market=market(),
+            created_at=NOW,
+        )
+
+
+def test_deterministic_baseline_provenance_round_trips_without_model_relabeling() -> None:
+    baseline = candidate().model_copy(
+        update={"strategy_id": DETERMINISTIC_BASELINE_MODEL}
+    )
+    event = CandidateForRiskEvent(
+        trace_id=baseline.trace_id,
+        market_event_id="b7a7ee48-90f6-40cc-890f-4d6bf8e2c6b0",
+        provider="deterministic_baseline",
+        model_role=None,
+        model=DETERMINISTIC_BASELINE_MODEL,
+        model_digest="b" * 64,
+        candidate=baseline,
+        market=market(),
+        created_at=NOW,
+    )
+
+    assert CandidateForRiskEvent.model_validate_json(event.canonical_json()) == event
+    risk_event = RiskDecisionEvent.create(
+        event,
+        decision(baseline),
+        created_at=NOW,
+    )
+    assert RiskDecisionEvent.model_validate_json(risk_event.canonical_json()) == risk_event
+
+
+def test_deterministic_baseline_cannot_claim_ollama_provenance() -> None:
+    baseline = candidate().model_copy(
+        update={"strategy_id": DETERMINISTIC_BASELINE_MODEL}
+    )
+
+    with pytest.raises(ValidationError, match="baseline provenance"):
+        CandidateForRiskEvent(
+            trace_id=baseline.trace_id,
+            market_event_id="b7a7ee48-90f6-40cc-890f-4d6bf8e2c6b0",
+            provider="deterministic_baseline",
+            model_role=LocalModelRole.FAST,
+            model="phi3:3.8b",
+            model_digest="b" * 64,
+            candidate=baseline,
             market=market(),
             created_at=NOW,
         )

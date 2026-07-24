@@ -102,6 +102,12 @@ class DefaultReadinessProbe:
                         FROM instrument_constraints
                     ) AS constraints_initialized,
                     (
+                        SELECT COUNT(DISTINCT symbol) = 2
+                        FROM feature_checkpoints
+                        WHERE symbol = ANY(ARRAY['BTCUSDT', 'ETHUSDT'])
+                          AND updated_at >= NOW() - INTERVAL '2 minutes'
+                    ) AS feature_state_fresh,
+                    (
                         SELECT active
                         FROM kill_switch_state
                         WHERE account_id = $1
@@ -140,6 +146,7 @@ class DefaultReadinessProbe:
         active_policy_count = int(authority["active_policy_count"])
         portfolio_fresh = bool(authority["portfolio_fresh"])
         constraints_initialized = bool(authority["constraints_initialized"])
+        feature_state_fresh = bool(authority["feature_state_fresh"])
         kill_switch_active = authority["kill_switch_active"]
         required_workers = {
             "market-producer",
@@ -161,6 +168,7 @@ class DefaultReadinessProbe:
             active_policy_count == 1
             and portfolio_fresh
             and constraints_initialized
+            and feature_state_fresh
             and kill_switch_active is False
             and worker_leases_ready
         )
@@ -168,11 +176,15 @@ class DefaultReadinessProbe:
             f"migrations={migration_count}; active_policies={active_policy_count}; "
             f"portfolio_fresh={portfolio_fresh}; "
             f"constraints_initialized={constraints_initialized}; "
+            f"feature_state_fresh={feature_state_fresh}; "
             f"kill_switch_active={kill_switch_active}; "
             f"worker_leases_ready={worker_leases_ready}"
         )
         return (
-            DependencyStatus(healthy=worker_leases_ready, detail=detail),
+            DependencyStatus(
+                healthy=worker_leases_ready and feature_state_fresh,
+                detail=detail,
+            ),
             execution_enabled,
         )
 

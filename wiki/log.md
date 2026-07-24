@@ -2,6 +2,14 @@
 
 > Append-only timeline of every operation on the wiki. Newest at top. Reverse chronological so the current state is the first thing you read.
 
+## [2026-07-24] fix | Canonical runtime health recovery
+
+Extended [[production-remediation-2026-07-24]] after supervised runtime observation exposed two transient-failure defects. Reconciliation now persists a sanitized failure, activates the kill switch, reports unhealthy state, and retries a failed public quote cycle without container restart. Shared worker leases now recover after a one-shot PostgreSQL heartbeat write timeout instead of leaving producer health permanently degraded. Regression coverage raised the full Python result to 650 passing tests; the rebuilt canonical runtime returned HTTP 200 readiness with seven fresh leases, no stale worker errors, and reconciliation restart count zero. No live order, external credential action, volume mutation, or cloud apply occurred.
+
+## [2026-07-24] remediation | Canonical paper runtime and real-feed proof
+
+Recorded [[production-remediation-2026-07-24]] after quarantining the insecure 23-container legacy deployment and deploying the separate 12-service canonical paper runtime on new volumes. Verified migrations 001-007, least-privilege runtime roles, scoped secret files, bounded containers, truthful feature freshness, NATS fault recovery, encrypted isolated restore, and a real Binance public closed-candle lineage that produced six candidates, six deterministic risk decisions, two paper intents, two simulated fills, and zero reconciliation mismatches. Fixed JSONB checkpoint identity, accepted clock-skew evaluation, and deterministic tick rounding discovered by the live flow. The default candidate provider was restored to Ollama; no live order, broker credential, cloud apply, certificate rotation, or long-duration soak was claimed.
+
 ## [2026-07-16] audit | Production readiness and autonomy verification
 
 Recorded [[production-readiness-audit-2026-07-16]] after an adversarial repository and runtime inspection. The current verdict is NO with production readiness 15/100: the machine runs a broken 23-container legacy profile, while the clean canonical runtime starts fail-closed but lacks both required producers, authoritative bootstrap, durable portfolio/PnL projections, transactional inbox/outbox/DLQ, protective-order lifecycle, and reliable NATS reconnection. Verification included 524 passing Python tests, canonical image builds and migrations, full-repository static analysis, dependency audits, local Ollama residency probes, live service inspection, a bounded soak, and isolated NATS fault injection. No trading logic, real order, cloud inference, `.env` file, or immutable raw source changed.

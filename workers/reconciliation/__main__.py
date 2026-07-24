@@ -52,10 +52,23 @@ async def run() -> None:
             # before supporting deposits, withdrawals, or multiple account balances.
             initial_equity=Decimal("10000"),
         )
+
+        def mark_cycle_failed(exc: Exception) -> None:
+            nats_runtime.consumer_healthy = False
+            nats_runtime.last_error = (
+                f"reconciliation cycle failed: {type(exc).__name__}"
+            )
+
+        def mark_cycle_healthy() -> None:
+            nats_runtime.consumer_healthy = True
+            nats_runtime.last_error = None
+
         await run_periodic(
             service,
             account_id=settings.account_id,
             runtime_wait=nats_runtime.wait(),
+            on_cycle_failure=mark_cycle_failed,
+            on_cycle_success=mark_cycle_healthy,
         )
     finally:
         if nats_runtime is not None:

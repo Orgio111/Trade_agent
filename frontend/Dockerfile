@@ -3,7 +3,7 @@
 # ═══════════════════════════════════════════════════════════
 
 # ── Stage 1: Dependencies ───────────────────────────────
-FROM node:22-alpine AS deps
+FROM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS deps
 
 WORKDIR /app
 
@@ -15,7 +15,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --production=false
 
 # ── Stage 2: Builder ────────────────────────────────────
-FROM node:22-alpine AS builder
+FROM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS builder
 
 WORKDIR /app
 
@@ -31,7 +31,7 @@ ENV NODE_ENV=production
 RUN npm run build
 
 # ── Stage 3: Runner ─────────────────────────────────────
-FROM node:22-alpine AS runner
+FROM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS runner
 
 WORKDIR /app
 

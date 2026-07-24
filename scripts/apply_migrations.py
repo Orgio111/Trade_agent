@@ -19,6 +19,16 @@ import asyncpg  # type: ignore[import-untyped]
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / "db" / "migrations"
 _ROLE_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,62}$")
+_MAX_SECRET_FILE_BYTES = 4096
+EXPECTED_MIGRATIONS = {
+    "001_init.sql": "f9394b8f8ce87cc841dd178014833161360f944730e75f8a2510ceaec5092c97",
+    "002_execution_ledger.sql": "aa84d6e32918cc294c75d32de492ff7c0f699b66210e30dec9daa7c7e970008c",
+    "003_runtime_durability.sql": "3c1337ce0c38420f156ab94f6d93e449f5251c7c291c2b18703c69b3aac22c57",
+    "004_worker_leases.sql": "0d5d53354716b3bd0971dd72f5226d8c8f5e3e756256cf9927fe049d24249fe8",
+    "005_outbox_dispatch.sql": "5de22e493e3b93f64bca5adf60e7e00714cd6f9caf3d4616c45693a4cbe234bd",
+    "006_feature_checkpoints.sql": "bdf29b9c434720f207b9acb629ac7af591c264dab88cee007fe05c371ccee38b",
+    "007_replay_audit.sql": "9b1eb51b54244f2024dc39a14f488277e12441bcd942fc1282d2ef9f6289fd21",
+}
 
 
 def quote_role(value: str) -> str:
@@ -36,13 +46,26 @@ async def ensure_runtime_role(connection, *, role: str, password: str) -> None:
     exists = await connection.fetchval("SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=$1)", role)
     if not exists:
         await connection.execute(f"CREATE ROLE {identifier} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT")
+    await connection.execute(
+        f"ALTER ROLE {identifier} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
+        "NOINHERIT NOREPLICATION NOBYPASSRLS"
+    )
     password_literal = await connection.fetchval("SELECT quote_literal($1)", password)
     await connection.execute(f"ALTER ROLE {identifier} PASSWORD {password_literal}")
     database = quote_role(await connection.fetchval("SELECT current_database()"))
+    await connection.execute(f"REVOKE ALL PRIVILEGES ON DATABASE {database} FROM {identifier}")
     await connection.execute(f"GRANT CONNECT ON DATABASE {database} TO {identifier}")
+    await connection.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
+    await connection.execute(f"REVOKE ALL PRIVILEGES ON SCHEMA public FROM {identifier}")
     await connection.execute(f"GRANT USAGE ON SCHEMA public TO {identifier}")
+    await connection.execute(f"REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM {identifier}")
+    await connection.execute(f"REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM {identifier}")
     await connection.execute(f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {identifier}")
     await connection.execute(f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {identifier}")
+    await connection.execute(
+        f"REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER "
+        f"ON TABLE public.schema_migrations FROM {identifier}"
+    )
     await connection.execute(f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {identifier}")
     await connection.execute(f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO {identifier}")
 
@@ -53,6 +76,48 @@ def migration_files() -> tuple[Path, ...]:
 
 def checksum(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def validate_migration_contract(files: tuple[Path, ...] | None = None) -> None:
+    selected = files or migration_files()
+    names = [path.name for path in selected]
+    expected_names = list(EXPECTED_MIGRATIONS)
+    if names != expected_names:
+        raise RuntimeError(
+            f"migration set drifted: expected={expected_names}; actual={names}"
+        )
+    drifted = [
+        path.name
+        for path in selected
+        if checksum(path) != EXPECTED_MIGRATIONS[path.name]
+    ]
+    if drifted:
+        raise RuntimeError("immutable migration checksum drift: " + ",".join(drifted))
+
+
+def read_secret_file(variable: str) -> str | None:
+    path_value = os.getenv(variable)
+    if not path_value:
+        return None
+    path = Path(path_value)
+    if not path.is_absolute():
+        raise ValueError(f"{variable} must reference an absolute path")
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"{variable} must reference a regular non-symlink file")
+    if path.stat().st_size > _MAX_SECRET_FILE_BYTES:
+        raise ValueError(f"{variable} exceeds the secret size limit")
+    value = path.read_text(encoding="utf-8").strip()
+    if not value:
+        raise ValueError(f"{variable} references an empty secret")
+    return value
+
+
+def secret_from_env_or_file(name: str) -> str | None:
+    direct = os.getenv(name)
+    from_file = read_secret_file(f"{name}_FILE")
+    if direct and from_file:
+        raise ValueError(f"{name} and {name}_FILE are mutually exclusive")
+    return direct or from_file
 
 
 async def apply(
@@ -81,6 +146,7 @@ async def apply(
             "SELECT pg_advisory_lock(hashtext('quantex-schema-migrations'))"
         )
         files = migration_files()
+        validate_migration_contract(files)
         if baseline_001:
             first = next((path for path in files if path.name.startswith("001_")), None)
             if first is None:
@@ -157,7 +223,7 @@ def main() -> int:
             "host": os.getenv("PGHOST"),
             "port": os.getenv("PGPORT", "5432"),
             "user": os.getenv("PGUSER"),
-            "password": os.getenv("PGPASSWORD"),
+            "password": secret_from_env_or_file("PGPASSWORD"),
             "database": os.getenv("PGDATABASE"),
         }
         missing = [name for name, value in required.items() if value is None]
@@ -173,7 +239,7 @@ def main() -> int:
             baseline_001=args.baseline_001,
             connection_options=connection_options,
             runtime_role=os.getenv("DB_RUNTIME_USER"),
-            runtime_password=os.getenv("DB_RUNTIME_PASSWORD"),
+            runtime_password=secret_from_env_or_file("DB_RUNTIME_PASSWORD"),
         )
     )
     print("applied=" + (",".join(applied) if applied else "none"))

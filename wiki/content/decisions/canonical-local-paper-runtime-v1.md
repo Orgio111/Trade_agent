@@ -21,6 +21,12 @@ status: stable
 
 # Canonical Local Paper Runtime v1
 
+> **2026-07-24 runtime update:** [[production-remediation-2026-07-24]]
+> verifies the evolved 12-service graph, authoritative bootstrap, real public
+> producer, feature/candidate workers, transactional outbox path, reconciliation,
+> encrypted restore drill, and real-public-data paper fills. Historical nine-
+> service tables below describe the v1 starting point.
+
 ## Context
 
 The repository contained a verified deterministic paper/replay core, but the default deployment still exposed a larger pre-canonical topology with overlapping orchestration, inference, risk, and execution paths. That made the safe reference implementation optional while legacy services appeared authoritative. [[trade-project-full-integration-build-plan]] requires one default runtime with explicit ownership, durable boundaries, and no live or cloud path.

@@ -12,7 +12,7 @@ from workers.features import FeatureSnapshot
 from workers.nats_runtime import consumer_settings
 
 from .market import BinanceBookTickerClient
-from .runtime import TypedCandidateProducer
+from .runtime import CandidateProducer
 
 
 class CandidateBus(Protocol):
@@ -26,7 +26,7 @@ class CandidateRuntime:
         self,
         settings: WorkerSettings,
         bus: CandidateBus,
-        producer: TypedCandidateProducer,
+        producer: CandidateProducer,
         market: BinanceBookTickerClient,
         durability: PostgresInboxOutbox,
     ) -> None:

@@ -2,16 +2,39 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from scripts.acceptance import prepare_compose, validate_project_name
 
 
-def test_prepare_compose_removes_global_names_ports_and_reinjects_disposable_password() -> None:
+def test_prepare_compose_removes_global_names_ports_and_uses_ephemeral_state(
+    tmp_path: Path,
+) -> None:
     rendered = {
         "services": {
             "postgres": {
                 "container_name": "quantex-postgres",
                 "ports": [{"published": "5432", "target": 5432}],
                 "environment": {"POSTGRES_PASSWORD": "secret"},
+                "volumes": [
+                    {
+                        "type": "volume",
+                        "source": "postgres_data",
+                        "target": "/var/lib/postgresql/data",
+                    }
+                ],
+            },
+            "redis": {
+                "environment": {},
+                "volumes": [
+                    {"type": "volume", "source": "redis_data", "target": "/data"}
+                ],
+            },
+            "nats": {
+                "environment": {},
+                "volumes": [
+                    {"type": "volume", "source": "nats_data", "target": "/data"}
+                ],
             },
             "worker": {
                 "container_name": "quantex-worker",
@@ -25,7 +48,12 @@ def test_prepare_compose_removes_global_names_ports_and_reinjects_disposable_pas
         "networks": {"default": {"name": "quantex_default"}},
     }
 
-    isolated = prepare_compose(rendered, password="disposable-only")
+    isolated = prepare_compose(
+        rendered,
+        password="disposable-only",
+        secret_directory=tmp_path,
+        state_directory=tmp_path,
+    )
 
     assert all("container_name" not in service for service in isolated["services"].values())
     assert "ports" not in isolated["services"]["postgres"]
@@ -34,8 +62,25 @@ def test_prepare_compose_removes_global_names_ports_and_reinjects_disposable_pas
     assert isolated["services"]["worker"]["environment"]["DATABASE_URL"] == (
         "postgresql://quantex:disposable-only@postgres:5432/quantex"
     )
-    assert isolated["volumes"]["postgres_data"] == {}
+    assert isolated["services"]["postgres"]["tmpfs"] == [
+        "/var/lib/postgresql/data:rw,noexec,nosuid,size=512m"
+    ]
+    assert isolated["services"]["redis"]["tmpfs"] == [
+        "/data:rw,noexec,nosuid,size=512m,uid=999,gid=1000,mode=0770"
+    ]
+    assert isolated["services"]["nats"]["volumes"] == [
+        {
+            "type": "bind",
+            "source": str(tmp_path / "nats"),
+            "target": "/data",
+            "read_only": False,
+        }
+    ]
+    assert "volumes" not in isolated
     assert isolated["networks"]["default"] == {}
+    assert isolated["secrets"]["postgres_admin_password"]["file"].endswith(
+        "postgres_admin_password"
+    )
 
 
 def test_project_name_must_be_disposable_namespace() -> None:

@@ -2,22 +2,28 @@
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+import hashlib
+import json
+
+import pytest
 
 from packages.domain import CandlePayload, MarketEvent, SourceMode
 from workers.features.runtime import IncrementalFeatureEngine
+from workers.features.postgres import PostgresFeatureRepository
 
 
-def event(index: int, close: str) -> MarketEvent:
+def event(index: int, close: str, *, receive_offset_ms: int = 100) -> MarketEvent:
     opened = datetime(2026, 7, 15, tzinfo=UTC) + timedelta(minutes=index)
     price = Decimal(close)
+    exchange_ts = opened + timedelta(minutes=1)
     return MarketEvent.create(
         trace_id="feature-replay",
         event_type="market.candle",
         venue="binance",
         market_type="spot",
         instrument_id="BTCUSDT",
-        exchange_ts=opened + timedelta(minutes=1),
-        received_ts=opened + timedelta(minutes=1, milliseconds=100),
+        exchange_ts=exchange_ts,
+        received_ts=exchange_ts + timedelta(milliseconds=receive_offset_ms),
         source_mode=SourceMode.REPLAY,
         ingest_run_id="feature-fixture",
         sequence_start=index + 1,
@@ -88,6 +94,91 @@ def test_checkpoint_restart_accepts_last_event_redelivery_idempotently() -> None
     restored = IncrementalFeatureEngine.from_checkpoint(original.checkpoint_json())
 
     assert restored.update(source) == expected
+
+
+def test_postgres_jsonb_formatting_does_not_change_checkpoint_identity() -> None:
+    original = IncrementalFeatureEngine()
+    original.update(event(0, "100"))
+    canonical_checkpoint = original.checkpoint_json()
+    database_jsonb_text = json.dumps(
+        json.loads(canonical_checkpoint),
+        indent=2,
+        sort_keys=True,
+    )
+
+    restored = PostgresFeatureRepository._restore(
+        {
+            "checkpoint": database_jsonb_text,
+            "checkpoint_checksum": hashlib.sha256(
+                canonical_checkpoint.encode("utf-8")
+            ).hexdigest(),
+        }
+    )
+
+    assert restored.update(event(1, "101")).state_version == 2
+
+
+class _AsyncContext:
+    def __init__(self, value: object) -> None:
+        self._value = value
+
+    async def __aenter__(self) -> object:
+        return self._value
+
+    async def __aexit__(self, *_args: object) -> None:
+        return None
+
+
+class _FeatureConnection:
+    def __init__(self, checkpoint: dict[str, object]) -> None:
+        self._checkpoint = checkpoint
+
+    def transaction(self) -> _AsyncContext:
+        return _AsyncContext(self)
+
+    async def execute(self, *_args: object) -> str:
+        return "OK"
+
+    async def fetchval(self, *_args: object) -> str:
+        return "inserted"
+
+    async def fetchrow(self, *_args: object) -> dict[str, object]:
+        return self._checkpoint
+
+
+class _FeaturePool:
+    def __init__(self, connection: _FeatureConnection) -> None:
+        self._connection = connection
+
+    def acquire(self) -> _AsyncContext:
+        return _AsyncContext(self._connection)
+
+
+@pytest.mark.asyncio
+async def test_postgres_repository_uses_processing_time_after_accepted_clock_skew() -> None:
+    original = IncrementalFeatureEngine()
+    first = original.update(event(0, "100"))
+    canonical_checkpoint = original.checkpoint_json()
+    second = event(1, "101", receive_offset_ms=-20)
+    processing_time = second.exchange_ts + timedelta(milliseconds=50)
+    checkpoint = {
+        "checkpoint": json.dumps(json.loads(canonical_checkpoint), indent=2),
+        "checkpoint_checksum": hashlib.sha256(
+            canonical_checkpoint.encode("utf-8")
+        ).hexdigest(),
+        "feature_snapshot": first.model_dump(mode="json"),
+    }
+    repository = PostgresFeatureRepository(
+        _FeaturePool(_FeatureConnection(checkpoint)),  # type: ignore[arg-type]
+        stream_name="QUANTEX_CORE",
+        durable_name="feature-worker-v1",
+        clock=lambda: processing_time,
+    )
+
+    snapshot = await repository.process(second)
+
+    assert snapshot.state_version == 2
+    assert snapshot.market_data_age_seconds == Decimal("0.05")
 
 
 def test_stale_event_is_marked_unfresh() -> None:

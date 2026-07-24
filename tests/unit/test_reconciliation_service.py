@@ -134,3 +134,41 @@ async def test_periodic_runner_propagates_terminal_runtime_failure() -> None:
         )
 
     assert service.calls >= 1
+
+
+@pytest.mark.asyncio
+async def test_periodic_runner_retries_failed_cycle_and_reports_health() -> None:
+    class TerminalRuntimeError(RuntimeError):
+        pass
+
+    class FlakyService:
+        calls = 0
+
+        async def run_once(self, *, account_id: str, reconciled_at: datetime) -> None:
+            del account_id, reconciled_at
+            self.calls += 1
+            if self.calls == 1:
+                raise ValueError("upstream quote unavailable")
+
+    service = FlakyService()
+    failures: list[str] = []
+    successes: list[bool] = []
+
+    async def runtime_wait() -> None:
+        while service.calls < 2:
+            await asyncio.sleep(0)
+        raise TerminalRuntimeError("terminal transport failure")
+
+    with pytest.raises(TerminalRuntimeError):
+        await run_periodic(
+            service,
+            account_id="paper-main",
+            runtime_wait=runtime_wait(),
+            interval_seconds=0,
+            on_cycle_failure=lambda exc: failures.append(type(exc).__name__),
+            on_cycle_success=lambda: successes.append(True),
+        )
+
+    assert service.calls >= 2
+    assert failures == ["ValueError"]
+    assert successes

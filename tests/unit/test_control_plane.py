@@ -134,6 +134,7 @@ def probe_settings() -> WorkerSettings:
                 "active_policy_count": 1,
                 "portfolio_fresh": True,
                 "constraints_initialized": True,
+                "feature_state_fresh": True,
                 "kill_switch_active": False,
             },
             True,
@@ -143,6 +144,7 @@ def probe_settings() -> WorkerSettings:
                 "active_policy_count": 0,
                 "portfolio_fresh": False,
                 "constraints_initialized": False,
+                "feature_state_fresh": True,
                 "kill_switch_active": None,
             },
             False,
@@ -176,6 +178,7 @@ async def test_expired_worker_lease_makes_database_unready(monkeypatch) -> None:
             "active_policy_count": 1,
             "portfolio_fresh": True,
             "constraints_initialized": True,
+            "feature_state_fresh": True,
             "kill_switch_active": False,
         }
     )
@@ -202,6 +205,31 @@ async def test_expired_worker_lease_makes_database_unready(monkeypatch) -> None:
     assert status.healthy is False
     assert execution_enabled is False
     assert "worker_leases_ready=False" in status.detail
+
+
+@pytest.mark.asyncio
+async def test_stale_feature_state_makes_database_unready(monkeypatch) -> None:
+    connection = FakeDatabaseConnection(
+        {
+            "active_policy_count": 1,
+            "portfolio_fresh": True,
+            "constraints_initialized": True,
+            "feature_state_fresh": False,
+            "kill_switch_active": False,
+        }
+    )
+
+    async def connect(_dsn: str) -> FakeDatabaseConnection:
+        return connection
+
+    monkeypatch.setattr("packages.control_plane.probes.asyncpg.connect", connect)
+    status, execution_enabled = await DefaultReadinessProbe(
+        probe_settings()
+    )._check_database()
+
+    assert status.healthy is False
+    assert execution_enabled is False
+    assert "feature_state_fresh=False" in status.detail
 
 
 @pytest.mark.asyncio

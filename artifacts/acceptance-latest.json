@@ -75,10 +75,10 @@
       "service": "quantex-control-plane"
     }
   },
-  "finished_at": "2026-07-23T17:21:58.039778+00:00",
+  "finished_at": "2026-07-24T16:20:23.527435+00:00",
   "live_trading_enabled": false,
   "paper_trading_only": true,
   "passed": true,
-  "project": "tradeagent_acceptance_dbroles2",
-  "started_at": "2026-07-23T17:19:17.996839+00:00"
+  "project": "tradeagent_acceptance_20260724d",
+  "started_at": "2026-07-24T16:19:13.446975+00:00"
 }

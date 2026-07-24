@@ -1,0 +1,38 @@
+{
+  "completed_at": "2026-07-24T16:38:00Z",
+  "encryption": "AES-256-GCM",
+  "off_host_copy_verified": false,
+  "off_host_blocker": "No authorized immutable storage or KMS destination is configured.",
+  "postgres": {
+    "source_volume": "trade_agent_postgres_data",
+    "ciphertext_sha256": "44f1037007c60dd27d58bf656d2b0d25c1945c537cf46a4321734d8feb457b07",
+    "key_id": "c1e56f7b7b832df2",
+    "restore_volume": "trade_agent_restore_20260724_postgres_v2",
+    "network": "none",
+    "database": "quantex",
+    "table_count": 6,
+    "schema_migrations_present": false,
+    "kill_switch_state_present": false,
+    "login_roles": 1,
+    "passed": true
+  },
+  "nats": {
+    "source_volume": "trade_agent_nats_data",
+    "ciphertext_sha256": "2e0d77208be347d5a0b84649a76057717744b507c26c1d7684d49621c028458d",
+    "key_id": "b02fb358cbecd9ae",
+    "restore_volume": "trade_agent_restore_20260724_nats_v2",
+    "network": "none",
+    "streams": 1,
+    "consumers": 0,
+    "messages": 0,
+    "bytes": 0,
+    "passed": true
+  },
+  "retained_diagnostic_volumes": [
+    "trade_agent_restore_20260724_postgres",
+    "trade_agent_restore_20260724_nats"
+  ],
+  "rpo_seconds": null,
+  "rto_seconds": null,
+  "passed": true
+}

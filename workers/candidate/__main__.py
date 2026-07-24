@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
+import hashlib
+from pathlib import Path
 
 import asyncpg  # type: ignore[import-untyped]
 
@@ -12,8 +14,9 @@ from workers.durability import PostgresInboxOutbox
 from workers.nats_runtime import PostgresWorkerLeaseStore, connect_nats_runtime
 
 from .market import BinanceBookTickerClient
+from .fallback import DeterministicBaselineCandidateProducer
 from .ollama import OllamaCandidateClient
-from .runtime import TypedCandidateProducer
+from .runtime import CandidateProducer, TypedCandidateProducer
 from .service import CandidateRuntime
 
 
@@ -38,9 +41,16 @@ async def run() -> None:
             stream_name=settings.stream_name,
             durable_name=settings.durable_name,
         )
-        producer = TypedCandidateProducer(
-            ollama, model_digest=await ollama.model_digest()
-        )
+        producer: CandidateProducer
+        if settings.candidate_provider == "deterministic_baseline":
+            fallback_path = Path(__file__).with_name("fallback.py")
+            producer = DeterministicBaselineCandidateProducer(
+                artifact_digest=hashlib.sha256(fallback_path.read_bytes()).hexdigest()
+            )
+        else:
+            producer = TypedCandidateProducer(
+                ollama, model_digest=await ollama.model_digest()
+            )
         worker = CandidateRuntime(
             settings, nats_runtime.bus, producer, market, durability
         )
