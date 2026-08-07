@@ -37,6 +37,7 @@ allowed_models = [
   "moondream",
   "mistral",
   "nomic-embed-text",
+  "alpha-rf-canonical-features",
 ]
 allowed_modes = ["offline", "paper_live", "replay", "research"]
 
@@ -77,6 +78,7 @@ include = [
   "frontend/tsconfig.json",
   "strategies/**/*.json",
   "scripts/**/*.py",
+  "scripts/**/*.ps1",
   "Trade_agent/**/*.py",
   "tests/**/*.py",
   "*.py",
@@ -104,10 +106,12 @@ include = [
   "AGENTS.md",
   "README.md",
   "CHANGELOG.md",
+  "audit/**/*.md",
   "remediation/**/*.md",
   "artifacts/acceptance-latest.json",
   "artifacts/restore-drill-latest.json",
   "artifacts/supervised-paper-flow-latest.json",
+  "artifacts/24x7-certification-latest.json",
   "install.ps1",
   "wiki/ZCODE.md",
   "wiki/README.md",
@@ -665,6 +669,7 @@ allowed_egress = [
 allowed_models = [
   "qwen3:8b",
   "phi3:3.8b",
+  "alpha-rf-canonical-features",
 ]
 license = { expression = "NOASSERTION", source = "none-declared" }
 owned_paths = [
@@ -1229,6 +1234,106 @@ embedding_inputs = [
 ]
 
 [[components]]
+id = "reliability-certification"
+owner = "software-engineering/sre"
+primary_responsibility = "Certify the canonical paper runtime through resumable chaos, soak, recovery, and promotion gates."
+runtime_status = "active"
+depends_on = ["deployment-infrastructure", "monitoring", "database-migrations"]
+entrypoints = [
+  { path = "scripts/certify_24x7.py", kind = "cli", default = true },
+  { path = "scripts/run_certification.ps1", kind = "cli", default = false },
+]
+authorities = [
+  { id = "runtime.fault-injection", sensitive = true },
+  { id = "runtime.promotion-evidence", sensitive = true },
+]
+allowed_modes = ["paper_live"]
+allowed_egress = [
+  "http://127.0.0.1:8001",
+  "https://*",
+]
+license = { expression = "NOASSERTION", source = "none-declared" }
+owned_paths = [
+  "packages/certification/**/*.py",
+  "scripts/certify_24x7.py",
+  "scripts/run_certification.ps1",
+  "scripts/install_certification_task.ps1",
+  "tests/unit/test_certification_*.py",
+  "artifacts/24x7-certification-latest.json",
+]
+tests = [
+  "tests/unit/test_certification_*.py",
+]
+documentation = [
+  "wiki/content/playbooks/24x7-paper-certification.md",
+]
+architecture = [
+  "wiki/content/overviews/production-remediation-2026-07-24.md",
+]
+embedding_inputs = [
+  "packages/certification/**/*.py",
+  "scripts/certify_24x7.py",
+  "scripts/run_certification.ps1",
+  "scripts/install_certification_task.ps1",
+]
+
+[[components]]
+id = "alpha-certification"
+owner = "quant-research/model-risk"
+primary_responsibility = "Seal historical datasets, run purged canonical OOS replay, stage temporary candidates, certify paper shadow, and issue signed promotion evidence."
+runtime_status = "active"
+depends_on = [
+  "deterministic-paper-core",
+  "feature-runtime",
+  "candidate-runtime",
+  "reliability-certification",
+]
+entrypoints = [
+  { path = "scripts/certify_alpha.py", kind = "cli", default = true },
+]
+authorities = [
+  { id = "data.historical-snapshot", sensitive = false },
+  { id = "model.alpha-promotion", sensitive = true },
+]
+allowed_modes = ["offline", "replay", "paper_live"]
+allowed_egress = [
+  "https://api.binance.com",
+  "http://127.0.0.1:8001",
+  "nats://127.0.0.1:4222",
+  "postgresql://127.0.0.1:5432",
+]
+allowed_models = ["alpha-rf-canonical-features"]
+license = { expression = "NOASSERTION", source = "none-declared" }
+owned_paths = [
+  "packages/alpha_certification/**/*.py",
+  "scripts/certify_alpha.py",
+  "tests/unit/test_alpha_certification_*.py",
+  "tests/integration/test_alpha_certification_pipeline.py",
+]
+tests = [
+  "tests/unit/test_alpha_certification_*.py",
+  "tests/integration/test_alpha_certification_pipeline.py",
+]
+documentation = [
+  "wiki/content/playbooks/alpha-certification-pipeline.md",
+]
+architecture = [
+  "wiki/content/decisions/deterministic-paper-core-v1.md",
+  "wiki/content/overviews/production-remediation-2026-07-24.md",
+]
+embedding_inputs = [
+  "packages/alpha_certification/**/*.py",
+  "scripts/certify_alpha.py",
+]
+forbidden_imports = [
+  "anthropic",
+  "google",
+  "openai",
+  "qdrant_client",
+  "sentence_transformers",
+]
+
+[[components]]
 id = "monitoring"
 owner = "software-engineering/observability"
 primary_responsibility = "Define local health, alerting, and telemetry views."
@@ -1266,6 +1371,7 @@ owned_paths = [
   "AGENTS.md",
   "README.md",
   "CHANGELOG.md",
+  "audit/**/*.md",
   "remediation/**/*.md",
   "tests/__init__.py",
 ]
@@ -1282,6 +1388,7 @@ embedding_inputs = [
   "AGENTS.md",
   "README.md",
   "CHANGELOG.md",
+  "audit/**/*.md",
   "remediation/**/*.md",
 ]
 

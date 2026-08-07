@@ -317,6 +317,13 @@ services:
       ACCOUNT_ID: ${PAPER_ACCOUNT_ID:-paper-main}
       NATS_STREAM: QUANTEX_CORE
       CANDIDATE_PROVIDER: ${CANDIDATE_PROVIDER:-ollama}
+      ALPHA_CANDIDATE_ARTIFACT: ${ALPHA_CANDIDATE_ARTIFACT:-}
+      ALPHA_CANDIDATE_SHA256: ${ALPHA_CANDIDATE_SHA256:-}
+    volumes:
+      - type: bind
+        source: ${ALPHA_CANDIDATE_DIRECTORY:-./.local/alpha-certification/disabled}
+        target: /run/alpha-candidate
+        read_only: true
     secrets:
       - source: db_runtime_password
         mode: 0444

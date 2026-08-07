@@ -6,16 +6,19 @@ Weight in Go orchestrator: 0.15.
 Data pipeline:
   1. Primary: Binance OHLCV via ccxt (async, non-blocking)
   2. Fallback: yfinance daily bars
-  3. XGBoost auto-train on accumulated data
+  3. Explicit research-only XGBoost candidate training; never auto-activated
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 import time
 from pathlib import Path
+import shutil
+import tempfile
 
 import numpy as np
 
@@ -26,6 +29,7 @@ logger = logging.getLogger(__name__)
 # ── .env auto-load ─────────────────────────────────────
 try:
     from dotenv import load_dotenv
+
     _project_root = Path(__file__).resolve().parents[2]
     _env_file = _project_root / ".env"
     if _env_file.exists():
@@ -38,6 +42,7 @@ except ImportError:
 def _has_ccxt() -> bool:
     try:
         import ccxt  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -46,6 +51,7 @@ def _has_ccxt() -> bool:
 def _has_yfinance() -> bool:
     try:
         import yfinance  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -54,6 +60,7 @@ def _has_yfinance() -> bool:
 def _has_xgboost() -> bool:
     try:
         import xgboost  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -62,6 +69,7 @@ def _has_xgboost() -> bool:
 def _has_joblib() -> bool:
     try:
         import joblib  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -82,8 +90,8 @@ class FreqAIBrain(BaseBrain):
 
     Features:
       - Auto-fetches OHLCV from Binance via ccxt (non-blocking async)
-      - Auto-trains XGBoost model from historical data if enough bars available
-      - Persists trained model to disk for reuse across restarts
+      - Keeps online training disabled; certification owns model promotion
+      - Can stage an explicit unvalidated research candidate outside models/
       - Retry logic with exponential backoff on data fetch failures
     """
 
@@ -100,9 +108,22 @@ class FreqAIBrain(BaseBrain):
             str(Path(__file__).resolve().parents[2] / "models" / "freqai"),
         )
         self._model_path = os.getenv("FREQAI_MODEL_PATH", "")
+        self._candidate_dir = os.getenv(
+            "FREQAI_CANDIDATE_DIR",
+            str(
+                Path(__file__).resolve().parents[2]
+                / ".local"
+                / "alpha-certification"
+                / "legacy-candidates"
+                / "freqai"
+            ),
+        )
+        self._last_candidate_path: str | None = None
         self._binance_fetched: dict[str, float] = {}  # symbol → last fetch timestamp
         self._fetch_retries: dict[str, int] = {}  # symbol → consecutive failures
-        self._data_source: str = "none"  # explicit flag: "binance" | "yfinance" | "none"
+        self._data_source: str = (
+            "none"  # explicit flag: "binance" | "yfinance" | "none"
+        )
         self._exchange = None  # cached ccxt.binance instance
 
     async def warmup(self) -> None:
@@ -115,6 +136,7 @@ class FreqAIBrain(BaseBrain):
         if self._model_path and os.path.exists(self._model_path):
             try:
                 import joblib
+
                 self._model = joblib.load(self._model_path)
                 logger.info("[freqai] Loaded XGBoost model from %s", self._model_path)
                 return
@@ -127,6 +149,7 @@ class FreqAIBrain(BaseBrain):
         if model_file.exists():
             try:
                 import joblib
+
                 self._model = joblib.load(str(model_file))
                 logger.info("[freqai] Loaded cached XGBoost model from %s", model_file)
             except Exception as e:
@@ -203,9 +226,8 @@ class FreqAIBrain(BaseBrain):
                 model_used = True
             except Exception as e:
                 logger.warning("[freqai] Model prediction failed: %s", e)
-        elif len(self._ohlcv_buffer) >= 100 and _XGBOOST_AVAILABLE:
-            # Auto-train XGBoost if we have enough data
-            self._auto_train(closes, highs, lows, volumes)
+        # Online fitting is deliberately disabled. New models must be trained
+        # and promoted through the offline alpha-certification pipeline.
 
         return BrainSignal(
             brain_id=self.brain_id,
@@ -258,30 +280,43 @@ class FreqAIBrain(BaseBrain):
                 if ohlcv and len(ohlcv) >= 30:
                     self._ohlcv_buffer.clear()
                     for row in ohlcv:
-                        self._ohlcv_buffer.append({
-                            "timestamp": row[0],
-                            "open": row[1],
-                            "high": row[2],
-                            "low": row[3],
-                            "close": row[4],
-                            "volume": row[5],
-                        })
+                        self._ohlcv_buffer.append(
+                            {
+                                "timestamp": row[0],
+                                "open": row[1],
+                                "high": row[2],
+                                "low": row[3],
+                                "close": row[4],
+                                "volume": row[5],
+                            }
+                        )
                     self._binance_fetched[symbol] = now
                     self._fetch_retries[symbol] = 0  # Reset on success
                     self._data_source = "binance"
-                    logger.info("[freqai] Fetched %d OHLCV bars for %s from Binance",
-                                len(ohlcv), symbol)
+                    logger.info(
+                        "[freqai] Fetched %d OHLCV bars for %s from Binance",
+                        len(ohlcv),
+                        symbol,
+                    )
                     return
-                logger.warning("[freqai] Binance returned insufficient data (%d bars)",
-                               len(ohlcv) if ohlcv else 0)
+                logger.warning(
+                    "[freqai] Binance returned insufficient data (%d bars)",
+                    len(ohlcv) if ohlcv else 0,
+                )
             except asyncio.TimeoutError:
                 self._fetch_retries[symbol] = retries + 1
-                logger.warning("[freqai] Binance fetch timed out for %s (retries=%d)",
-                               symbol, self._fetch_retries[symbol])
+                logger.warning(
+                    "[freqai] Binance fetch timed out for %s (retries=%d)",
+                    symbol,
+                    self._fetch_retries[symbol],
+                )
             except Exception as e:
                 self._fetch_retries[symbol] = retries + 1
-                logger.warning("[freqai] Binance fetch failed: %s (retries=%d)",
-                               e, self._fetch_retries[symbol])
+                logger.warning(
+                    "[freqai] Binance fetch failed: %s (retries=%d)",
+                    e,
+                    self._fetch_retries[symbol],
+                )
         else:
             logger.debug("[freqai] ccxt not installed, skipping Binance")
 
@@ -291,6 +326,7 @@ class FreqAIBrain(BaseBrain):
     def _fetch_binance_ohlcv(self, symbol: str) -> list[list]:
         """Synchronous Binance OHLCV fetch via ccxt (called in thread pool)."""
         import ccxt
+
         if self._exchange is None:
             self._exchange = ccxt.binance({"enableRateLimit": True})
         ccxt_symbol = symbol.replace("/", "/")
@@ -314,25 +350,30 @@ class FreqAIBrain(BaseBrain):
             )
 
             if hist is None or hist.empty or len(hist) < 30:
-                logger.warning("[freqai] yfinance returned insufficient data for %s", symbol)
+                logger.warning(
+                    "[freqai] yfinance returned insufficient data for %s", symbol
+                )
                 return
 
             # Convert DataFrame rows to internal dict format
             self._ohlcv_buffer.clear()
             for idx, row in hist.iterrows():
-                self._ohlcv_buffer.append({
-                    "timestamp": int(idx.timestamp() * 1000),
-                    "open": float(row["Open"]),
-                    "high": float(row["High"]),
-                    "low": float(row["Low"]),
-                    "close": float(row["Close"]),
-                    "volume": float(row["Volume"]),
-                })
+                self._ohlcv_buffer.append(
+                    {
+                        "timestamp": int(idx.timestamp() * 1000),
+                        "open": float(row["Open"]),
+                        "high": float(row["High"]),
+                        "low": float(row["Low"]),
+                        "close": float(row["Close"]),
+                        "volume": float(row["Volume"]),
+                    }
+                )
             self._binance_fetched[symbol] = now
             self._fetch_retries[symbol] = 0
             self._data_source = "yfinance"
-            logger.info("[freqai] Fetched %d daily bars for %s from yfinance",
-                        len(hist), symbol)
+            logger.info(
+                "[freqai] Fetched %d daily bars for %s from yfinance", len(hist), symbol
+            )
         except asyncio.TimeoutError:
             logger.warning("[freqai] yfinance fetch timed out for %s", symbol)
         except ImportError:
@@ -354,9 +395,14 @@ class FreqAIBrain(BaseBrain):
         tk = yf.Ticker(yf_ticker)
         return tk.history(period="200d", interval="1d", auto_adjust=True)
 
-    def _auto_train(self, closes: np.ndarray, highs: np.ndarray,
-                    lows: np.ndarray, volumes: np.ndarray) -> None:
-        """Auto-train XGBoost on accumulated OHLCV data."""
+    def _auto_train(
+        self,
+        closes: np.ndarray,
+        highs: np.ndarray,
+        lows: np.ndarray,
+        volumes: np.ndarray,
+    ) -> None:
+        """Train an unvalidated candidate without changing the active model."""
         if not _XGBOOST_AVAILABLE or not _JOBLIB_AVAILABLE:
             logger.debug("[freqai] xgboost/joblib not installed, skipping auto-train")
             return
@@ -375,11 +421,11 @@ class FreqAIBrain(BaseBrain):
 
             X, y = [], []
             for i in range(50, n - 1):
-                c = closes[:i + 1]
-                h = highs[:i + 1]
-                l = lows[:i + 1]
-                v = volumes[:i + 1]
-                feat = self._extract_features(c, h, l, v)
+                c = closes[: i + 1]
+                h = highs[: i + 1]
+                low_window = lows[: i + 1]
+                volume_window = volumes[: i + 1]
+                feat = self._extract_features(c, h, low_window, volume_window)
                 # Label: next bar return direction (1=up, 0=down)
                 next_return = (closes[i + 1] - closes[i]) / closes[i]
                 label = 1.0 if next_return > 0 else 0.0
@@ -415,27 +461,48 @@ class FreqAIBrain(BaseBrain):
             X_test, y_test = X[split:], y[split:]
             if len(X_test) > 0:
                 accuracy = float(np.mean(model.predict(X_test) == y_test))
-                logger.info("[freqai] XGBoost accuracy on holdout: %.2f%%", accuracy * 100)
+                logger.info(
+                    "[freqai] XGBoost accuracy on holdout: %.2f%%", accuracy * 100
+                )
 
-            # Persist model with backup
-            model_dir = Path(self._model_dir)
-            model_dir.mkdir(parents=True, exist_ok=True)
-            model_file = model_dir / "xgboost_freqai.joblib"
-
-            # Backup previous model
-            if model_file.exists():
-                backup = model_dir / f"xgboost_freqai_backup_{int(time.time())}.joblib"
-                try:
-                    import shutil
-                    shutil.copy2(str(model_file), str(backup))
-                except Exception:
-                    pass
-
-            joblib.dump(model, str(model_file))
-
-            self._model = model
-            logger.info("[freqai] Auto-trained XGBoost on %d samples (pos_ratio=%.2f), saved to %s",
-                        len(X), n_pos / len(y), model_file)
+            candidate_root = Path(self._candidate_dir).resolve()
+            repository_models = (
+                Path(__file__).resolve().parents[2] / "models"
+            ).resolve()
+            if (
+                candidate_root == repository_models
+                or repository_models in candidate_root.parents
+            ):
+                raise ValueError(
+                    "FreqAI candidate training cannot target active models"
+                )
+            candidate_root.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(
+                prefix="freqai-candidate-",
+                dir=str(candidate_root),
+            ) as temporary:
+                temporary_path = Path(temporary) / "candidate.joblib"
+                joblib.dump(model, temporary_path, compress=3)
+                digest = hashlib.sha256(temporary_path.read_bytes()).hexdigest()
+                destination = candidate_root / digest / "candidate.joblib"
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                if destination.exists():
+                    if hashlib.sha256(destination.read_bytes()).hexdigest() != digest:
+                        raise FileExistsError("FreqAI immutable candidate collision")
+                else:
+                    with (
+                        temporary_path.open("rb") as source,
+                        destination.open("xb") as target,
+                    ):
+                        shutil.copyfileobj(source, target, length=1024 * 1024)
+            self._last_candidate_path = str(destination)
+            logger.info(
+                "[freqai] Trained unvalidated candidate on %d samples "
+                "(pos_ratio=%.2f), staged digest=%s; active model unchanged",
+                len(X),
+                n_pos / len(y),
+                digest,
+            )
         except Exception as e:
             logger.warning("[freqai] Auto-train failed: %s", e)
 
@@ -443,10 +510,10 @@ class FreqAIBrain(BaseBrain):
         """Push a new OHLCV bar into the buffer."""
         self._ohlcv_buffer.append(bar)
         if len(self._ohlcv_buffer) > self._max_bars:
-            self._ohlcv_buffer = self._ohlcv_buffer[-self._max_bars:]
+            self._ohlcv_buffer = self._ohlcv_buffer[-self._max_bars :]
 
     def _compute_rsi(self, closes: np.ndarray, period: int = 14) -> float:
-        deltas = np.diff(closes[-period - 1:])
+        deltas = np.diff(closes[-period - 1 :])
         gains = np.where(deltas > 0, deltas, 0)
         losses = np.where(deltas < 0, -deltas, 0)
         avg_gain = float(np.mean(gains)) if len(gains) > 0 else 0.0

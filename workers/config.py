@@ -9,7 +9,14 @@ from typing import Literal, cast
 from urllib.parse import quote
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 
 from packages.domain import SourceMode
 from packages.local_ai import LOCAL_MODEL_BY_ROLE, normalize_local_http_url
@@ -103,7 +110,38 @@ class WorkerSettings(BaseModel):
     heartbeat_interval_seconds: float = Field(default=5.0, ge=1, le=60)
     lease_ttl_seconds: float = Field(default=15.0, ge=2, le=180)
     max_consumer_lag: int = Field(default=64, ge=1, le=1_000_000)
-    candidate_provider: Literal["ollama", "deterministic_baseline"] = "ollama"
+    candidate_provider: Literal[
+        "ollama",
+        "deterministic_baseline",
+        "alpha_shadow",
+    ] = "ollama"
+    candidate_artifact_path: Path | None = None
+    candidate_artifact_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+
+    @model_validator(mode="after")
+    def bind_alpha_shadow_artifact(self) -> WorkerSettings:
+        configured = (
+            self.candidate_artifact_path is not None
+            or self.candidate_artifact_sha256 is not None
+        )
+        if self.candidate_provider == "alpha_shadow":
+            if (
+                self.candidate_artifact_path is None
+                or self.candidate_artifact_sha256 is None
+            ):
+                raise ValueError(
+                    "alpha_shadow requires candidate artifact path and SHA-256"
+                )
+            if not self.candidate_artifact_path.is_absolute():
+                raise ValueError("candidate artifact path must be absolute")
+        elif configured:
+            raise ValueError(
+                "candidate artifact settings are reserved for alpha_shadow"
+            )
+        return self
 
     @field_validator("lease_ttl_seconds")
     @classmethod
@@ -163,9 +201,7 @@ class WorkerSettings(BaseModel):
             mode=SourceMode(os.getenv("RUNTIME_MODE", "paper_live")),
             nats_url=os.getenv("NATS_URL", "nats://127.0.0.1:4222"),
             database_url=SecretStr(database_url),
-            ollama_base_url=os.getenv(
-                "OLLAMA_BASE_URL", "http://127.0.0.1:11434"
-            ),
+            ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
             account_id=os.getenv("ACCOUNT_ID", "paper-main"),
             stream_name=os.getenv("NATS_STREAM", "QUANTEX_CORE"),
             durable_name=durable_name,
@@ -177,8 +213,22 @@ class WorkerSettings(BaseModel):
             lease_ttl_seconds=float(os.getenv("WORKER_LEASE_TTL_SECONDS", "15")),
             max_consumer_lag=int(os.getenv("NATS_MAX_CONSUMER_LAG", "64")),
             candidate_provider=cast(
-                Literal["ollama", "deterministic_baseline"],
+                Literal[
+                    "ollama",
+                    "deterministic_baseline",
+                    "alpha_shadow",
+                ],
                 os.getenv("CANDIDATE_PROVIDER", "ollama"),
+            ),
+            candidate_artifact_path=(
+                Path(value)
+                if (value := os.getenv("ALPHA_CANDIDATE_ARTIFACT", "").strip())
+                else None
+            ),
+            candidate_artifact_sha256=(
+                value
+                if (value := os.getenv("ALPHA_CANDIDATE_SHA256", "").strip())
+                else None
             ),
         )
 
@@ -195,4 +245,5 @@ class WorkerSettings(BaseModel):
             "durable": self.durable_name,
             "approved_models": tuple(sorted(set(LOCAL_MODEL_BY_ROLE.values()))),
             "candidate_provider": self.candidate_provider,
+            "candidate_artifact_sha256": self.candidate_artifact_sha256,
         }

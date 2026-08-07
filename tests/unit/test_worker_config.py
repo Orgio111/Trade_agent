@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -70,7 +71,34 @@ def test_worker_settings_reject_unknown_candidate_provider() -> None:
         settings(candidate_provider="force_trade")
 
 
-def test_from_env_never_loads_or_mutates_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_alpha_shadow_requires_an_absolute_digest_bound_artifact() -> None:
+    artifact_path = (
+        Path("C:/run/alpha-candidate/candidate.joblib")
+        if os.name == "nt"
+        else Path("/run/alpha-candidate/candidate.joblib")
+    )
+    configured = settings(
+        candidate_provider="alpha_shadow",
+        candidate_artifact_path=artifact_path,
+        candidate_artifact_sha256="a" * 64,
+    )
+    assert configured.candidate_provider == "alpha_shadow"
+    assert configured.candidate_artifact_sha256 == "a" * 64
+
+    with pytest.raises(ValidationError, match="requires candidate artifact"):
+        settings(candidate_provider="alpha_shadow")
+
+    with pytest.raises(ValidationError, match="reserved for alpha_shadow"):
+        settings(
+            candidate_provider="ollama",
+            candidate_artifact_path=artifact_path,
+            candidate_artifact_sha256="a" * 64,
+        )
+
+
+def test_from_env_never_loads_or_mutates_dotenv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv(
         "DATABASE_URL", "postgresql://quantex:secret@postgres:5432/quantex"
     )

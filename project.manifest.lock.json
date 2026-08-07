@@ -412,6 +412,21 @@
     },
     {
       "architecture": [
+        "wiki/content/overviews/production-remediation-2026-07-24.md"
+      ],
+      "documentation": [
+        "wiki/content/playbooks/24x7-paper-certification.md"
+      ],
+      "id": "reliability-certification",
+      "owner": "software-engineering/sre",
+      "primary_responsibility": "Certify the canonical paper runtime through resumable chaos, soak, recovery, and promotion gates.",
+      "tests": [
+        "tests/unit/test_certification_*.py"
+      ],
+      "upstream_references": []
+    },
+    {
+      "architecture": [
         "wiki/content/decisions/canonical-local-paper-runtime-v1.md",
         "wiki/content/decisions/deterministic-paper-core-v1.md"
       ],
@@ -436,11 +451,11 @@
       "sha256": "310f4e54106bded559d967e018035503dc72b0b35e93776fdd5bbe41a227df79"
     },
     {
-      "bytes": 7354,
+      "bytes": 7378,
       "component": "ci-governance",
       "owner": "software-engineering/ci",
       "path": ".github/workflows/ci.yml",
-      "sha256": "eb2324335f855f8357c868b49389820069d2ef40ce83ab017d37e454a8278af9"
+      "sha256": "6c98a0feda2f0db3859ecb1a126630a56b93dc37427fa5170279de5e8c783888"
     },
     {
       "bytes": 1229,
@@ -483,6 +498,13 @@
       "owner": "software-engineering/orchestration-legacy",
       "path": "Trade_agent/risk.py",
       "sha256": "f27918da93a19b57c1ebdbbec8f2f897577f42016c271d33c6d865952d1b9d87"
+    },
+    {
+      "bytes": 201,
+      "component": "reliability-certification",
+      "owner": "software-engineering/sre",
+      "path": "artifacts/24x7-certification-latest.json",
+      "sha256": "6e949439f72aa15caeb1420d1f8bba7d613e572d449e2990d161036de6907212"
     },
     {
       "bytes": 2509,
@@ -546,6 +568,181 @@
       "owner": "software-engineering/deployment",
       "path": "artifacts/workers.spdx.json",
       "sha256": "51de37c2c9c9221c78e90e6396f14d4c8eb157dc66ed3fffbaae106921a8d16d"
+    },
+    {
+      "bytes": 4908,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/00-executive-summary.md",
+      "sha256": "be495e5fe499928f7752caec4d4cdebe9b1f061908e92595f90184cd87817e10"
+    },
+    {
+      "bytes": 3691,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/01-project-inventory.md",
+      "sha256": "34912e945364ecdf71572bb1dfcf0449329ba182dea592837061f41f70530087"
+    },
+    {
+      "bytes": 5735,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/02-architecture.md",
+      "sha256": "842552f5b5035ac7f3971eee823fb4609c42e73382e493c0d72af5b9a06289bb"
+    },
+    {
+      "bytes": 5824,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/03-codebase-audit.md",
+      "sha256": "fa59cab21e192f31b86fdd8967fcddc08b2243b7444e035d814715f732cb6b5e"
+    },
+    {
+      "bytes": 6924,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/04-docker-runtime-audit.md",
+      "sha256": "b2b9a4978870c44550fda53ecb192eb5a36eabd334e262bc5bf0a48c5292f7bf"
+    },
+    {
+      "bytes": 3855,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/05-database-audit.md",
+      "sha256": "49028da699dc0ed38fd07311c0ca1db2b0540e8af1f74abccbc55c24693ed8f2"
+    },
+    {
+      "bytes": 3882,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/06-secret-config-audit.md",
+      "sha256": "b226e07db874b448c0ef6d8c8321456b8fafeb6653968bcb0e86a5dcd594649a"
+    },
+    {
+      "bytes": 7196,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/07-security-audit.md",
+      "sha256": "f73980233fd7892f6723a575f50bd614b720bad87776f1c360226320f5ca94bd"
+    },
+    {
+      "bytes": 4244,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/08-api-integration-audit.md",
+      "sha256": "6ce36686c0f6b571bc20e2421c5a0c9e9bf1ccf25fb68ed2a47bf154f8584fa4"
+    },
+    {
+      "bytes": 5516,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/09-real-vs-mock-data.md",
+      "sha256": "eb33c0b8c7bd0dd4a0198f85b63afa5c9e92cb46ff56bed556b1ba45ac7ce682"
+    },
+    {
+      "bytes": 3319,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/10-ai-agent-model-audit.md",
+      "sha256": "b353a2c2c6cd8d935f40b32be77ea6fb7421428af9ea53ef308702856dd7e8fc"
+    },
+    {
+      "bytes": 4299,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/11-testing-quality-audit.md",
+      "sha256": "04f8f0cf8e25f417e65da8042d176f32cd9c76666846bb3af97486049e52eb74"
+    },
+    {
+      "bytes": 3182,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/12-observability-audit.md",
+      "sha256": "e5d206fcf2bd69fe33d07ad4ee464a5e174a32407cd18aa40b295ab88080a17e"
+    },
+    {
+      "bytes": 2242,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/13-performance-audit.md",
+      "sha256": "9413244e79d5d507b0554f57a9d68db1df4f5dc8cfda3ce218dca32badc50bed"
+    },
+    {
+      "bytes": 2808,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/14-reliability-24x7-audit.md",
+      "sha256": "3b5e183960fe49317405479791530efea4d23720615f75f2c3d4238870e028f7"
+    },
+    {
+      "bytes": 3081,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/15-production-readiness.md",
+      "sha256": "c9f44ba560cc151b727d4a8cac3c7ba14d4d3553b2b36b9ff757c50dbd04bd42"
+    },
+    {
+      "bytes": 8365,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/16-remediation-backlog.md",
+      "sha256": "1d64a1d83a5587c91f335f5bac73259cc19395d0fdf3bb2f2caa3dc9463b62be"
+    },
+    {
+      "bytes": 4410,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/17-validation-commands.md",
+      "sha256": "887a8dfe46fbc80890151c01d3da036b489290d74217cc9534e16fe42f423e47"
+    },
+    {
+      "bytes": 5661,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/18-container-inventory.md",
+      "sha256": "7d867b65c5368237982b66838724d01b098b3fd9316a46bfa2ffab0b828227bc"
+    },
+    {
+      "bytes": 7439,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/19-environment-variable-matrix.md",
+      "sha256": "1614f563696133d28f83322ec7bba60aac29b8426bdb4ed863ccb1fa40ae0122"
+    },
+    {
+      "bytes": 70916,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/20-file-classification.md",
+      "sha256": "781614a38b7f1772a30ff2d74d45d14eacbcab6e929661e671a0cf38897d6c17"
+    },
+    {
+      "bytes": 537,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/evidence/diagrams/architecture.md",
+      "sha256": "90829e53227cd04f37fd1bbedbb1fdda62f0966c3773a4352461864a00d2fb33"
+    },
+    {
+      "bytes": 3963,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/evidence/sanitized-command-output/summary.md",
+      "sha256": "c356664a5c0391665776c63950868a1772b9d1a0fc8591f1fa037cabde2ed4ba"
+    },
+    {
+      "bytes": 1929,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/evidence/sanitized-logs/runtime-errors.md",
+      "sha256": "93946f5830f0f2b1e07631f77f6ec79e3f4bbc334f94d4b9adcbc18b461a364f"
+    },
+    {
+      "bytes": 2162,
+      "component": "project-governance",
+      "owner": "software-engineering/governance",
+      "path": "audit/evidence/test-results/results.md",
+      "sha256": "f71a4b2d4af367ca47dc9b42907438f069b5c457808ea743c9bfd25366e4a4dd"
     },
     {
       "bytes": 2076,
@@ -2039,6 +2236,27 @@
       "sha256": "cd8e73ec8727204baa032b889d93e58284e7e1cb0b5584f65b0772455120c60e"
     },
     {
+      "bytes": 590,
+      "component": "reliability-certification",
+      "owner": "software-engineering/sre",
+      "path": "packages/certification/__init__.py",
+      "sha256": "d850c11c84abfc1be2f05808b81979ce12c88caa8770f7536ff793e8d4a6b194"
+    },
+    {
+      "bytes": 30755,
+      "component": "reliability-certification",
+      "owner": "software-engineering/sre",
+      "path": "packages/certification/controller.py",
+      "sha256": "30598d292eedb2331cf894146b89d3516fa084ea30029bfc54596ea6a6c08d1d"
+    },
+    {
+      "bytes": 18658,
+      "component": "reliability-certification",
+      "owner": "software-engineering/sre",
+      "path": "packages/certification/core.py",
+      "sha256": "fc6b321fafba5bd635e3b38d33ed30de701dd36bf9dd2fa4a9b324a2221a34e5"
+    },
+    {
       "bytes": 343,
       "component": "control-plane",
       "owner": "software-engineering/control-plane",
@@ -2557,11 +2775,11 @@
       "sha256": "3a335278720b8a25d13d1fa764ec4f0c08250a2fa4fa80a31ff1fb20cc2feb58"
     },
     {
-      "bytes": 37319,
+      "bytes": 38845,
       "component": "knowledge-pipeline",
       "owner": "software-engineering/knowledge",
       "path": "project.manifest.toml",
-      "sha256": "8dca972897c33cd3619295c86208adf1b1e768cbcc529e4fbf7f4c8dbd47ce5e"
+      "sha256": "e6cf41c2fc27c67e0441c10728aa7891d1d610be511f73979231163e65cb815e"
     },
     {
       "bytes": 1734,
@@ -2634,11 +2852,11 @@
       "sha256": "4dfda712408e263765ce1c1550378458d1d2743cea755669429a381ff5405858"
     },
     {
-      "bytes": 11381,
+      "bytes": 11770,
       "component": "project-governance",
       "owner": "software-engineering/governance",
       "path": "remediation/REMEDIATION_STATE.md",
-      "sha256": "b2bb5d1517fbd9882ea699dd756c965a7c6748faf9dbfe6d29cba4551cacc98f"
+      "sha256": "7a03afbdff6ee177f5b0b097eedd265439454fe4cb01083f6d1f35901c1c5ad8"
     },
     {
       "bytes": 7915,
@@ -2711,6 +2929,13 @@
       "sha256": "5ad93a7c1a07b288e293fff9e2e381baffd42d66ec1324039450eb9bc0d4c8af"
     },
     {
+      "bytes": 5740,
+      "component": "reliability-certification",
+      "owner": "software-engineering/sre",
+      "path": "scripts/certify_24x7.py",
+      "sha256": "094b1ef8f47dc7586e6daac427433e9c0bb083c083772739eee1f9afc9849a8b"
+    },
+    {
       "bytes": 12203,
       "component": "ci-governance",
       "owner": "software-engineering/ci",
@@ -2723,6 +2948,13 @@
       "owner": "software-engineering/deployment",
       "path": "scripts/init_local_runtime.py",
       "sha256": "dfaaaa903d0a21f27745c4e9be6f2e541a1c7168910c5853fd4d229a0fc13aca"
+    },
+    {
+      "bytes": 1562,
+      "component": "reliability-certification",
+      "owner": "software-engineering/sre",
+      "path": "scripts/install_certification_task.ps1",
+      "sha256": "eb773007a2ca585daddf7350f28a0b86c5ab701cbbc523540d2a97698b6607ca"
     },
     {
       "bytes": 303,
@@ -2744,6 +2976,13 @@
       "owner": "software-engineering/orchestration",
       "path": "scripts/replay_market.py",
       "sha256": "75aee870b912de5bf426e15bb56ef8bcc308ebe6dcc582f930b589c23d2d616e"
+    },
+    {
+      "bytes": 1038,
+      "component": "reliability-certification",
+      "owner": "software-engineering/sre",
+      "path": "scripts/run_certification.ps1",
+      "sha256": "d3d0f0e7244e1fa28ca26dfa0b74f848d5e8e8b0d58628f6a97fe21ab813973f"
     },
     {
       "bytes": 12404,
@@ -3297,6 +3536,20 @@
       "owner": "software-engineering/candidate",
       "path": "tests/unit/test_candidate_worker_runtime.py",
       "sha256": "bd8c46294b67b212e6c3e14d1dd75c0027cd40432f6b21f5214c473bbb774a9e"
+    },
+    {
+      "bytes": 2376,
+      "component": "reliability-certification",
+      "owner": "software-engineering/sre",
+      "path": "tests/unit/test_certification_controller.py",
+      "sha256": "5dd5b06ec5697262c375781510009c0740f781e0f81ac1ea347485da46d5701c"
+    },
+    {
+      "bytes": 5729,
+      "component": "reliability-certification",
+      "owner": "software-engineering/sre",
+      "path": "tests/unit/test_certification_core.py",
+      "sha256": "9221000ae0c4de028591e5f3351d45768535a63f8afc932b87c42d25dea7d82c"
     },
     {
       "bytes": 2950,
@@ -4048,11 +4301,18 @@
       "sha256": "e89fd6de09c36b3b462a8e3c4d700bbe07c0e3394cffa18db2740f124f854a0c"
     },
     {
-      "bytes": 5471,
+      "bytes": 6222,
       "component": "obsidian-knowledge-base",
       "owner": "software-engineering/knowledge-curation",
       "path": "wiki/content/overviews/production-remediation-2026-07-24.md",
-      "sha256": "73f8026564b718898baa639480318ce84a4cd4a3362e1f4593a9e71c8e00e951"
+      "sha256": "4a5b72dc26d7faf7037b98e707d287766ae716b47e4fb0836e2b6318d7eb6600"
+    },
+    {
+      "bytes": 5351,
+      "component": "obsidian-knowledge-base",
+      "owner": "software-engineering/knowledge-curation",
+      "path": "wiki/content/playbooks/24x7-paper-certification.md",
+      "sha256": "1bc706ee0b13b1c4f93b13089d3cc7db573e9a59a1adee57fe4791012a9804f1"
     },
     {
       "bytes": 6652,
@@ -4132,18 +4392,18 @@
       "sha256": "ada0394f98ccae5dda7471bb1e32a8e0f33a32326fc18090a94b6a0f21181407"
     },
     {
-      "bytes": 12008,
+      "bytes": 12168,
       "component": "obsidian-knowledge-base",
       "owner": "software-engineering/knowledge-curation",
       "path": "wiki/index.md",
-      "sha256": "b5a09cb56e7bbcfe8fbccc9483901a0c9b1565a7c3c4b6582309d639cee5f169"
+      "sha256": "de34ec6695f67916e7583fd9c1be0bd6a7dee333928a0d06eab37a2dab8c86df"
     },
     {
-      "bytes": 34662,
+      "bytes": 35602,
       "component": "obsidian-knowledge-base",
       "owner": "software-engineering/knowledge-curation",
       "path": "wiki/log.md",
-      "sha256": "457c6fde393f204f95969508e2ec2ad90d7101fcc1e27afc46faa78c3288e752"
+      "sha256": "10528c011ca440d741fd1703259e215b6bfcb6ad4d1a2a2c92cac846167ab800"
     },
     {
       "bytes": 64,
@@ -4468,22 +4728,22 @@
     "source_of_truth": "wiki",
     "vector_store": "chromadb"
   },
-  "manifest_sha256": "8dca972897c33cd3619295c86208adf1b1e768cbcc529e4fbf7f4c8dbd47ce5e",
+  "manifest_sha256": "e6cf41c2fc27c67e0441c10728aa7891d1d610be511f73979231163e65cb815e",
   "project": "Trade_agent",
   "schema_version": 1,
   "sources": [
     {
-      "bytes": 7354,
+      "bytes": 7378,
       "categories": [
         "configuration"
       ],
       "chunks": [
         {
-          "chars": 3950,
+          "chars": 3974,
           "end_line": 114,
-          "id": "kn_bfe716c86f0227d4a05850f9c806b492a7b577121a70c14bf29b926295fb5714",
+          "id": "kn_41ba898713e8796ab9cf4c5e7d5a63e3728589c97e439103b0f50a578ac75e94",
           "index": 0,
-          "sha256": "992fefb1fd105b567dfd24390050f97f26874a552e275628bf152927487050e0",
+          "sha256": "79ae01dad2463e4657c9ec91bb02effd607b621417f911ddd8cd1251cc08701d",
           "start_line": 1
         },
         {
@@ -4497,7 +4757,7 @@
       ],
       "component": "ci-governance",
       "path": ".github/workflows/ci.yml",
-      "sha256": "eb2324335f855f8357c868b49389820069d2ef40ce83ab017d37e454a8278af9"
+      "sha256": "6c98a0feda2f0db3859ecb1a126630a56b93dc37427fa5170279de5e8c783888"
     },
     {
       "bytes": 46233,
@@ -4710,6 +4970,745 @@
       "component": "legacy-orchestration",
       "path": "Trade_agent/risk.py",
       "sha256": "f27918da93a19b57c1ebdbbec8f2f897577f42016c271d33c6d865952d1b9d87"
+    },
+    {
+      "bytes": 4908,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3906,
+          "end_line": 78,
+          "id": "kn_db84b74d066f276bbd8e43343f3b56812dcacadf3eca308fd70080b4ea7ad1df",
+          "index": 0,
+          "sha256": "00feb73f4a0fd3bc65521d320182215986b14d0e867c24300fb68d8951dfbdb3",
+          "start_line": 1
+        },
+        {
+          "chars": 1389,
+          "end_line": 102,
+          "id": "kn_49f5f1fc97180d03a7984c4334c77d6c8109454a9a1416ac57ee5271094fc51a",
+          "index": 1,
+          "sha256": "49cc1b6b9b88d5d1266bc311a1af81174946fb4fa1e0bc168466aec020c13eab",
+          "start_line": 70
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/00-executive-summary.md",
+      "sha256": "be495e5fe499928f7752caec4d4cdebe9b1f061908e92595f90184cd87817e10"
+    },
+    {
+      "bytes": 3691,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3689,
+          "end_line": 78,
+          "id": "kn_5588ada10f78ccb303e5eba5bbaaeacb599a446d8cb930993478c5f45dca10fe",
+          "index": 0,
+          "sha256": "34912e945364ecdf71572bb1dfcf0449329ba182dea592837061f41f70530087",
+          "start_line": 1
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/01-project-inventory.md",
+      "sha256": "34912e945364ecdf71572bb1dfcf0449329ba182dea592837061f41f70530087"
+    },
+    {
+      "bytes": 5735,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3757,
+          "end_line": 142,
+          "id": "kn_08d67d0f7f8ba2d2319a8b3e9272fbb2c9635ec8b93bb9deb2dfd2d92a0c65b5",
+          "index": 0,
+          "sha256": "6294bdb0ffc288dc165f4a57343ebb96f4603e5337d4488393a3560322791840",
+          "start_line": 1
+        },
+        {
+          "chars": 2347,
+          "end_line": 199,
+          "id": "kn_ac3931a192cdbde77a83677ba2fa22a5a7bc6191873886305eb03dc797558525",
+          "index": 1,
+          "sha256": "7272708b3d8ac092ff0e74ac57d4ed622315a29e3ac88e760bee9caf1b58a069",
+          "start_line": 125
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/02-architecture.md",
+      "sha256": "842552f5b5035ac7f3971eee823fb4609c42e73382e493c0d72af5b9a06289bb"
+    },
+    {
+      "bytes": 5824,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3497,
+          "end_line": 65,
+          "id": "kn_8471951295f9eb819a3c73e0a40fd194575be48f4fa827d204763bdd02674641",
+          "index": 0,
+          "sha256": "bfa063b803b7b3dde7fc88afcef29130b7451b4ec562f98802fb0e15c44eb4eb",
+          "start_line": 1
+        },
+        {
+          "chars": 2567,
+          "end_line": 105,
+          "id": "kn_728f12ca6c4a7cc6f56e057e57fa90a156bfc4c302bef15fa17c7aa188f917c1",
+          "index": 1,
+          "sha256": "3d5a3712bc620d2e0110882c12e27b5580d2e2e0b25288506b3740836d314e27",
+          "start_line": 59
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/03-codebase-audit.md",
+      "sha256": "fa59cab21e192f31b86fdd8967fcddc08b2243b7444e035d814715f732cb6b5e"
+    },
+    {
+      "bytes": 6924,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3553,
+          "end_line": 53,
+          "id": "kn_0e1f790f0f3392e74eb4946a68510fd5dcbb4bf8127d0bad54920b21a41c575a",
+          "index": 0,
+          "sha256": "05b65df361f7ff1cfeb8e0aace1d2dbe67996e278ae396804592f124466e6c33",
+          "start_line": 1
+        },
+        {
+          "chars": 3632,
+          "end_line": 112,
+          "id": "kn_38f1b50e7269cba2819d7ae8839b275c72a37e1ddc1e3bba99155e3717e7f48e",
+          "index": 1,
+          "sha256": "463b6c0afce4e0b0c87be642a67b57ee4c49e4213f977d21d4ee8bbca80e4a67",
+          "start_line": 47
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/04-docker-runtime-audit.md",
+      "sha256": "b2b9a4978870c44550fda53ecb192eb5a36eabd334e262bc5bf0a48c5292f7bf"
+    },
+    {
+      "bytes": 3855,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3855,
+          "end_line": 62,
+          "id": "kn_d4eedfc7c5abb2680d8be1a0804b8fce1380b440a0d0ffddb8e48126948b3311",
+          "index": 0,
+          "sha256": "49028da699dc0ed38fd07311c0ca1db2b0540e8af1f74abccbc55c24693ed8f2",
+          "start_line": 1
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/05-database-audit.md",
+      "sha256": "49028da699dc0ed38fd07311c0ca1db2b0540e8af1f74abccbc55c24693ed8f2"
+    },
+    {
+      "bytes": 3882,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3882,
+          "end_line": 61,
+          "id": "kn_eff0366b7382d95d5c88ac46ab66f931f028bf45b1dbb46cafc239f61885b2c6",
+          "index": 0,
+          "sha256": "b226e07db874b448c0ef6d8c8321456b8fafeb6653968bcb0e86a5dcd594649a",
+          "start_line": 1
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/06-secret-config-audit.md",
+      "sha256": "b226e07db874b448c0ef6d8c8321456b8fafeb6653968bcb0e86a5dcd594649a"
+    },
+    {
+      "bytes": 7196,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3250,
+          "end_line": 45,
+          "id": "kn_591cd7b29e8f2f6e851db4266ee3024cd832787b17ad3e7feeee9e2b2b80ff8f",
+          "index": 0,
+          "sha256": "26302eb42302a1814dc944230b957c49c50236d8283f88b77139714b4e8bc363",
+          "start_line": 1
+        },
+        {
+          "chars": 3984,
+          "end_line": 99,
+          "id": "kn_4b058c2fbfb5c8c70bc953de538d5f93160cc32a66474eab1d7ec1c6601751aa",
+          "index": 1,
+          "sha256": "48ea5dbca46dd307c6eb2b7df0363befd5d0725388e10c64a5dc5127910bfc22",
+          "start_line": 39
+        },
+        {
+          "chars": 637,
+          "end_line": 108,
+          "id": "kn_7dd0edf5b268c9ed46629128dfb0c40f2355063686da781325650a8e8f08ce55",
+          "index": 2,
+          "sha256": "52c4d9a60dad5958ce3104ab947ea3b0d2bd6c2ef73688c020a60fd917a7d99a",
+          "start_line": 91
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/07-security-audit.md",
+      "sha256": "f73980233fd7892f6723a575f50bd614b720bad87776f1c360226320f5ca94bd"
+    },
+    {
+      "bytes": 4244,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3983,
+          "end_line": 63,
+          "id": "kn_c1b69ecbaacb19fb6236dbc4bf9759d8f35c5d5d471bdfca869137e0b5118ebe",
+          "index": 0,
+          "sha256": "c058325b334dce54c08ad27851fb4acced250dada5857df1ceebcb17cd0c1deb",
+          "start_line": 1
+        },
+        {
+          "chars": 627,
+          "end_line": 68,
+          "id": "kn_345d244ce7c0ee91f8cfa5e16590920ef5a978b26f1ce3f33da21bd12b242f9c",
+          "index": 1,
+          "sha256": "50ab87e0f387f593487d8bd2184faacdaf8095dac071a8f50b243710c368b55d",
+          "start_line": 55
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/08-api-integration-audit.md",
+      "sha256": "6ce36686c0f6b571bc20e2421c5a0c9e9bf1ccf25fb68ed2a47bf154f8584fa4"
+    },
+    {
+      "bytes": 5516,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3979,
+          "end_line": 46,
+          "id": "kn_dbaeb57635cd7e20c6dea051f44b365165125e76101f310b2c4282271f29e150",
+          "index": 0,
+          "sha256": "0c992e9ac0177f3ac48ed22276176299d62ea3a7851af47ad4c9afedf43e7459",
+          "start_line": 1
+        },
+        {
+          "chars": 1785,
+          "end_line": 81,
+          "id": "kn_120848242de646d85f6f5108d4a623ca29515c8b61e8a53b3638da09bc60fcb4",
+          "index": 1,
+          "sha256": "70b658d1a075e1bfb07180f6cc88ecd1f024e71ae878c8838bf1915e8ae2e135",
+          "start_line": 40
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/09-real-vs-mock-data.md",
+      "sha256": "eb33c0b8c7bd0dd4a0198f85b63afa5c9e92cb46ff56bed556b1ba45ac7ce682"
+    },
+    {
+      "bytes": 3319,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3319,
+          "end_line": 54,
+          "id": "kn_7375c1f3a3866545e6f817faedb98062827bec5c4c0a47bd474630c5e181e908",
+          "index": 0,
+          "sha256": "b353a2c2c6cd8d935f40b32be77ea6fb7421428af9ea53ef308702856dd7e8fc",
+          "start_line": 1
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/10-ai-agent-model-audit.md",
+      "sha256": "b353a2c2c6cd8d935f40b32be77ea6fb7421428af9ea53ef308702856dd7e8fc"
+    },
+    {
+      "bytes": 4299,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3956,
+          "end_line": 68,
+          "id": "kn_ac58710b9a6feb0716cb41e1f28830ab72ad6ea2f4d370bf5367d3ba2f7c28df",
+          "index": 0,
+          "sha256": "f20169f8986640f9fee7299aa819b4bbbb42e88f51b8d426509d84ac6a83c450",
+          "start_line": 1
+        },
+        {
+          "chars": 727,
+          "end_line": 74,
+          "id": "kn_7ed0782fe3dd9db5440b6d10b9e1e278025f823673abc3d7f140431ec6782cef",
+          "index": 1,
+          "sha256": "b93f941ec87bc2309368f187379da5899b23b75bd4fab7e7551ac83cd78a2467",
+          "start_line": 60
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/11-testing-quality-audit.md",
+      "sha256": "04f8f0cf8e25f417e65da8042d176f32cd9c76666846bb3af97486049e52eb74"
+    },
+    {
+      "bytes": 3182,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3182,
+          "end_line": 50,
+          "id": "kn_7b4c8a101784b48cf7dd6fa34b64646656f824ae871c6bd41cc9dcb6dec171c7",
+          "index": 0,
+          "sha256": "e5d206fcf2bd69fe33d07ad4ee464a5e174a32407cd18aa40b295ab88080a17e",
+          "start_line": 1
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/12-observability-audit.md",
+      "sha256": "e5d206fcf2bd69fe33d07ad4ee464a5e174a32407cd18aa40b295ab88080a17e"
+    },
+    {
+      "bytes": 2242,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 2242,
+          "end_line": 51,
+          "id": "kn_e2111513704424addccf48cef410b037954a01453d1a1d33325daaeef95587f8",
+          "index": 0,
+          "sha256": "9413244e79d5d507b0554f57a9d68db1df4f5dc8cfda3ce218dca32badc50bed",
+          "start_line": 1
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/13-performance-audit.md",
+      "sha256": "9413244e79d5d507b0554f57a9d68db1df4f5dc8cfda3ce218dca32badc50bed"
+    },
+    {
+      "bytes": 2808,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 2808,
+          "end_line": 58,
+          "id": "kn_ffe793a69e903a27783332a4986fe91a8235bb316b1b2067d9969bc8d546eb48",
+          "index": 0,
+          "sha256": "3b5e183960fe49317405479791530efea4d23720615f75f2c3d4238870e028f7",
+          "start_line": 1
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/14-reliability-24x7-audit.md",
+      "sha256": "3b5e183960fe49317405479791530efea4d23720615f75f2c3d4238870e028f7"
+    },
+    {
+      "bytes": 3081,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3081,
+          "end_line": 64,
+          "id": "kn_8e28100e1031d1ee19efc8ef5b1e422533df88fae891b5f33513d17926642082",
+          "index": 0,
+          "sha256": "c9f44ba560cc151b727d4a8cac3c7ba14d4d3553b2b36b9ff757c50dbd04bd42",
+          "start_line": 1
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/15-production-readiness.md",
+      "sha256": "c9f44ba560cc151b727d4a8cac3c7ba14d4d3553b2b36b9ff757c50dbd04bd42"
+    },
+    {
+      "bytes": 8365,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3749,
+          "end_line": 24,
+          "id": "kn_422ee126bfdfb047a17dec24f6b41227116f9ae9e24637f96b79f951022ecb96",
+          "index": 0,
+          "sha256": "b8169bc0a1a7776042811a111a49ed414288d5eca397afa0f9635ad87dc45cd6",
+          "start_line": 1
+        },
+        {
+          "chars": 3235,
+          "end_line": 40,
+          "id": "kn_4a87d4ba228c936ff03218b1e9b9341afb17f3779629718173d4b2e4c5f55f21",
+          "index": 1,
+          "sha256": "742a760ecc14ccb184502f4abfa133c10beb49783aadb2a937c779c9a3370f61",
+          "start_line": 20
+        },
+        {
+          "chars": 1961,
+          "end_line": 66,
+          "id": "kn_360ea8d47c6c651e7b1d7fe16fe50f676af6f5694230ea802cf9bb0f9c50f06b",
+          "index": 2,
+          "sha256": "ce349339b0aa31cb0604ff9fc65c5bd0539ba6f21d6a62bb16bc57c4f770cb83",
+          "start_line": 36
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/16-remediation-backlog.md",
+      "sha256": "1d64a1d83a5587c91f335f5bac73259cc19395d0fdf3bb2f2caa3dc9463b62be"
+    },
+    {
+      "bytes": 4410,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3801,
+          "end_line": 131,
+          "id": "kn_6a5b945485ba7db4208ea670737c2c6677db85f5771cd83b03c30805d3d1d193",
+          "index": 0,
+          "sha256": "12d61d6ba94dfdf66fefc5a9d5114400581c74c07959000196b9ea7a7d954e5c",
+          "start_line": 1
+        },
+        {
+          "chars": 1008,
+          "end_line": 140,
+          "id": "kn_775d41438154a8f02378fb386d44743cb41081a1cabe68f50dc2e299c389a5d1",
+          "index": 1,
+          "sha256": "90b55526979ec92deda488b8980fa1b1c92e9339a88f3d52de9b0427ea39f79d",
+          "start_line": 114
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/17-validation-commands.md",
+      "sha256": "887a8dfe46fbc80890151c01d3da036b489290d74217cc9534e16fe42f423e47"
+    },
+    {
+      "bytes": 5661,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3968,
+          "end_line": 31,
+          "id": "kn_b2b74ac3113398464dac8a1685e34a7aae7e4c8e6284379a5316fafbd93111df",
+          "index": 0,
+          "sha256": "fe4c860b7ed6c39ea8c98347e5c30fee14e744f69a3a1f0c954030eb25693fe8",
+          "start_line": 1
+        },
+        {
+          "chars": 2055,
+          "end_line": 44,
+          "id": "kn_8444147577d478d7e2ab23b56e2720d91957de41a92c9acb07e3bad1d1ee114f",
+          "index": 1,
+          "sha256": "a1c0a4a66c852474e976f02436e66d5e07bcf50cc7b0bbc6e3a4e9b89b3e1413",
+          "start_line": 29
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/18-container-inventory.md",
+      "sha256": "7d867b65c5368237982b66838724d01b098b3fd9316a46bfa2ffab0b828227bc"
+    },
+    {
+      "bytes": 7439,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3936,
+          "end_line": 36,
+          "id": "kn_ab45467c24660d4d26c17b4799f60f49d316a7d196109683ee6f3f1a2ac2c159",
+          "index": 0,
+          "sha256": "2ef120061f5b0391acfc9ec98e5d2ce4acdfb23eba8412b9924d9fa4d023e549",
+          "start_line": 1
+        },
+        {
+          "chars": 3874,
+          "end_line": 71,
+          "id": "kn_b8ae2bd053e28e7c2c1731b4c1081c7770f9427bb0118531ce6cadbc1a2f50cd",
+          "index": 1,
+          "sha256": "b3b42d79e6ce9b5537ae7f1296df2c478579aa46acaa4e088b1677c8b8a5b1c7",
+          "start_line": 33
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/19-environment-variable-matrix.md",
+      "sha256": "1614f563696133d28f83322ec7bba60aac29b8426bdb4ed863ccb1fa40ae0122"
+    },
+    {
+      "bytes": 70916,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3969,
+          "end_line": 41,
+          "id": "kn_67a0940c54dfcdae9e251de7b4d0458dd9864c366f37dd2b36823a0593446a28",
+          "index": 0,
+          "sha256": "a809f779c79a0b554c3328fd1a171170764da0fa33dfd30c7579be8548948aba",
+          "start_line": 1
+        },
+        {
+          "chars": 3969,
+          "end_line": 72,
+          "id": "kn_a3c1c64a70048f75f756c5d9585e627b5d583c943bb143847586a6c47119c9ab",
+          "index": 1,
+          "sha256": "5f1e544977abae5a77b003f0945dd1f36f774c178d77271b4f906c377c035c95",
+          "start_line": 38
+        },
+        {
+          "chars": 3918,
+          "end_line": 104,
+          "id": "kn_b8008d47e3929f3f70469b1b7d610ff7aebf525893038002140b3d0af1acddb3",
+          "index": 2,
+          "sha256": "fef0a8c73742d2fe7bf7193f472e7f7e6cb62bf70cc90526ce6fcca961a8ee4e",
+          "start_line": 69
+        },
+        {
+          "chars": 3899,
+          "end_line": 137,
+          "id": "kn_fd9534dfde96dd001b1bd62aeff708d09929f89d0a3109d0f3062fc167ba47ed",
+          "index": 3,
+          "sha256": "c7a08113f998bd1f940b7bacd6d5b04bab4e6e193dc9ca90c2c6d86742eb6ac7",
+          "start_line": 101
+        },
+        {
+          "chars": 3874,
+          "end_line": 165,
+          "id": "kn_5ad42b3a8b22b9cba64d3cc637b42855f7d51926daae046c075f3433e1048d50",
+          "index": 4,
+          "sha256": "97b564dea9d98fb5446c04725adafbeb0d435061297b1ebf1db2904e97e2292b",
+          "start_line": 134
+        },
+        {
+          "chars": 3908,
+          "end_line": 193,
+          "id": "kn_5c791ed2b235ffe6bc9b169c1953d49743138d793c3f0cc4377e6fa1e739aff3",
+          "index": 5,
+          "sha256": "2d85dbe7b6e367ed85436eccd2a5f25aab09661b6c11a19de3e1c51e443a0dea",
+          "start_line": 162
+        },
+        {
+          "chars": 3967,
+          "end_line": 221,
+          "id": "kn_474acd16dae0de50a27fa43375e8922da58d6a3538b897ed244aaa9695df1fc3",
+          "index": 6,
+          "sha256": "42a556bd494d64de549a795f61796345cad5d89d85c468437f777d16ba74f0e2",
+          "start_line": 190
+        },
+        {
+          "chars": 3906,
+          "end_line": 248,
+          "id": "kn_9879c128fe7045d0e939e16f85a8cea1412709979831583756b647745d8c70aa",
+          "index": 7,
+          "sha256": "9c79f85f2fa11af4512670684bffb820d1e9a7344208f513515cfc7be76dc6b0",
+          "start_line": 218
+        },
+        {
+          "chars": 3948,
+          "end_line": 277,
+          "id": "kn_5ee183df98e4c00db48ecabd4a7ba6aebde7347a4281839c08ca5c5bec25183b",
+          "index": 8,
+          "sha256": "4eccd40c3fb3cae0a2803f4205af894d62bfe5a45c908bb039489f8d9fb4d357",
+          "start_line": 245
+        },
+        {
+          "chars": 3992,
+          "end_line": 309,
+          "id": "kn_e816e4f9295104a1a0379210541ff1ed0babcd37a92b85a64d7ba95482e1172c",
+          "index": 9,
+          "sha256": "ed757605ca6df35d6eebf79a57b629fe428e2e7ef1d8034d4f2b9071371ae98b",
+          "start_line": 274
+        },
+        {
+          "chars": 3984,
+          "end_line": 344,
+          "id": "kn_9095b237be63a01e4f32ce1e8b7cd94e1eb92646ecf490e4dadc6fb16dce3348",
+          "index": 10,
+          "sha256": "582963e4b1c1fdf90e055ca497581ccda34a82a87a90dacc00621fffea256b27",
+          "start_line": 306
+        },
+        {
+          "chars": 3878,
+          "end_line": 376,
+          "id": "kn_df0ead9e47c9264936b66c45af12bd3c9de604412958a7608605436d122d2ec2",
+          "index": 11,
+          "sha256": "bd43ed98678f6bf45de131f2337e9b169412c1f9429b09213679d7c67f36c4f4",
+          "start_line": 341
+        },
+        {
+          "chars": 3949,
+          "end_line": 404,
+          "id": "kn_b6153ccf5f5a86a5545e18e1634065d73f4fceaf9c1c61c80f9faba54b8d8435",
+          "index": 12,
+          "sha256": "95cec4fbf94c650cf01650fdcb6148eb58cd985f20ba0af951c27ae6c720f9ef",
+          "start_line": 373
+        },
+        {
+          "chars": 3921,
+          "end_line": 444,
+          "id": "kn_6cf4264af6df2737735994ac259f275f84f3fdc63dbcc8290732c06d59aa678b",
+          "index": 13,
+          "sha256": "40dd3d5b84c6241f591b4eb10dcb0fd073b2cd116ac62b2b14ee1d36629b7971",
+          "start_line": 401
+        },
+        {
+          "chars": 3984,
+          "end_line": 483,
+          "id": "kn_1cff2ebcfd0a79145ee491d569b0461c400757c027562b444e5b20344ff27444",
+          "index": 14,
+          "sha256": "baebe73db3929e754662b745c0d93d8bf2787afd4b9357bdeb8042c6d932d6db",
+          "start_line": 440
+        },
+        {
+          "chars": 3956,
+          "end_line": 513,
+          "id": "kn_fb3b283301952cd192bd2c804896839bc066d02a3c827ac04930a0c0475e78b9",
+          "index": 15,
+          "sha256": "389be047941e8a4b1991c7111d213e16f57d58ae2a9afd5d08eace720d1c301b",
+          "start_line": 480
+        },
+        {
+          "chars": 3900,
+          "end_line": 543,
+          "id": "kn_dd40601c1d75f2e6ba5902625531c3bc6adb1accd50757bb3567f53bff0a9856",
+          "index": 16,
+          "sha256": "ba287a5cf93738290880be941e9dbfc8f23b4963f2ec13a2da98cdd2500d341d",
+          "start_line": 510
+        },
+        {
+          "chars": 3983,
+          "end_line": 575,
+          "id": "kn_5a59809978fabf30047856e5f581d75c94018700ea24981f9cbb8e6897cf7dec",
+          "index": 17,
+          "sha256": "a23cb078a590fa1bde1564abc1f485a92493d211ab8a1a5f13f894617a57fd35",
+          "start_line": 540
+        },
+        {
+          "chars": 3925,
+          "end_line": 610,
+          "id": "kn_744ba5c311c4a302f91e7dfd5cc06d3771b3fa6b4e43efc0fda9835bd0c0c7df",
+          "index": 18,
+          "sha256": "4c54b07031aef70f86f6f5b9f33e31abcdd0aaf3caead219ac97ba1a98edbedc",
+          "start_line": 571
+        },
+        {
+          "chars": 2810,
+          "end_line": 651,
+          "id": "kn_a703ce90adc34d67f5425b387ac2f21e288212150af8bc00c6ac7da44ca3f6b1",
+          "index": 19,
+          "sha256": "b6e23ac78320cfbcfb097f5f1bd3f3d62ed993bfafdfe94af75d1fa2b2e6b2d3",
+          "start_line": 607
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/20-file-classification.md",
+      "sha256": "781614a38b7f1772a30ff2d74d45d14eacbcab6e929661e671a0cf38897d6c17"
+    },
+    {
+      "bytes": 537,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 537,
+          "end_line": 20,
+          "id": "kn_4bd325865b36c65be48f66e98252d1d88f4331131a4b1afcc4ab380d7c4e2d14",
+          "index": 0,
+          "sha256": "90829e53227cd04f37fd1bbedbb1fdda62f0966c3773a4352461864a00d2fb33",
+          "start_line": 1
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/evidence/diagrams/architecture.md",
+      "sha256": "90829e53227cd04f37fd1bbedbb1fdda62f0966c3773a4352461864a00d2fb33"
+    },
+    {
+      "bytes": 3963,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3961,
+          "end_line": 146,
+          "id": "kn_3d46d6a2996e384f89d7102813ca9f8e53de7dfebe1a890af63f5934d3325a0c",
+          "index": 0,
+          "sha256": "c356664a5c0391665776c63950868a1772b9d1a0fc8591f1fa037cabde2ed4ba",
+          "start_line": 1
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/evidence/sanitized-command-output/summary.md",
+      "sha256": "c356664a5c0391665776c63950868a1772b9d1a0fc8591f1fa037cabde2ed4ba"
+    },
+    {
+      "bytes": 1929,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 1929,
+          "end_line": 64,
+          "id": "kn_dcd941e9fb2ae4d22ef59be5c53510ea6920642a996e398bbc9be6ace1d702c0",
+          "index": 0,
+          "sha256": "93946f5830f0f2b1e07631f77f6ec79e3f4bbc334f94d4b9adcbc18b461a364f",
+          "start_line": 1
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/evidence/sanitized-logs/runtime-errors.md",
+      "sha256": "93946f5830f0f2b1e07631f77f6ec79e3f4bbc334f94d4b9adcbc18b461a364f"
+    },
+    {
+      "bytes": 2162,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 2148,
+          "end_line": 39,
+          "id": "kn_276cb1505615dbeacee84f09706c2bd76a332c66b726e8693ab0e14bea948b4c",
+          "index": 0,
+          "sha256": "f71a4b2d4af367ca47dc9b42907438f069b5c457808ea743c9bfd25366e4a4dd",
+          "start_line": 1
+        }
+      ],
+      "component": "project-governance",
+      "path": "audit/evidence/test-results/results.md",
+      "sha256": "f71a4b2d4af367ca47dc9b42907438f069b5c457808ea743c9bfd25366e4a4dd"
     },
     {
       "bytes": 2076,
@@ -11638,6 +12637,175 @@
       "sha256": "cd8e73ec8727204baa032b889d93e58284e7e1cb0b5584f65b0772455120c60e"
     },
     {
+      "bytes": 590,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 590,
+          "end_line": 30,
+          "id": "kn_d6a0944a1a55569e29cc237ad9732c83e7bdea2d45ffe9d1e75edf8f39aa810a",
+          "index": 0,
+          "sha256": "d850c11c84abfc1be2f05808b81979ce12c88caa8770f7536ff793e8d4a6b194",
+          "start_line": 1
+        }
+      ],
+      "component": "reliability-certification",
+      "path": "packages/certification/__init__.py",
+      "sha256": "d850c11c84abfc1be2f05808b81979ce12c88caa8770f7536ff793e8d4a6b194"
+    },
+    {
+      "bytes": 30755,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 3215,
+          "end_line": 116,
+          "id": "kn_2627427f4e9c79a534ee09af5210de985df6099ec7e679cd82ab558118dfb456",
+          "index": 0,
+          "sha256": "05c171e112f7cd5c2810cb546401ea7473e76af42bca72a2824c903efbffc652",
+          "start_line": 1
+        },
+        {
+          "chars": 3893,
+          "end_line": 212,
+          "id": "kn_6fbfb6dd1c24e14d5c7b6d7164fc06485311e1244b7ebb0387bd49d74f22026a",
+          "index": 1,
+          "sha256": "2df32fc840c8a32ba1a05ebb8200ecdba17c5a7e706fe677797e5c84d380cc4c",
+          "start_line": 99
+        },
+        {
+          "chars": 3872,
+          "end_line": 330,
+          "id": "kn_c88388e55887f761ff74e780c1abe03c0e5690836454c1664764ff5d577e77e5",
+          "index": 2,
+          "sha256": "696954288a6cf3ee61e74bf64388cbe75f6f8ebec3b78c55b89ecf10656dd29b",
+          "start_line": 201
+        },
+        {
+          "chars": 3264,
+          "end_line": 414,
+          "id": "kn_41dea39a666be3a2165626938d9dad2eefc8401acd0c55546d1bced262cb3033",
+          "index": 3,
+          "sha256": "1231d9b749cc0410bd1a91e769545aa95c7b20403de45143d19ad5bc3b94281d",
+          "start_line": 318
+        },
+        {
+          "chars": 2505,
+          "end_line": 464,
+          "id": "kn_0f82f5a424ee398a46eea3231485fccdf57d7c6c66a30fc774b631dbd3998994",
+          "index": 4,
+          "sha256": "1d6ed23c58d987cd30734eb2ab7ff7dd43b582f94b5372a2f1f9b56f1bb6e372",
+          "start_line": 397
+        },
+        {
+          "chars": 3786,
+          "end_line": 544,
+          "id": "kn_d79b31e6dda4ed0dac749630a7de6f83b245097df1d55d51923be9add9f20c87",
+          "index": 5,
+          "sha256": "212735c98649599403f40f8c5a2c74373d9a3a48e9ae45c5d23dd209b32d6c7e",
+          "start_line": 453
+        },
+        {
+          "chars": 3792,
+          "end_line": 657,
+          "id": "kn_3fa3ad8dc6e65b92a8524dd2cf23bf82b6b9090cb6a47da824ac50ceea5b7842",
+          "index": 6,
+          "sha256": "d4c598c9f1414652223789e0418fbdf13893a64e106f824b544bf2b0852f1720",
+          "start_line": 533
+        },
+        {
+          "chars": 3697,
+          "end_line": 735,
+          "id": "kn_6dcfad6af79cce871b991bf969f45c75b40d85c2fa5e26b21e9c5e1549d8270f",
+          "index": 7,
+          "sha256": "41534e27224246c30a8d8c50342a9d96d063380f88dd68aa3637f4a829333126",
+          "start_line": 642
+        },
+        {
+          "chars": 2907,
+          "end_line": 808,
+          "id": "kn_c485ef877be2a2db279cfc92add11a36225de7120dfaaa07a512ae27f3faab6a",
+          "index": 8,
+          "sha256": "9346802611614c337c0ae9641c023849fd730fb1c076ddf2852c1851510559cc",
+          "start_line": 725
+        },
+        {
+          "chars": 3229,
+          "end_line": 877,
+          "id": "kn_2bcf4d083f9e04097f86f7198e1787acbc5bd7fbcd9d988461ec068bd9f17a54",
+          "index": 9,
+          "sha256": "8fde7f3fead53c967abbe20de805de3a9b0b1daa8f7606c88932cf2b9d69013d",
+          "start_line": 796
+        }
+      ],
+      "component": "reliability-certification",
+      "path": "packages/certification/controller.py",
+      "sha256": "30598d292eedb2331cf894146b89d3516fa084ea30029bfc54596ea6a6c08d1d"
+    },
+    {
+      "bytes": 18658,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 3858,
+          "end_line": 122,
+          "id": "kn_d4329e6338b626fc80b6b9d71cdbea13e32fb637c9fbb0aa92ce28e8a0bdeccc",
+          "index": 0,
+          "sha256": "7b841074ee1ccd0f460a77b42664a93398c75888f0131839c037db07bc104c0b",
+          "start_line": 1
+        },
+        {
+          "chars": 3233,
+          "end_line": 210,
+          "id": "kn_9c1b5187b3dfd0d56b7cb8ddbbeb3ad8bd5c64ec1dfbfbffa9e5d394e7175238",
+          "index": 1,
+          "sha256": "33ac9808632386da40b2f69bbcd29f34e70e3344c56704419a04d99b4faaf861",
+          "start_line": 113
+        },
+        {
+          "chars": 3966,
+          "end_line": 298,
+          "id": "kn_7499c8d58d93a5e1f39610306ebab682a92f4db3affdd7443a7da4bc99551783",
+          "index": 2,
+          "sha256": "b8c0fcf85c93c13f1c2f6f87eca78c72641fcc4bc5f13b03c3042625dbda141b",
+          "start_line": 202
+        },
+        {
+          "chars": 3985,
+          "end_line": 396,
+          "id": "kn_14425cd97c396046b85ad8b65e524e9b9c5bd1bcce7b71f53bde76aa5df5c3e1",
+          "index": 3,
+          "sha256": "222912e9775161cbda4b99c54f2ca6e342a4c631edea12796c7847f7ee47c929",
+          "start_line": 285
+        },
+        {
+          "chars": 3902,
+          "end_line": 496,
+          "id": "kn_98ee31ab27f7a85bd63d5218716e08b8b8150170d222d40dc3986101a7027d27",
+          "index": 4,
+          "sha256": "ed7194b24e7901ce26b82815250fb3523ce2ae85e9b201933ec36cf3cccc3dc7",
+          "start_line": 387
+        },
+        {
+          "chars": 1554,
+          "end_line": 531,
+          "id": "kn_334a7e4f643ac5412476b6d11a35b294b4cb3e8bc0ded0cf4f24b6c0ecf9071a",
+          "index": 5,
+          "sha256": "480391d080d3fab110c2c1e6894d2f549b4d91a47ce08a16fc0c9461bc647bcb",
+          "start_line": 481
+        }
+      ],
+      "component": "reliability-certification",
+      "path": "packages/certification/core.py",
+      "sha256": "fc6b321fafba5bd635e3b38d33ed30de701dd36bf9dd2fa4a9b324a2221a34e5"
+    },
+    {
       "bytes": 343,
       "categories": [
         "code"
@@ -13780,111 +14948,111 @@
       "sha256": "3a335278720b8a25d13d1fa764ec4f0c08250a2fa4fa80a31ff1fb20cc2feb58"
     },
     {
-      "bytes": 37319,
+      "bytes": 38845,
       "categories": [
         "configuration"
       ],
       "chunks": [
         {
-          "chars": 4000,
+          "chars": 3997,
           "end_line": 183,
-          "id": "kn_9216f14300b8cb690e246d4c76882f079df4bcaebed13e0f891ddfb753cd915e",
+          "id": "kn_55d705a5e3d28f6f5d7d577fc74d39e0f057599f5aef51e2e9eeac2d57a67b95",
           "index": 0,
-          "sha256": "5af7c531b7d4176d89fcc9a5ca4e451e5b95e2bb17c92c30079bfa0cfe9a17c9",
+          "sha256": "5917a3bafa7894fe22d1d088c80f80d8e40c19fba07ebf8cd516458274353764",
           "start_line": 1
         },
         {
-          "chars": 3285,
-          "end_line": 304,
-          "id": "kn_c5fafc209c46bb583fd13ef0372bca5bbd8c575223e6dbe16db0fe4492ea2639",
+          "chars": 3360,
+          "end_line": 307,
+          "id": "kn_8260e93b80c48a53fca05686bc722c070c2e3d1a659f9aa91310c93553fe2a47",
           "index": 1,
-          "sha256": "c2848503fc800317d4bf72f4dfa44dc39ba8587920a242979a7c42a9ab586005",
+          "sha256": "f0ff709b8976fc5d4f4e69467438ee322be64761c41fe3cc2f9ccc44947ffedd",
           "start_line": 168
         },
         {
           "chars": 3947,
-          "end_line": 428,
+          "end_line": 431,
           "id": "kn_68e1e7e0f67686c3f5c00c34733959b40928cdf4965228d4717ae76795f1743c",
           "index": 2,
           "sha256": "d0ad7d2d9fa05506986357df021a65b8c8d2ce36b8d9179a8c3584f8410ab867",
-          "start_line": 282
+          "start_line": 285
         },
         {
           "chars": 2909,
-          "end_line": 514,
+          "end_line": 517,
           "id": "kn_a90a4e3f7b96638ac0c2c1ae6854251fffbcb6c49116406a444fd23ea5648072",
           "index": 3,
           "sha256": "41b418f5cd43b70724d0341ac004a98f1589c543ef61bdfb1937d2a6afa83a37",
-          "start_line": 411
+          "start_line": 414
         },
         {
           "chars": 3941,
-          "end_line": 646,
+          "end_line": 649,
           "id": "kn_a26b27de9a80d590eae6115c69815079087d6d04fefa19363d9cb42eecb61905",
           "index": 4,
           "sha256": "de1eca557dfb00f7bb282a814ddc7e7fcf88bde205df26a2dfc94d910da02c79",
-          "start_line": 495
+          "start_line": 498
         },
         {
           "chars": 3302,
-          "end_line": 750,
+          "end_line": 753,
           "id": "kn_359e6f1eab3eaf53fa0ec79ce335e742005ee7956a12a6ba7b2191f30eeba8a1",
           "index": 5,
           "sha256": "1c5f6a487e141e0b7d0d07a112ca0a311f337bfe198a7aa7b00167ba7f48bbd9",
-          "start_line": 626
+          "start_line": 629
         },
         {
           "chars": 3237,
-          "end_line": 845,
+          "end_line": 848,
           "id": "kn_5ade8eec3e884726343aac1e5b7ca54860408fcb0d1afd38cb5458306c7551db",
           "index": 6,
           "sha256": "7b38d383d5f567e111399abe02e529efc6425398e78e5027ae9bdd229c0216ba",
-          "start_line": 730
+          "start_line": 733
         },
         {
           "chars": 3800,
-          "end_line": 963,
+          "end_line": 966,
           "id": "kn_a3f17b2e72d01a0a2693fe8bf6a14a81c2fb72d02d725f8c3551137511611fdf",
           "index": 7,
           "sha256": "7b676389ab8c48b12fe4acd72d9212dc585ab8acb8ff94fa8437ca35923aa249",
-          "start_line": 825
+          "start_line": 828
         },
         {
           "chars": 3660,
-          "end_line": 1073,
+          "end_line": 1076,
           "id": "kn_e1fadb4837ee12d138157e63c5e04ddf8120a1be533e55761d23fdd15175d4ca",
           "index": 8,
           "sha256": "12f4fad657400ae801a7352656a7d76dabeb58298eb503c14b14c956e28b66a2",
-          "start_line": 951
+          "start_line": 954
         },
         {
           "chars": 3135,
-          "end_line": 1161,
+          "end_line": 1164,
           "id": "kn_d6908fe84b1c355463686738ecb36c47fe1cb2f49421e423f86788a8e95bda22",
           "index": 9,
           "sha256": "3c6808e64455e2575680a9ce8589b53aaf77ea5d959f0b4c6139f3d3199e9642",
-          "start_line": 1053
+          "start_line": 1056
         },
         {
-          "chars": 3860,
-          "end_line": 1288,
-          "id": "kn_7808587e9c44a603253dcfa33984d49c7beb512179630ea509bc22a4ad819d10",
+          "chars": 3854,
+          "end_line": 1278,
+          "id": "kn_b8d89f143e033045888e9cac598e4b3144d0da4f7824eb46a5a9f89df557f2f9",
           "index": 10,
-          "sha256": "b7ecb9406fa8cb7379d2a8f633f2445be2e87d814f02805a07791c3e44a42856",
-          "start_line": 1146
+          "sha256": "d7bff9955b50cf7cb5e96693fddfeefa659f34ee7fc977d0c8bc249317ac14ed",
+          "start_line": 1149
         },
         {
-          "chars": 2473,
-          "end_line": 1356,
-          "id": "kn_7fe78f4491dcb0ea2148aa305a149cafee337263d3bf865f396747b324d9b844",
+          "chars": 3901,
+          "end_line": 1405,
+          "id": "kn_a4b11a9c87614f1434179bc4ac241f0c35e969b86544a6c93f5b8feee5f8680d",
           "index": 11,
-          "sha256": "4c0566594021252b1184b74015079fd9649502d1fb7fe52acc19cf688d283ca9",
-          "start_line": 1266
+          "sha256": "5118fbb8948da8f29feac2982e1bcc0630533e06edb401ce3ac83fa74e84a4fd",
+          "start_line": 1261
         }
       ],
       "component": "knowledge-pipeline",
       "path": "project.manifest.toml",
-      "sha256": "8dca972897c33cd3619295c86208adf1b1e768cbcc529e4fbf7f4c8dbd47ce5e"
+      "sha256": "e6cf41c2fc27c67e0441c10728aa7891d1d610be511f73979231163e65cb815e"
     },
     {
       "bytes": 1734,
@@ -14033,17 +15201,17 @@
       "sha256": "4dfda712408e263765ce1c1550378458d1d2743cea755669429a381ff5405858"
     },
     {
-      "bytes": 11381,
+      "bytes": 11770,
       "categories": [
         "configuration"
       ],
       "chunks": [
         {
-          "chars": 3736,
+          "chars": 3734,
           "end_line": 21,
-          "id": "kn_11daa21503ecc2478c612d55bdbfae166690029a00e6be3902526070823a10e1",
+          "id": "kn_8f78033c331e6cac61656c1723169c068edc2db9369acca5bcdc89084f0483a5",
           "index": 0,
-          "sha256": "bfc56c78d30e87dd0444816814b1983b89bf1fb0f836284890eba87cc0658e30",
+          "sha256": "ac5c302c490623e5ceecbaadade452fd92f9d7702699cc19a53f28117d3941ea",
           "start_line": 1
         },
         {
@@ -14055,25 +15223,25 @@
           "start_line": 21
         },
         {
-          "chars": 3731,
-          "end_line": 43,
-          "id": "kn_7cc2c40300ebb0b3e32ae65bb721523a015fe68de0bf82b703ea64d83720906b",
+          "chars": 3824,
+          "end_line": 39,
+          "id": "kn_17fc444d22fe7e6975ec300110d11571b5abe327bee2a6308649e29c6a9125ca",
           "index": 2,
-          "sha256": "60ff6126e889bf58bb67e79c60a29ccd8122e0b412e069b25b5ea5c33bd63554",
+          "sha256": "8f8b6cbe3c37fe74a93418a3991b7966798ef000dccc5b7a247f13c5270337a8",
           "start_line": 29
         },
         {
-          "chars": 599,
+          "chars": 921,
           "end_line": 47,
-          "id": "kn_cb3928883de54a2d19ac74a9242bdd1ebf3a4ed915bccd2b7ed25f33dc5eb809",
+          "id": "kn_72755bc64532bf69044d61503b2d9b03e3d725887581de9dcef421e4bb360557",
           "index": 3,
-          "sha256": "07eb3ac4d148bf1fb2857486fd729f37f4e2eccb9022b2851fab29af344eabc6",
-          "start_line": 39
+          "sha256": "d3d244a359a0a1b88ca807dd2a37624d5b5f065d6189ca43daedc4a5549a3589",
+          "start_line": 38
         }
       ],
       "component": "project-governance",
       "path": "remediation/REMEDIATION_STATE.md",
-      "sha256": "b2bb5d1517fbd9882ea699dd756c965a7c6748faf9dbfe6d29cba4551cacc98f"
+      "sha256": "7a03afbdff6ee177f5b0b097eedd265439454fe4cb01083f6d1f35901c1c5ad8"
     },
     {
       "bytes": 7915,
@@ -14367,6 +15535,33 @@
       "sha256": "5ad93a7c1a07b288e293fff9e2e381baffd42d66ec1324039450eb9bc0d4c8af"
     },
     {
+      "bytes": 5740,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 3565,
+          "end_line": 111,
+          "id": "kn_963c009e7bad00f9ac40523f6af42b8119fd9b21bb74e98dc7e97523684dc224",
+          "index": 0,
+          "sha256": "176bc6f9bbf5b3909a043a0f4d680efb90ad467643270f4ba8382cb960928db4",
+          "start_line": 1
+        },
+        {
+          "chars": 2503,
+          "end_line": 172,
+          "id": "kn_b47508cbcc2314fc888de0a4fed950035187188a120b02619add0edc9c5bee50",
+          "index": 1,
+          "sha256": "277473fffb9493f154df0bb200d2fc2ec9057f421b67f9d4989b863f9c550067",
+          "start_line": 99
+        }
+      ],
+      "component": "reliability-certification",
+      "path": "scripts/certify_24x7.py",
+      "sha256": "094b1ef8f47dc7586e6daac427433e9c0bb083c083772739eee1f9afc9849a8b"
+    },
+    {
       "bytes": 12203,
       "categories": [
         "code"
@@ -14408,6 +15603,25 @@
       "component": "ci-governance",
       "path": "scripts/config_preflight.py",
       "sha256": "36faf6db6715945744b011e5c5238bbdfee98d5ff39cd7adfbecadae6de43030"
+    },
+    {
+      "bytes": 1562,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 1562,
+          "end_line": 52,
+          "id": "kn_ab7f51320172243e785156cbf05abe3fad43dc8daa8f244c84f6f596a4e2db57",
+          "index": 0,
+          "sha256": "eb773007a2ca585daddf7350f28a0b86c5ab701cbbc523540d2a97698b6607ca",
+          "start_line": 1
+        }
+      ],
+      "component": "reliability-certification",
+      "path": "scripts/install_certification_task.ps1",
+      "sha256": "eb773007a2ca585daddf7350f28a0b86c5ab701cbbc523540d2a97698b6607ca"
     },
     {
       "bytes": 303,
@@ -14473,6 +15687,25 @@
       "component": "orchestration-runtime",
       "path": "scripts/replay_market.py",
       "sha256": "75aee870b912de5bf426e15bb56ef8bcc308ebe6dcc582f930b589c23d2d616e"
+    },
+    {
+      "bytes": 1038,
+      "categories": [
+        "code"
+      ],
+      "chunks": [
+        {
+          "chars": 1038,
+          "end_line": 38,
+          "id": "kn_5d75a5f66dd6c692cfe37f41b2506858f621c9c542050e6b2df04b84ac5ecde7",
+          "index": 0,
+          "sha256": "d3d0f0e7244e1fa28ca26dfa0b74f848d5e8e8b0d58628f6a97fe21ab813973f",
+          "start_line": 1
+        }
+      ],
+      "component": "reliability-certification",
+      "path": "scripts/run_certification.ps1",
+      "sha256": "d3d0f0e7244e1fa28ca26dfa0b74f848d5e8e8b0d58628f6a97fe21ab813973f"
     },
     {
       "bytes": 32176,
@@ -17442,7 +18675,7 @@
       "sha256": "e89fd6de09c36b3b462a8e3c4d700bbe07c0e3394cffa18db2740f124f854a0c"
     },
     {
-      "bytes": 5471,
+      "bytes": 6222,
       "categories": [
         "configuration"
       ],
@@ -17450,23 +18683,50 @@
         {
           "chars": 3408,
           "end_line": 85,
-          "id": "kn_93d9d278bd018210208d4f8d765ca78c0f9d82fac63fe5fba68648d03306a1f8",
+          "id": "kn_bcd3375274e45beca77bed293eba55d0db30f550f1ecb102b1655ac1a6b403d6",
           "index": 0,
-          "sha256": "9be4689ae4c3d712af2ffa26e5d527c9640499bd80e3afa952d0b40a455086b0",
+          "sha256": "cffa45c306190e3752fb06575e7f82f713c94298b1fc1cd5b06a7aa9e0614286",
           "start_line": 1
         },
         {
-          "chars": 2421,
-          "end_line": 122,
-          "id": "kn_50c102a5c6401b5430f72c3c7de362acfd47b2caad076b00cf3773374cfbf6ae",
+          "chars": 3172,
+          "end_line": 134,
+          "id": "kn_4537a0beee05bc77dadf5b4a37258eab57f4c3efa1c1e194ac25fbfc2578b57c",
           "index": 1,
-          "sha256": "1d03428b7791f1da58514a6ff5af30976ed4c1468c41a3f9e80c84b62c44ba47",
+          "sha256": "959cbc9bf3f471e22260c8cb08475e80527a4f8341413e0d2fd74fae47284cae",
           "start_line": 78
         }
       ],
       "component": "obsidian-knowledge-base",
       "path": "wiki/content/overviews/production-remediation-2026-07-24.md",
-      "sha256": "73f8026564b718898baa639480318ce84a4cd4a3362e1f4593a9e71c8e00e951"
+      "sha256": "4a5b72dc26d7faf7037b98e707d287766ae716b47e4fb0836e2b6318d7eb6600"
+    },
+    {
+      "bytes": 5351,
+      "categories": [
+        "configuration"
+      ],
+      "chunks": [
+        {
+          "chars": 3780,
+          "end_line": 108,
+          "id": "kn_4eb4895c540c86ad870d3e831309450591f514072a95e2e9eb862e7841b8d828",
+          "index": 0,
+          "sha256": "54fe5c9598ba18ecd9bdb5d4542b107fe1bb83d26a6a8ec7eaf9c9c35f1bbd79",
+          "start_line": 1
+        },
+        {
+          "chars": 1942,
+          "end_line": 146,
+          "id": "kn_04d9988d51b70e7f19c2896946692b54d8c91657c57a5b39920fa73834d3be80",
+          "index": 1,
+          "sha256": "f6e5e9aa39335c5b5d6094c3346ed692ce6e80c33e9d9e3006a9ce5bd11c8419",
+          "start_line": 97
+        }
+      ],
+      "component": "obsidian-knowledge-base",
+      "path": "wiki/content/playbooks/24x7-paper-certification.md",
+      "sha256": "1bc706ee0b13b1c4f93b13089d3cc7db573e9a59a1adee57fe4791012a9804f1"
     },
     {
       "bytes": 6652,
@@ -17758,7 +19018,7 @@
       "sha256": "ada0394f98ccae5dda7471bb1e32a8e0f33a32326fc18090a94b6a0f21181407"
     },
     {
-      "bytes": 12008,
+      "bytes": 12168,
       "categories": [
         "configuration"
       ],
@@ -17766,9 +19026,9 @@
         {
           "chars": 3852,
           "end_line": 39,
-          "id": "kn_a8d99fb89076350d88cfe95169b3f1c4790ff543a82ab4871d262ecdfd0c3e9a",
+          "id": "kn_f9909d31d7eca12441b6298657019053753e1201af6f45defcd38a28fe348512",
           "index": 0,
-          "sha256": "6a3e43f215078741f0fb699445daa49b058dd8178b12d774f2eaff08786db110",
+          "sha256": "11550cbe94d7a7e04f5bd567dc5a24832881ee8ff3011ad6b6a99880ea02d040",
           "start_line": 1
         },
         {
@@ -17780,116 +19040,116 @@
           "start_line": 37
         },
         {
-          "chars": 3490,
-          "end_line": 110,
-          "id": "kn_b48b6831e08d19a67da941fab2e57f80cb905b6ba9bcdec2e6e03d3a4d7fece8",
+          "chars": 3648,
+          "end_line": 111,
+          "id": "kn_cabf0ac15d81e696fc539a96d1c6af81b4bb1b632fbc5870137fb9b9d6806c22",
           "index": 2,
-          "sha256": "fb1e1e60e17b4e58929a59aa6a4be664e8ad93766423e6941a18ce61f2b7c182",
+          "sha256": "28ccde6357ffd9714219bffe1ecb7020c0ca9017f1edb04ca0845e8f7e2deb4f",
           "start_line": 74
         },
         {
           "chars": 1549,
-          "end_line": 125,
+          "end_line": 126,
           "id": "kn_52e862d5623d8d43f21d5cec826db90d967aaf1d19d560190be3c0a7983cc500",
           "index": 3,
           "sha256": "c07f11c2036b2e02c42a95aba3f9e2a718c7092317d1d930d22852b9906daf86",
-          "start_line": 105
+          "start_line": 106
         }
       ],
       "component": "obsidian-knowledge-base",
       "path": "wiki/index.md",
-      "sha256": "b5a09cb56e7bbcfe8fbccc9483901a0c9b1565a7c3c4b6582309d639cee5f169"
+      "sha256": "de34ec6695f67916e7583fd9c1be0bd6a7dee333928a0d06eab37a2dab8c86df"
     },
     {
-      "bytes": 34662,
+      "bytes": 35602,
       "categories": [
         "configuration"
       ],
       "chunks": [
         {
-          "chars": 3787,
+          "chars": 3746,
           "end_line": 23,
-          "id": "kn_bd0997fe6e8331237cef623fc0ddd4ebb29dfcd1c3dec7634db4849e04f72776",
+          "id": "kn_6779c79e0248733e29194b4fc5b62087c930cd673a6d8915265378a9fbb6f07e",
           "index": 0,
-          "sha256": "6c2d3e785203851d64d023a4e0084101206fa4b317568bfe37e34e054a16a347",
+          "sha256": "946018880a22fa36681117c33f61db5917b56c0304cb2cf1b2021cccd7fbfd3d",
           "start_line": 1
         },
         {
-          "chars": 3092,
+          "chars": 3114,
           "end_line": 39,
-          "id": "kn_c422228e7f9182012775fcaf7d7b7739c1db315456912b1d28c1688310e9284e",
+          "id": "kn_c1fcaf97c98f952b65c1c2ecfcfbfa4331eb2576a2cbd927abc15e6df2cdaaf5",
           "index": 1,
-          "sha256": "448ac75f71fac65bda6e00faa5805a0caf2f6137fe8d789ad6ce8469851b1496",
+          "sha256": "b68abeedc88f17d6cbf9a69377d8f8e5c0d54ef49b1cb32b714f51d4a4bb9e59",
           "start_line": 20
         },
         {
-          "chars": 3921,
-          "end_line": 63,
-          "id": "kn_bf4c48bba4f1bf0a91cc209133970055da067c59dd239250117404489b84bc9b",
+          "chars": 3637,
+          "end_line": 59,
+          "id": "kn_2a159acc8a732380329b702a25410d7ab0f7170a52b8bc431de1736e3d0a8e5d",
           "index": 2,
-          "sha256": "cb75b1e23787bee3a877a439e755de9cf2915ffc3edb8292ead43b1a07f9768d",
+          "sha256": "bda0475256145496453bd514eccae0eb41f0daac8dfe83c664bfbe1300c531df",
           "start_line": 36
         },
         {
-          "chars": 2971,
-          "end_line": 97,
-          "id": "kn_6be39b6d91adfa27549e8cc803592e2c71e9d19544eacb2628f0a21d9d9c7de0",
+          "chars": 3984,
+          "end_line": 95,
+          "id": "kn_77e088a6d9a387d846e9e1caa63db6b853c1359ca2c3844cc622ecff88285316",
           "index": 3,
-          "sha256": "125759e05a272866ffa1077876350add17bbd5d15b6d57999a439b168a6417a0",
-          "start_line": 60
+          "sha256": "d3e0bcfd2850efdddb39155d81c7a8a7a3d130b7fd3c875025581add3933aae6",
+          "start_line": 56
         },
         {
-          "chars": 3747,
-          "end_line": 122,
-          "id": "kn_fbe2cd04aa52a097df4566ccdd2cf16a9a107f692337d56664e403c667f5e322",
+          "chars": 3992,
+          "end_line": 126,
+          "id": "kn_905687a907af2407b41bbeddcd7ad50c557132684717a0d035e25f136a93580d",
           "index": 4,
-          "sha256": "6fe9dd109344bb634f3f588029c553c2d1c90cd05139cc1ed3acfff7f38b2530",
+          "sha256": "8626f23878a4057c3b9977e889d598a41d46f463bf6e6d239ed28ce4a17f8eb6",
           "start_line": 89
         },
         {
           "chars": 3277,
-          "end_line": 152,
+          "end_line": 156,
           "id": "kn_acfafab39738e2a52778252152f4e1b93f7e8a88b392b9b73b2875e40e26e626",
           "index": 5,
           "sha256": "47bc411e1e28412d248c2f36497b798b67db61c2c0963fe751cb789071b41340",
-          "start_line": 117
+          "start_line": 121
         },
         {
           "chars": 4000,
-          "end_line": 194,
+          "end_line": 198,
           "id": "kn_1a0ecb186883983ded8239ec45897b9a977da81ce900613ed26ed6d00586e651",
           "index": 6,
           "sha256": "06b2814686b938c94ff9348cffbeab2764b289c20f1c6ba2e570f809606da753",
-          "start_line": 142
+          "start_line": 146
         },
         {
           "chars": 3965,
-          "end_line": 231,
+          "end_line": 235,
           "id": "kn_bcd896516cc784d39ad762a24ba7650d397cb663f2761a78c2e5949504379743",
           "index": 7,
           "sha256": "38e8c52fbb0d1a5a388bfc72477ddb97e7e11df7949967e833e7f071544151d1",
-          "start_line": 189
+          "start_line": 193
         },
         {
           "chars": 3694,
-          "end_line": 289,
+          "end_line": 293,
           "id": "kn_b775067a551d4ce91b9363b28f83b8943048580272bc079b291224db4d94ed81",
           "index": 8,
           "sha256": "6b57b321f5013785bb7cee61a8fe7ec738e59961b96bfbb1ab37a599ff237a32",
-          "start_line": 226
+          "start_line": 230
         },
         {
           "chars": 3854,
-          "end_line": 331,
+          "end_line": 335,
           "id": "kn_8b91073f11a1152daa4de5c0e1042a19f38b548f01198c851c0006b0ba6edcc7",
           "index": 9,
           "sha256": "88cb90f7af719b2a0ee701577a4b1fb2f78ef91660e9371ba9e744cbc28a69dd",
-          "start_line": 282
+          "start_line": 286
         }
       ],
       "component": "obsidian-knowledge-base",
       "path": "wiki/log.md",
-      "sha256": "457c6fde393f204f95969508e2ec2ad90d7101fcc1e27afc46faa78c3288e752"
+      "sha256": "10528c011ca440d741fd1703259e215b6bfcb6ad4d1a2a2c92cac846167ab800"
     },
     {
       "bytes": 64,
@@ -18993,11 +20253,11 @@
     }
   ],
   "summary": {
-    "chunk_count": 1225,
-    "component_count": 24,
-    "content_bytes": 3572101,
-    "governed_bytes": 7870194,
-    "governed_file_count": 575,
-    "source_count": 429
+    "chunk_count": 1306,
+    "component_count": 25,
+    "content_bytes": 3815673,
+    "governed_bytes": 8122072,
+    "governed_file_count": 610,
+    "source_count": 461
   }
 }

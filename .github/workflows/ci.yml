@@ -86,7 +86,8 @@ jobs:
 
       - name: Ruff and MyPy
         run: |
-          uv run --frozen ruff check packages/ workers/ scripts/config_preflight.py scripts/apply_migrations.py
+          uv run --frozen ruff check packages/ workers/ scripts/config_preflight.py scripts/apply_migrations.py scripts/certify_24x7.py scripts/certify_alpha.py
+          uv run --frozen ruff format --check packages/alpha_certification/ scripts/certify_alpha.py tests/unit/test_alpha_certification_*.py tests/integration/test_alpha_certification_pipeline.py
           uv run --frozen ruff check packages/hermes/ packages/knowledge/ scripts/benchmark_hermes.py tests/unit/test_hermes_*.py tests/integration/test_hermes_api.py
           uv run --frozen ruff format --check packages/hermes/ packages/knowledge/ scripts/benchmark_hermes.py tests/unit/test_hermes_*.py tests/integration/test_hermes_api.py
           uv run --frozen mypy packages/hermes/ --ignore-missing-imports --follow-imports=skip

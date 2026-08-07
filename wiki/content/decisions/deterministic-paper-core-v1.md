@@ -9,7 +9,7 @@ tags:
   - replay
   - paper-trading
 created: 2026-07-15
-updated: 2026-07-16
+updated: 2026-07-30
 sources:
   - "[[trade-project-full-integration-build-plan]]"
   - "[[canonical-local-paper-runtime-v1]]"
@@ -34,7 +34,7 @@ This decision does **not** promote live trading. Runtime modes are limited to `r
 
 - A market event must match its checksum, deterministic provenance-bound ID, source mode, time, and quality contract.
 - Strategies or models emit candidates, never approvals or orders.
-- Candidate envelopes require local Ollama provenance: exact role/model mapping and a 64-character digest preserved into the verdict; the future producer must verify it against the inference-time local inventory.
+- Candidate envelopes require explicit provenance preserved into the verdict: exact local Ollama role/model mapping, the deterministic non-model baseline, or a digest-bound `alpha_shadow` artifact admitted only by [[alpha-certification-pipeline]] in replay/paper mode.
 - A candidate cannot understate authoritative market age or bid/ask spread.
 - Risk loads one active policy, one fresh reconciled portfolio snapshot, and one effective instrument-constraint version from PostgreSQL; missing, stale, ambiguous, or mismatched inputs fail closed.
 - Each signal receives one immutable verdict. The verdict binds account, signal, exact candidate hash/event, market event, policy, and portfolio snapshot.
@@ -82,7 +82,7 @@ The migration image applies checksummed migrations before runtime services start
 4. Add durable dead-letter capture and operator replay.
 5. Implement authoritative cash, position, tax-lot, PnL, and loss-streak projectors from the fill ledger.
 6. Complete startup reconciliation and protective stop/OCO lifecycle.
-7. Add immutable raw market capture, venue sequence recovery, and promotion-grade backtesting.
+7. Complete an actual [[alpha-certification-pipeline]] run; its immutable historical snapshots and promotion-grade replay are implemented, but no trainable artifact has passed OOS plus shadow promotion.
 
 ## Revisit trigger
 
@@ -95,3 +95,4 @@ Revisit this decision only after transactional event processing, authoritative p
 - [[nats-event-system]]
 - [[broker-abstraction-layer]]
 - [[infrastructure-overview]]
+- [[alpha-certification-pipeline]]

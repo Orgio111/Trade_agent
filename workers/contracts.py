@@ -18,7 +18,8 @@ from packages.risk import CandidateSignal, RiskDecision
 
 _ZERO_UUID = UUID(int=0)
 DETERMINISTIC_BASELINE_MODEL = "baseline-feature-v1"
-CandidateProvider = Literal["ollama", "deterministic_baseline"]
+ALPHA_SHADOW_MODEL = "alpha-rf-canonical-features"
+CandidateProvider = Literal["ollama", "deterministic_baseline", "alpha_shadow"]
 
 
 def _utc(value: datetime) -> datetime:
@@ -92,6 +93,14 @@ class CandidateForRiskEvent(_StrictEnvelope):
                     "candidate model does not match the approved local role"
                 )
             return
+        if self.provider == "alpha_shadow":
+            if (
+                self.model_role is not None
+                or self.model != ALPHA_SHADOW_MODEL
+                or self.candidate.strategy_id != ALPHA_SHADOW_MODEL
+            ):
+                raise ValueError("alpha-shadow candidate provenance is invalid")
+            return
         if self.model_role is not None or self.model != DETERMINISTIC_BASELINE_MODEL:
             raise ValueError("deterministic baseline provenance is invalid")
         if self.candidate.strategy_id != DETERMINISTIC_BASELINE_MODEL:
@@ -161,6 +170,13 @@ class RiskDecisionEvent(_StrictEnvelope):
                 raise ValueError(
                     "risk event model does not match the approved local role"
                 )
+        elif self.provider == "alpha_shadow":
+            if (
+                self.model_role is not None
+                or self.model != ALPHA_SHADOW_MODEL
+                or self.candidate.strategy_id != ALPHA_SHADOW_MODEL
+            ):
+                raise ValueError("alpha-shadow risk provenance is invalid")
         elif (
             self.model_role is not None
             or self.model != DETERMINISTIC_BASELINE_MODEL

@@ -2,7 +2,7 @@
 
 > Content catalog for the trading & quant second brain. Organized by category. ZCode updates this on every ingest. **Read this first** when answering a query — then drill into pages.
 >
-> **State:** 6 sources · 72 pages · last updated 2026-07-24
+> **State:** 6 sources · 74 pages · last updated 2026-07-30
 
 ---
 
@@ -90,6 +90,8 @@ _Analyses and side-by-side comparisons (often filed from queries)._
 ## Playbooks
 _How-tos, processes, checklists._
 
+- [[alpha-certification-pipeline]] — immutable historical data, purged multi-regime OOS replay, temporary training, exact-artifact paper shadow, and signed promotion. (active, updated 2026-07-30)
+- [[24x7-paper-certification]] — resumable 24-hour chaos and seven-day paper soak with signed evidence and hard promotion gates. (active, updated 2026-07-28)
 - [[local-ai-deployment-guide]] — safe default Compose startup, exact Ollama checks, read-only readiness, and fail-closed bootstrap status. (stable, updated 2026-07-16)
 - [[signal-aggregation-logic]] — Go orchestrator weighted aggregation formula, weight mismatch fixes, proposed rebalancing. (updated 2026-06-26)
 - [[nn-brain-development-guide]] — step-by-step playbook for building, training, and deploying custom NN brain. (stable, updated 2026-06-26)

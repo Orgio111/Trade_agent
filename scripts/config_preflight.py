@@ -36,6 +36,9 @@ _CANONICAL_ALLOWED = frozenset(
         "OLLAMA_BASE_URL",
         "PAPER_TRADING",
         "CANDIDATE_PROVIDER",
+        "ALPHA_CANDIDATE_DIRECTORY",
+        "ALPHA_CANDIDATE_ARTIFACT",
+        "ALPHA_CANDIDATE_SHA256",
     }
 )
 _FORBIDDEN_CANONICAL_PREFIXES = (
@@ -117,7 +120,9 @@ def validate_env(
     for record in records:
         if not record.name or not _NAME.fullmatch(record.name):
             findings.append(
-                Finding("malformed_entry", f"line:{record.line}", "invalid variable name")
+                Finding(
+                    "malformed_entry", f"line:{record.line}", "invalid variable name"
+                )
             )
             continue
         grouped.setdefault(record.name, []).append(record)
@@ -126,7 +131,9 @@ def validate_env(
         if len(entries) > 1:
             lines = ",".join(str(item.line) for item in entries)
             findings.append(
-                Finding("duplicate_key", name, f"defined more than once at lines {lines}")
+                Finding(
+                    "duplicate_key", name, f"defined more than once at lines {lines}"
+                )
             )
 
     if scope == "canonical":
@@ -145,7 +152,9 @@ def validate_env(
         for name in sorted(grouped):
             if name.startswith(_FORBIDDEN_CANONICAL_PREFIXES):
                 findings.append(
-                    Finding("forbidden_secret_scope", name, "not allowed in paper runtime")
+                    Finding(
+                        "forbidden_secret_scope", name, "not allowed in paper runtime"
+                    )
                 )
 
     for name in sorted(_REQUIRED_SECRET_FILES):
@@ -211,9 +220,7 @@ def validate_env(
                         "required secret file is shorter than 16 bytes",
                     )
                 )
-            elif _PLACEHOLDER.search(
-                payload.decode("utf-8", errors="replace").strip()
-            ):
+            elif _PLACEHOLDER.search(payload.decode("utf-8", errors="replace").strip()):
                 findings.append(
                     Finding(
                         "placeholder_secret",
@@ -236,7 +243,9 @@ def validate_env(
         value = entries[0].value
         file_reference = name.endswith("_FILE_PATH")
         if _SECRET_NAME.search(name) and not value and not file_reference:
-            findings.append(Finding("empty_secret", name, "secret-bearing variable is empty"))
+            findings.append(
+                Finding("empty_secret", name, "secret-bearing variable is empty")
+            )
         if (
             _SECRET_NAME.search(name)
             and not file_reference
@@ -245,7 +254,11 @@ def validate_env(
             and _PLACEHOLDER.search(value)
         ):
             findings.append(
-                Finding("placeholder_secret", name, "secret-bearing variable is a placeholder")
+                Finding(
+                    "placeholder_secret",
+                    name,
+                    "secret-bearing variable is a placeholder",
+                )
             )
         if name in {"DATABASE_URL", "NATS_URL", "OLLAMA_BASE_URL"} and value:
             finding = _url_finding(name, value)
@@ -266,6 +279,65 @@ def validate_env(
                 "canonical runtime admits only paper_live or replay",
             )
         )
+    provider = grouped.get("CANDIDATE_PROVIDER")
+    if provider:
+        provider_value = provider[0].value
+        if provider_value not in {
+            "ollama",
+            "deterministic_baseline",
+            "alpha_shadow",
+        }:
+            findings.append(
+                Finding(
+                    "candidate_provider_invalid",
+                    "CANDIDATE_PROVIDER",
+                    "must be ollama, deterministic_baseline, or alpha_shadow",
+                )
+            )
+        artifact_directory = grouped.get("ALPHA_CANDIDATE_DIRECTORY")
+        artifact_path = grouped.get("ALPHA_CANDIDATE_ARTIFACT")
+        artifact_sha256 = grouped.get("ALPHA_CANDIDATE_SHA256")
+        if provider_value == "alpha_shadow":
+            if (
+                not artifact_directory
+                or not artifact_directory[0].value
+                or not artifact_path
+                or artifact_path[0].value != "/run/alpha-candidate/candidate.joblib"
+                or not artifact_sha256
+                or re.fullmatch(r"[0-9a-f]{64}", artifact_sha256[0].value) is None
+            ):
+                findings.append(
+                    Finding(
+                        "alpha_candidate_incomplete",
+                        "CANDIDATE_PROVIDER",
+                        "alpha_shadow requires directory, exact container path, and SHA-256",
+                    )
+                )
+            elif not allow_placeholders:
+                directory = Path(artifact_directory[0].value)
+                if not directory.is_absolute():
+                    directory = base_directory / directory
+                if directory.is_symlink() or not directory.resolve().is_dir():
+                    findings.append(
+                        Finding(
+                            "alpha_candidate_directory_invalid",
+                            "ALPHA_CANDIDATE_DIRECTORY",
+                            "must reference a regular non-symlink directory",
+                        )
+                    )
+        elif (
+            artifact_path
+            and artifact_path[0].value
+            or artifact_sha256
+            and artifact_sha256[0].value
+        ):
+            findings.append(
+                Finding(
+                    "alpha_candidate_scope_conflict",
+                    "CANDIDATE_PROVIDER",
+                    "artifact path and digest require alpha_shadow",
+                )
+            )
     if "NVIDIA_API_KEY" in grouped and "NVIDIA_NIM_API_KEY" in grouped:
         findings.append(
             Finding(
@@ -313,7 +385,9 @@ def validate_compose(path: Path) -> list[Finding]:
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     result.add_argument("--env-file", type=Path, default=ROOT / ".env")
-    result.add_argument("--compose-file", type=Path, default=ROOT / "docker-compose.yml")
+    result.add_argument(
+        "--compose-file", type=Path, default=ROOT / "docker-compose.yml"
+    )
     result.add_argument("--scope", choices=("canonical", "legacy"), default="canonical")
     result.add_argument(
         "--allow-placeholders",

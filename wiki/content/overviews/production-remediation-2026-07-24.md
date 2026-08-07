@@ -8,13 +8,14 @@ tags:
   - security
   - paper-trading
 created: 2026-07-24
-updated: 2026-07-24
+updated: 2026-07-30
 sources:
   - "[[production-readiness-audit-2026-07-16]]"
   - "[[canonical-local-paper-runtime-v1]]"
   - "[[deterministic-paper-core-v1]]"
   - "[[infrastructure-overview]]"
   - "[[nats-event-system]]"
+  - "[[alpha-certification-pipeline]]"
 status: active
 ---
 
@@ -99,7 +100,7 @@ leases, no stale lease errors, and reconciliation restart count zero.
   reconciliation drift.
 - Legacy PostgreSQL and NATS volumes have encrypted AES-256-GCM backups and were
   restored only into new isolated volumes.
-- The Python suite passes 650 tests. Deployable Ruff and MyPy scopes pass.
+- The Python suite passes 679 tests. Deployable Ruff and MyPy scopes pass.
 - Go test/vet, frontend lint/typecheck/build/audit, Prometheus validation, and
   serial Playwright microstructure tests pass.
 - Parallel Playwright still has resource-sensitive microstructure timeouts; CI
@@ -113,9 +114,38 @@ custody, canonical Kubernetes/Terraform source reconstruction, complete model an
 artifact registries, Go behavioral and Rust gates, edge CSP hardening, alert
 delivery proof, and actual 24-hour then seven-day paper soaks.
 
+The elapsed soak is now executable through
+[[24x7-paper-certification]]. Its resumable controller binds Git, the project
+manifest lock, and canonical container image identities; samples runtime and
+database invariants; injects bounded NATS, candidate-worker, and PostgreSQL
+faults; and authenticates local status with HMAC-SHA256. It advances from the
+24-hour phase to the seven-day phase only through hard gates and cannot promote
+without acknowledged alert delivery plus fresh, off-host RPO/RTO evidence. The
+controller does not convert missing elapsed time or external evidence into a
+pass.
+
 ## System upgrade
 
 Turn the current acceptance evidence into a continuous promotion gate: require a
 fresh public-feed trace, at least one deterministic rejection, one reconciled
 paper fill, zero duplicate/DLQ drift, and a signed runtime evidence bundle before
-any candidate release can advance to a long-duration paper soak.
+any candidate release can advance to a long-duration paper soak. The first
+implementation is [[24x7-paper-certification]]; its next upgrade is asymmetric
+KMS-backed signing and an approved off-host alert/backup receiver.
+
+## Alpha certification boundary
+
+[[alpha-certification-pipeline]] now implements content-addressed Binance
+historical snapshots, exact gap policies, purged/embargoed multi-regime
+walk-forward evaluation, canonical candidate/risk replay with next-bar fills and
+explicit costs, temporary-only training, signed model cards, immutable staging,
+and a separate exact-artifact seven-day paper-shadow controller. Final
+promotion copies the already staged digest without retraining and requires
+valid reliability, alpha, and shadow signatures with zero duplicate or
+reconciliation drift.
+
+This closes the missing local model-registry control but not its empirical
+release gate. No trainable model is approved. The active reliability soak was
+started before the alpha implementation, so the new candidate-worker image and
+source digest require a fresh reliability certification and subsequent shadow
+run.

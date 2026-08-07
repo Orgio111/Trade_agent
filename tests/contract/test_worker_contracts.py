@@ -14,6 +14,7 @@ from packages.execution import MarketSnapshot
 from packages.local_ai import LocalModelRole
 from packages.risk import CandidateSignal, RiskDecision, RiskReason
 from workers.contracts import (
+    ALPHA_SHADOW_MODEL,
     DETERMINISTIC_BASELINE_MODEL,
     CandidateForRiskEvent,
     RiskDecisionEvent,
@@ -126,7 +127,9 @@ def test_candidate_event_rejects_unapproved_model_role_mapping() -> None:
         )
 
 
-def test_deterministic_baseline_provenance_round_trips_without_model_relabeling() -> None:
+def test_deterministic_baseline_provenance_round_trips_without_model_relabeling() -> (
+    None
+):
     baseline = candidate().model_copy(
         update={"strategy_id": DETERMINISTIC_BASELINE_MODEL}
     )
@@ -148,7 +151,9 @@ def test_deterministic_baseline_provenance_round_trips_without_model_relabeling(
         decision(baseline),
         created_at=NOW,
     )
-    assert RiskDecisionEvent.model_validate_json(risk_event.canonical_json()) == risk_event
+    assert (
+        RiskDecisionEvent.model_validate_json(risk_event.canonical_json()) == risk_event
+    )
 
 
 def test_deterministic_baseline_cannot_claim_ollama_provenance() -> None:
@@ -165,6 +170,40 @@ def test_deterministic_baseline_cannot_claim_ollama_provenance() -> None:
             model="phi3:3.8b",
             model_digest="b" * 64,
             candidate=baseline,
+            market=market(),
+            created_at=NOW,
+        )
+
+
+def test_alpha_shadow_provenance_is_artifact_bound_and_round_trips() -> None:
+    alpha = candidate().model_copy(update={"strategy_id": ALPHA_SHADOW_MODEL})
+    event = CandidateForRiskEvent(
+        trace_id=alpha.trace_id,
+        market_event_id="b7a7ee48-90f6-40cc-890f-4d6bf8e2c6b0",
+        provider="alpha_shadow",
+        model_role=None,
+        model=ALPHA_SHADOW_MODEL,
+        model_digest="c" * 64,
+        candidate=alpha,
+        market=market(),
+        created_at=NOW,
+    )
+
+    assert CandidateForRiskEvent.model_validate_json(event.canonical_json()) == event
+    risk_event = RiskDecisionEvent.create(event, decision(alpha), created_at=NOW)
+    assert (
+        RiskDecisionEvent.model_validate_json(risk_event.canonical_json()) == risk_event
+    )
+
+    with pytest.raises(ValidationError, match="alpha-shadow"):
+        CandidateForRiskEvent(
+            trace_id=alpha.trace_id,
+            market_event_id="b7a7ee48-90f6-40cc-890f-4d6bf8e2c6b0",
+            provider="alpha_shadow",
+            model_role=LocalModelRole.FAST,
+            model="phi3:3.8b",
+            model_digest="c" * 64,
+            candidate=alpha,
             market=market(),
             created_at=NOW,
         )
@@ -187,7 +226,9 @@ def test_risk_event_is_bound_to_exact_candidate_and_verdict() -> None:
         created_at=NOW,
     )
 
-    assert RiskDecisionEvent.model_validate_json(risk_event.canonical_json()) == risk_event
+    assert (
+        RiskDecisionEvent.model_validate_json(risk_event.canonical_json()) == risk_event
+    )
     assert risk_event.decision.candidate_hash == risk_event.candidate.content_hash()
 
 

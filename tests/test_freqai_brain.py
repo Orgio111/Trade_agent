@@ -1,4 +1,4 @@
-"""Tests for FreqAIBrain: Binance OHLCV, Yfinance fallback, XGBoost auto-train.
+"""Tests for FreqAIBrain: feeds, inference, and research-only candidate training.
 
 All external calls (ccxt, yfinance, xgboost) are mocked so tests run offline &
 deterministically.
@@ -6,7 +6,6 @@ deterministically.
 
 from __future__ import annotations
 
-import asyncio
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -23,6 +22,7 @@ from orchestrator.brains.base_brain import BrainSignal
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
+
 def _make_fake_ohlcv(n: int = 100) -> list[list]:
     """Generate n fake OHLCV rows like ccxt fetch_ohlcv returns."""
     base_price = 60_000.0
@@ -31,10 +31,10 @@ def _make_fake_ohlcv(n: int = 100) -> list[list]:
         ts = 1_700_000_000_000 + i * 3_600_000  # 1h bars
         o = base_price + np.random.randn() * 200
         h = o + abs(np.random.randn()) * 300
-        l = o - abs(np.random.randn()) * 300
+        low = o - abs(np.random.randn()) * 300
         c = o + np.random.randn() * 200
         v = abs(np.random.randn()) * 1_000 + 500
-        rows.append([ts, o, h, l, c, v])
+        rows.append([ts, o, h, low, c, v])
     return rows
 
 
@@ -42,7 +42,14 @@ def _make_ohlcv_dicts(n: int = 100) -> list[dict]:
     """Generate n fake OHLCV dicts (internal buffer format)."""
     rows = _make_fake_ohlcv(n)
     return [
-        {"timestamp": r[0], "open": r[1], "high": r[2], "low": r[3], "close": r[4], "volume": r[5]}
+        {
+            "timestamp": r[0],
+            "open": r[1],
+            "high": r[2],
+            "low": r[3],
+            "close": r[4],
+            "volume": r[5],
+        }
         for r in rows
     ]
 
@@ -76,7 +83,9 @@ class TestBinanceFetch:
         mock_exchange = MagicMock()
         mock_exchange.fetch_ohlcv.return_value = fake_ohlcv
 
-        with patch("orchestrator.brains.freqai_brain.ccxt", create=True) as mock_ccxt_mod:
+        with patch(
+            "orchestrator.brains.freqai_brain.ccxt", create=True
+        ) as mock_ccxt_mod:
             mock_ccxt_mod.binance.return_value = mock_exchange
             with patch.dict("sys.modules", {"ccxt": mock_ccxt_mod}):
                 await brain._auto_fetch_ohlcv("BTC/USDT")
@@ -94,7 +103,10 @@ class TestBinanceFetch:
         mock_exchange = MagicMock()
         mock_exchange.fetch_ohlcv.return_value = fake_ohlcv
 
-        with patch.dict("sys.modules", {"ccxt": MagicMock(binance=MagicMock(return_value=mock_exchange))}):
+        with patch.dict(
+            "sys.modules",
+            {"ccxt": MagicMock(binance=MagicMock(return_value=mock_exchange))},
+        ):
             await brain._auto_fetch_ohlcv("ETH/USDT")
 
         assert "BTC/USDT" not in brain._binance_fetched
@@ -112,15 +124,27 @@ class TestBinanceFetch:
 
         mock_yf_mod = MagicMock()
         mock_ticker = MagicMock()
-        mock_ticker.history.return_value = MagicMock(empty=False, __len__=lambda self: 5)
+        mock_ticker.history.return_value = MagicMock(
+            empty=False, __len__=lambda self: 5
+        )
         mock_yf_mod.Ticker = mock_yf_mod
         mock_yf_mod.Ticker.return_value = mock_ticker
 
         import pandas as pd
-        tiny_df = pd.DataFrame({"Open": [1], "High": [2], "Low": [0.5], "Close": [1.5], "Volume": [100]}, index=pd.date_range("2024-01-01", periods=1))
+
+        tiny_df = pd.DataFrame(
+            {"Open": [1], "High": [2], "Low": [0.5], "Close": [1.5], "Volume": [100]},
+            index=pd.date_range("2024-01-01", periods=1),
+        )
         mock_ticker.history.return_value = tiny_df  # only 1 row, < 30
 
-        with patch.dict("sys.modules", {"ccxt": MagicMock(binance=MagicMock(return_value=mock_exchange)), "yfinance": mock_yf_mod}):
+        with patch.dict(
+            "sys.modules",
+            {
+                "ccxt": MagicMock(binance=MagicMock(return_value=mock_exchange)),
+                "yfinance": mock_yf_mod,
+            },
+        ):
             await brain._auto_fetch_ohlcv("BTC/USDT")
 
         # Binance insufficient + yfinance insufficient → buffer < 30
@@ -160,7 +184,10 @@ class TestYfinanceFallback:
         mock_yf_mod = MagicMock()
         mock_ticker = MagicMock()
         mock_ticker.history.return_value = _make_yf_dataframe(50)
-        mock_yf_mod.Ticker = lambda ticker: (captured_tickers.append(ticker), mock_ticker)[1]
+        mock_yf_mod.Ticker = lambda ticker: (
+            captured_tickers.append(ticker),
+            mock_ticker,
+        )[1]
 
         with patch.dict("sys.modules", {"yfinance": mock_yf_mod}):
             await brain._fetch_yfinance("BTC/USDT", 1_700_000_000.0)
@@ -177,6 +204,7 @@ class TestYfinanceFallback:
         mock_yf_mod = MagicMock()
         mock_ticker = MagicMock()
         import pandas as pd
+
         mock_ticker.history.return_value = pd.DataFrame()  # empty
         mock_yf_mod.Ticker.return_value = mock_ticker
 
@@ -198,11 +226,11 @@ class TestYfinanceFallback:
 
 
 class TestXGBoostTrain:
-    """Verify XGBoost auto-train from accumulated OHLCV data."""
+    """Verify explicit XGBoost training cannot activate its candidate."""
 
-    def test_auto_train_creates_model(self, tmp_path):
+    def test_explicit_training_stages_unvalidated_candidate(self, tmp_path):
         brain = FreqAIBrain()
-        brain._model_dir = str(tmp_path)
+        brain._candidate_dir = str(tmp_path)
         brain._model = None
 
         n = 120
@@ -214,15 +242,18 @@ class TestXGBoostTrain:
 
         brain._auto_train(closes, highs, lows, volumes)
 
-        assert brain._model is not None
-        assert hasattr(brain._model, "fit")
-        assert hasattr(brain._model, "predict")
+        assert brain._model is None
+        assert brain._last_candidate_path is not None
+        candidate = Path(brain._last_candidate_path)
+        assert candidate.is_file()
+        assert len(candidate.parent.name) == 64
+        assert not (tmp_path / "xgboost_freqai.joblib").exists()
 
     def test_auto_train_skips_with_insufficient_data(self):
         brain = FreqAIBrain()
         brain._model = None
 
-        n = 50  # < 100, so auto-train should skip
+        n = 50  # < 100, so candidate training should skip
         closes = np.random.randn(n) + 60_000
         highs = closes + 100
         lows = closes - 100
@@ -367,7 +398,6 @@ class TestWarmup:
         model.fit(X, y)
 
         model_file = tmp_path / "xgboost_freqai.joblib"
-        import joblib
         joblib.dump(model, model_file)
 
         brain._model_dir = str(tmp_path)
@@ -386,7 +416,16 @@ class TestPushOHLCV:
         brain._max_bars = 50
 
         for i in range(60):
-            brain.push_ohlcv({"timestamp": i, "open": 100, "high": 101, "low": 99, "close": 100, "volume": 1000})
+            brain.push_ohlcv(
+                {
+                    "timestamp": i,
+                    "open": 100,
+                    "high": 101,
+                    "low": 99,
+                    "close": 100,
+                    "volume": 1000,
+                }
+            )
 
         assert len(brain._ohlcv_buffer) == 50
 
